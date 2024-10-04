@@ -4,27 +4,36 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 
+const jwtSecret = process.env.JWT_SECRET || 'your_secret_key'; // Ensure this is consistent across your app
+
 // Login Route
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    // Find user
+    // Find user by username
     const user = await User.findOne({ username });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials.' });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials.' });
+    }
 
-    // Check password
+    // Compare passwords
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials.' });
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials.' });
+    }
 
-    // Generate token
+    // Generate JWT token
     const token = jwt.sign(
       { id: user._id, role: user.role },
-      'your_secret_key', // Ensure this is consistent across your app
+      jwtSecret,
       { expiresIn: '1h' }
     );
 
-    res.json({ token, user: { id: user._id, username: user.username, role: user.role } });
+    res.json({
+      token,
+      user: { id: user._id, username: user.username, role: user.role },
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Server error during login.' });

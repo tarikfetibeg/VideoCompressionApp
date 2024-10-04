@@ -1,6 +1,6 @@
 const express = require('express');
 const Video = require('../models/Video');
-const authenticateToken = require('../middleware/auth');
+const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const path = require('path');
 const fs = require('fs');
@@ -22,7 +22,7 @@ router.get(
 );
 
 // Get Video Stream (for playback)
-router.get('/stream/:videoId', async (req, res) => {
+router.get('/stream/:videoId', authenticateToken, (req, res) => {
   const { videoId } = req.params;
 
   // Extract token from Authorization header or query parameter
