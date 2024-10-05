@@ -15,7 +15,7 @@ const fs = require('fs');
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:3000', // Your frontend URL
+  origin: 'https://videocompressionapp-e38d94e99592.herokuapp.com/', // Your frontend URL
   credentials: true,
 }));
 app.use(express.json());
