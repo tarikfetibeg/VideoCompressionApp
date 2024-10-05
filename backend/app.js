@@ -8,6 +8,7 @@ const path = require('path');
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
+
 // Import Routes
 const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
@@ -17,7 +18,7 @@ const fs = require('fs');
 
 // Middleware
 app.use(cors({
-  origin: 'https://videocompressionapp-e38d94e99592.herokuapp.com/', // Your frontend URL
+  origin: 'https://videocompressionapp-e38d94e99592.herokuapp.com', // Your frontend URL
   credentials: true,
 }));
 app.use(express.json());
@@ -56,12 +57,12 @@ app.use('/api/videos', videoRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Serve static files from the React app (after API routes)
-app.use(express.static(path.join(__dirname, 'frontend', 'build')));
+app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'build', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
 });
 
 // Error Handling Middleware (optional)
