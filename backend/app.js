@@ -4,7 +4,6 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-
 const app = express();
 
 // Import Routes
@@ -14,14 +13,13 @@ const videoRoutes = require('./routes/videos');
 
 const fs = require('fs');
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'frontend', 'build')));
-
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'build', 'index.html'));
-});
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:3000', // Your frontend URL
+  credentials: true,
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Create directories if they don't exist
 const directories = ['uploads/raw', 'uploads/compressed'];
@@ -32,19 +30,11 @@ directories.forEach((dir) => {
   }
 });
 
-
-// Middleware
-app.use(cors({
-    origin: 'http://localhost:3000', // Your frontend URL
-    credentials: true,
-  }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-
 // Connect to MongoDB
+const mongoURI = process.env.MONGODB_URI;
+
 mongoose
-  .connect('mongodb://localhost:27017/tv_station_app', {
+  .connect(mongoURI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
@@ -56,6 +46,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/uploads', express.static('uploads'));
+
+// Serve static files from the React app (after API routes)
+app.use(express.static(path.join(__dirname, 'frontend', 'build')));
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'build', 'index.html'));
+});
 
 // Error Handling Middleware (optional)
 app.use((err, req, res, next) => {
