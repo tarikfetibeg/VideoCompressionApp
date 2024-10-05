@@ -1,15 +1,13 @@
 const express = require('express');
-const app = express();
+const app = express(); // Initialize Express app
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config({ override: false });
 
 // Load environment variables in development only
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
-
 // Import Routes
 const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
@@ -37,6 +35,12 @@ directories.forEach((dir) => {
 // Connect to MongoDB
 const mongoURI = process.env.MONGODB_URI;
 
+if (!mongoURI) {
+  console.error('Error: MONGODB_URI is not defined');
+} else {
+  console.log('MONGODB_URI is defined');
+}
+
 mongoose
   .connect(mongoURI, {
     useNewUrlParser: true,
@@ -44,11 +48,6 @@ mongoose
   })
   .then(() => console.log('MongoDB connected successfully'))
   .catch((err) => console.error('MongoDB connection error:', err));
-  if (!process.env.MONGODB_URI) {
-    console.error('Error: MONGODB_URI is not defined');
-  } else {
-    console.log('MONGODB_URI is defined');
-  }
 
 // Routes
 app.use('/api/auth', authRoutes);
