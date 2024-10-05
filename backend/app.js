@@ -2,9 +2,12 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ override: false });
 
-const app = express();
+// Load environment variables in development only
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 // Import Routes
 const authRoutes = require('./routes/auth');
