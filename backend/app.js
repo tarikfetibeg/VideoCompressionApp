@@ -38,8 +38,13 @@ mongoose
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
-  .then(() => console.log('MongoDB connected'))
+  .then(() => console.log('MongoDB connected successfully'))
   .catch((err) => console.error('MongoDB connection error:', err));
+  if (!process.env.MONGODB_URI) {
+    console.error('Error: MONGODB_URI is not defined');
+  } else {
+    console.log('MONGODB_URI is defined');
+  }
 
 // Routes
 app.use('/api/auth', authRoutes);
