@@ -5,9 +5,8 @@ const cors = require('cors');
 const path = require('path');
 
 // Load environment variables in development only
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
+require('dotenv').config();
+console.log('MongoDB URI:', process.env.MONGODB_URI); // Add this to see if the value is loaded properly
 
 // Import Routes
 const authRoutes = require('./routes/auth');
