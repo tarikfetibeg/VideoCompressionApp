@@ -3,23 +3,30 @@ const app = express(); // Initialize Express app
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
-// Load environment variables in development only
+// Load environment variables
 require('dotenv').config();
-console.log('MongoDB URI:', process.env.MONGODB_URI); // Add this to see if the value is loaded properly
+
+// Log NODE_ENV
+console.log('NODE_ENV:', process.env.NODE_ENV);
 
 // Import Routes
 const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
 const videoRoutes = require('./routes/videos');
 
-const fs = require('fs');
+// CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? ['https://videocompressionapp-e38d94e99592.herokuapp.com']
+  : ['http://localhost:3000'];
 
-// Middleware
 app.use(cors({
-  origin: 'https://videocompressionapp-e38d94e99592.herokuapp.com', // Your frontend URL
+  origin: allowedOrigins,
   credentials: true,
 }));
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -42,10 +49,7 @@ if (!mongoURI) {
 }
 
 mongoose
-  .connect(mongoURI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect(mongoURI)
   .then(() => console.log('MongoDB connected successfully'))
   .catch((err) => console.error('MongoDB connection error:', err));
 

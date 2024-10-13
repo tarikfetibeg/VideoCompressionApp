@@ -24,6 +24,11 @@ router.post('/login', async (req, res) => {
     }
 
     // Generate JWT token
+    if (!jwtSecret) {
+      console.error('Error: JWT_SECRET is not defined');
+      return res.status(500).json({ message: 'Server configuration error.' });
+    }
+
     const token = jwt.sign(
       { id: user._id, role: user.role },
       jwtSecret,
@@ -35,7 +40,7 @@ router.post('/login', async (req, res) => {
       user: { id: user._id, username: user.username, role: user.role },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Token generation error:', error);
     res.status(500).json({ message: 'Server error during login.' });
   }
 });
