@@ -12,7 +12,7 @@ import {
 import { UserContext } from '../contexts/UserContext';
 
 const LoginPage = () => {
-  const { setUser } = useContext(UserContext);
+  const { login } = useContext(UserContext);
   const navigate = useNavigate();
   const [tabIndex, setTabIndex] = useState(0); // 0 for Login, 1 for Register
 
@@ -43,8 +43,13 @@ const LoginPage = () => {
       })
       .then((response) => {
         const { token, user } = response.data;
-        localStorage.setItem('user', JSON.stringify({ token, user }));
-        setUser({ token, user });
+
+        // Combine token and user data into one object
+        const userData = { ...user, token };
+
+        // Use login function from context
+        login(userData);
+
         navigate('/');
       })
       .catch((error) => {

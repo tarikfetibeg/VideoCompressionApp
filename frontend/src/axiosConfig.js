@@ -1,7 +1,12 @@
 import axios from 'axios';
 
+const baseURL =
+  process.env.NODE_ENV === 'production'
+    ? '/api' // Use relative path in production
+    : 'http://localhost:5000/api';
+
 const axiosInstance = axios.create({
-  baseURL: 'http://localhost:5000/api', // Update if necessary
+  baseURL,
 });
 
 axiosInstance.interceptors.request.use(

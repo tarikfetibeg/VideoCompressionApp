@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { UserContext } from '../contexts/UserContext';
 
-import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
+import { AppBar, Toolbar, Typography, Button } from '@mui/material';
 
 const Header = () => {
   const { user, logout } = useContext(UserContext);
@@ -12,6 +12,9 @@ const Header = () => {
     window.location.href = '/login';
   };
 
+  // Optional: Add console log for debugging
+  console.log('User in Header:', user);
+
   return (
     <AppBar position="static">
       <Toolbar>
@@ -20,12 +23,12 @@ const Header = () => {
         </Typography>
         {user ? (
           <>
-            {user.user.role === 'Reporter' && (
+            {user?.role === 'Reporter' && (
               <Button color="inherit" component={Link} to="/reporter-dashboard">
                 Reporter Dashboard
               </Button>
             )}
-            {user.user.role === 'Editor' && (
+            {user?.role === 'Editor' && (
               <Button color="inherit" component={Link} to="/editor-dashboard">
                 Editor Dashboard
               </Button>
