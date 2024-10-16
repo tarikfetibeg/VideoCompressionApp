@@ -5,11 +5,16 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
-// Load environment variables
-require('dotenv').config();
+// Load environment variables using dotenv-flow
+const dotenvFlow = require('dotenv-flow');
 
-// Log NODE_ENV
+dotenvFlow.config({
+  cwd: path.resolve(__dirname), // Load environment variables from .env files based on NODE_ENV
+});
+
+// Log NODE_ENV and ALLOWED_ORIGINS for debugging
 console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('ALLOWED_ORIGINS:', process.env.ALLOWED_ORIGINS);
 
 // Import Routes
 const authRoutes = require('./routes/auth');
@@ -17,14 +22,25 @@ const uploadRoutes = require('./routes/upload');
 const videoRoutes = require('./routes/videos');
 
 // CORS configuration
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? ['https://videocompressionapp-e38d94e99592.herokuapp.com']
-  : ['http://localhost:3000'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : [];
 
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-}));
+console.log('Allowed Origins:', allowedOrigins); // Log allowed origins for debugging
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      console.log('Incoming request origin:', origin); // Log incoming origin for debugging
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  })
+);
 
 // Middleware
 app.use(express.json());
@@ -65,7 +81,9 @@ app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
+  res.sendFile(
+    path.join(__dirname, '..', 'frontend', 'build', 'index.html')
+  );
 });
 
 // Error Handling Middleware (optional)
@@ -76,6 +94,6 @@ app.use((err, req, res, next) => {
 
 // Start the Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

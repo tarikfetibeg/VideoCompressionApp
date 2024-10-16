@@ -1,5 +1,3 @@
-// middleware/authenticateToken.js
-
 const jwt = require('jsonwebtoken');
 
 const jwtSecret = process.env.JWT_SECRET || 'your_secret_key'; // Ensure this is the same as in auth.js

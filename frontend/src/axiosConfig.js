@@ -1,12 +1,15 @@
+// axiosConfig.js
+
 import axios from 'axios';
 
-const baseURL =
-  process.env.NODE_ENV === 'production'
-    ? '/api' // Use relative path in production
-    : 'http://localhost:5000/api';
+// Use environment variable or default to 'http://localhost:5000/api'
+const baseURL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+
+// For debugging purposes, you can log the baseURL
+console.log('Axios baseURL:', baseURL);
 
 const axiosInstance = axios.create({
-  baseURL,
+  baseURL, // Use the baseURL variable here
 });
 
 axiosInstance.interceptors.request.use(
@@ -22,15 +25,6 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      // Handle unauthorized access, e.g., redirect to login
-    }
-    return Promise.reject(error);
-  }
-);
-
+console.log('Axios baseURL:', baseURL);
 
 export default axiosInstance;
