@@ -39,8 +39,10 @@ app.use(
       }
     },
     credentials: true,
+    exposedHeaders: ['Content-Length', 'Content-Range'], // Add this line
   })
 );
+
 
 // Middleware
 app.use(express.json());

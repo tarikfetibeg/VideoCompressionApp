@@ -22,33 +22,16 @@ router.get(
 );
 
 // Get Video Stream (for playback)
-router.get('/stream/:videoId', authenticateToken, (req, res) => {
+router.get('/stream/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
+  const user = req.user;
 
-  // Extract token from Authorization header or query parameter
-  let token = req.headers['authorization'];
-  if (token) {
-    token = token.replace('Bearer ', '');
-  } else if (req.query.token) {
-    token = req.query.token;
+  // Optional: Check user roles if needed
+  if (!['Reporter', 'Editor', 'VideoEditor', 'Producer'].includes(user.role)) {
+    return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
   }
 
-  if (!token) {
-    return res.status(401).json({ message: 'Unauthorized: No token provided' });
-  }
-
-  // Verify the token
-  jwt.verify(token, 'your_secret_key', async (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Forbidden: Invalid token' });
-    }
-    req.user = user;
-
-    // Optional: Check user roles if needed
-    if (!['Reporter', 'Editor', 'VideoEditor', 'Producer'].includes(user.role)) {
-      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
-    }
-
+  try {
     // Proceed with streaming logic
     const video = await Video.findById(videoId);
 
@@ -63,24 +46,18 @@ router.get('/stream/:videoId', authenticateToken, (req, res) => {
 
     const stat = fs.statSync(videoPath);
     const total = stat.size;
-
     const range = req.headers.range;
 
     if (!range) {
-      // Return the entire video file if Range header is not present
       res.writeHead(200, {
         'Content-Length': total,
         'Content-Type': 'video/mp4',
       });
       fs.createReadStream(videoPath).pipe(res);
     } else {
-      // Parse Range header
       const parts = range.replace(/bytes=/, '').split('-');
-      const partialStart = parts[0];
-      const partialEnd = parts[1];
-
-      const start = parseInt(partialStart, 10);
-      const end = partialEnd ? parseInt(partialEnd, 10) : total - 1;
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
       const chunkSize = end - start + 1;
 
       const file = fs.createReadStream(videoPath, { start, end });
@@ -92,8 +69,12 @@ router.get('/stream/:videoId', authenticateToken, (req, res) => {
       });
       file.pipe(res);
     }
-  });
+  } catch (error) {
+    console.error('Error streaming video:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 });
+
 
 // Add a timecode to a video
 router.post(

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactPlayer from 'react-player';
-import axios from '../axiosConfig';
+import axiosInstance from '../axiosConfig';
 import {
   Box,
   Typography,
@@ -11,20 +10,28 @@ import {
 } from '@mui/material';
 
 const VideoPlayer = ({ videoId }) => {
-  const [videoUrl, setVideoUrl] = useState('');
+  const [videoBlobUrl, setVideoBlobUrl] = useState('');
   const [timecodes, setTimecodes] = useState([]);
   const playerRef = useRef(null);
 
   useEffect(() => {
-    // Retrieve the token from localStorage
-    const user = JSON.parse(localStorage.getItem('user'));
-    const token = user?.token;
+    const fetchVideo = async () => {
+      try {
+        const response = await axiosInstance.get(`/videos/stream/${videoId}`, {
+          responseType: 'blob',
+        });
+        const blob = new Blob([response.data], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        setVideoBlobUrl(url);
+      } catch (error) {
+        console.error('Error fetching video:', error);
+      }
+    };
 
-    // Set video URL with token as query parameter
-    setVideoUrl(`${axios.defaults.baseURL}/videos/stream/${videoId}?token=${encodeURIComponent(token)}`);
+    fetchVideo();
 
     // Fetch timecodes
-    axios
+    axiosInstance
       .get(`/videos/${videoId}/timecodes`)
       .then((response) => {
         setTimecodes(response.data);
@@ -32,29 +39,28 @@ const VideoPlayer = ({ videoId }) => {
       .catch((error) => {
         console.error('Error fetching timecodes:', error);
       });
+
+    // Cleanup Blob URL when component unmounts
+    return () => {
+      URL.revokeObjectURL(videoBlobUrl);
+    };
   }, [videoId]);
 
   const handleTimecodeClick = (timestamp) => {
     if (playerRef.current) {
-      playerRef.current.seekTo(timestamp, 'seconds');
+      playerRef.current.currentTime = timestamp;
     }
   };
 
   return (
     <Box sx={{ mt: 4 }}>
-      <ReactPlayer
+      <video
         ref={playerRef}
-        url={videoUrl}
         controls
         width="100%"
         height="auto"
-        config={{
-          file: {
-            attributes: {
-              controlsList: 'nodownload',
-            },
-          },
-        }}
+        src={videoBlobUrl}
+        onError={(e) => console.error('Video playback error:', e)}
       />
       <Typography variant="h6" sx={{ mt: 2 }}>
         Timecodes
