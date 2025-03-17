@@ -2,6 +2,7 @@ const Queue = require('bull');
 const ffmpeg = require('fluent-ffmpeg');
 const Video = require('../models/Video');
 const path = require('path');
+const FfmpegSettings = require('../models/FfmpegSettings');
 
 const videoQueue = new Queue('video processing');
 
@@ -12,11 +13,20 @@ videoQueue.process(async (job, done) => {
   const outputFilename = `${video.filename}-compressed.mp4`;
   const outputPath = path.join('uploads', 'compressed', outputFilename);
 
+  // Retrieve FFmpeg settings from the database (or use defaults)
+  let settings = await FfmpegSettings.findOne({});
+  if (!settings) {
+    // Create default settings if not present
+    settings = await FfmpegSettings.create({});
+  }
+
   ffmpeg(inputPath)
-    .outputOptions('-c:v libx264', '-crf 23', '-preset medium')
+    .videoCodec(settings.codec)
+    .size(settings.resolution)
+    .videoBitrate(settings.bitrate)
+    .fps(settings.framerate)
     .save(outputPath)
     .on('end', async () => {
-      // Update video document with new filepath
       video.filepath = outputPath;
       await video.save();
       done();

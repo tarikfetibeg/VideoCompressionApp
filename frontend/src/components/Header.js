@@ -1,7 +1,8 @@
+// Header.js
+
 import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { UserContext } from '../contexts/UserContext';
-
 import { AppBar, Toolbar, Typography, Button } from '@mui/material';
 
 const Header = () => {
@@ -12,7 +13,6 @@ const Header = () => {
     window.location.href = '/login';
   };
 
-  // Optional: Add console log for debugging
   console.log('User in Header:', user);
 
   return (
@@ -33,7 +33,12 @@ const Header = () => {
                 Editor Dashboard
               </Button>
             )}
-            {/* Add buttons for other roles as needed */}
+            {user?.role === 'Admin' && (
+              <Button color="inherit" component={Link} to="/admin-dashboard">
+                Admin Dashboard
+              </Button>
+            )}
+            {/* Add additional role-based buttons here if needed */}
             <Button color="inherit" onClick={handleLogout}>
               Logout
             </Button>

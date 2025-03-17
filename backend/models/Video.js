@@ -10,7 +10,15 @@ const VideoSchema = new mongoose.Schema({
   filepath: String,
   originalFilename: String,
   uploader: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  events: [String],
+  // New tagging fields:
+  event: { type: String },
+  location: { type: String },
+  tagDate: { type: Date },
+  status: { // "raw" or "edited"
+    type: String,
+    enum: ['raw', 'edited'],
+    default: 'raw',
+  },
   timecodes: [TimecodeSchema],
   uploadDate: { type: Date, default: Date.now },
 });

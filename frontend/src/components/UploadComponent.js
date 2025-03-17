@@ -16,8 +16,10 @@ import {
 import { CloudUpload } from '@mui/icons-material';
 
 const UploadComponent = () => {
-  const [file, setFile] = useState(null);
-  const [events, setEvents] = useState('');
+  const [files, setFiles] = useState([]);
+  const [eventTag, setEventTag] = useState('');
+  const [location, setLocation] = useState('');
+  const [date, setDate] = useState('');
   const [codec, setCodec] = useState('h264');
   const [resolution, setResolution] = useState('1080');
   const [bitrate, setBitrate] = useState(10); // in Mbps
@@ -27,22 +29,28 @@ const UploadComponent = () => {
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-  };
-
-  const handleEventsChange = (e) => {
-    setEvents(e.target.value);
+    setFiles(Array.from(e.target.files));
   };
 
   const handleUpload = () => {
-    if (!file) {
-      setErrorMessage('Please select a file to upload.');
+    // Validate mandatory fields for Reporter uploads
+    if (files.length === 0) {
+      setErrorMessage('Please select at least one file to upload.');
+      return;
+    }
+    if (!eventTag || !location || !date) {
+      setErrorMessage('Please provide event, location, and date.');
       return;
     }
 
     const formData = new FormData();
-    formData.append('video', file);
-    formData.append('events', events);
+    files.forEach(file => {
+      formData.append('videos', file);
+    });
+    // Append additional tagging and settings information
+    formData.append('event', eventTag);
+    formData.append('location', location);
+    formData.append('date', date);
     formData.append('codec', codec);
     formData.append('resolution', resolution);
     formData.append('bitrate', bitrate);
@@ -54,17 +62,17 @@ const UploadComponent = () => {
           'Content-Type': 'multipart/form-data',
         },
         onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           setUploadProgress(percentCompleted);
         },
       })
       .then((response) => {
         setMessage('Upload successful.');
         setUploadProgress(0);
-        setFile(null);
-        setEvents('');
+        setFiles([]);
+        setEventTag('');
+        setLocation('');
+        setDate('');
         setErrorMessage('');
         setCodec('h264');
         setResolution('1080');
@@ -82,7 +90,7 @@ const UploadComponent = () => {
 
   return (
     <Box sx={{ mt: 4 }}>
-      <Typography variant="h5">Upload Video</Typography>
+      <Typography variant="h5">Upload Video Clips</Typography>
       {message && (
         <Alert severity="success" sx={{ mt: 2 }}>
           {message}
@@ -95,23 +103,44 @@ const UploadComponent = () => {
       )}
       <Box sx={{ mt: 2 }}>
         <Button variant="contained" component="label" startIcon={<CloudUpload />}>
-          Select File
-          <input type="file" hidden onChange={handleFileChange} />
+          Select Files
+          <input type="file" hidden multiple onChange={handleFileChange} />
         </Button>
-        {file && (
+        {files.length > 0 && (
           <Typography variant="body1" sx={{ mt: 1 }}>
-            Selected File: {file.name}
+            Selected Files: {files.map(f => f.name).join(', ')}
           </Typography>
         )}
       </Box>
+      {/* Mandatory Tag Inputs */}
       <TextField
-        label="Event Tags (comma-separated)"
-        value={events}
-        onChange={handleEventsChange}
+        label="Event"
+        value={eventTag}
+        onChange={(e) => setEventTag(e.target.value)}
         fullWidth
         margin="normal"
+        required
       />
-
+      <TextField
+        label="Location"
+        value={location}
+        onChange={(e) => setLocation(e.target.value)}
+        fullWidth
+        margin="normal"
+        required
+      />
+      <TextField
+        label="Date"
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        fullWidth
+        margin="normal"
+        InputLabelProps={{
+          shrink: true,
+        }}
+        required
+      />
       {/* Codec Selection */}
       <FormControl fullWidth sx={{ mt: 2 }}>
         <InputLabel>Codec</InputLabel>
@@ -126,7 +155,6 @@ const UploadComponent = () => {
           <MenuItem value="h265_nvenc">H.265 (NVENC)</MenuItem>
         </Select>
       </FormControl>
-
       {/* Resolution Selection */}
       <FormControl fullWidth sx={{ mt: 2 }}>
         <InputLabel>Resolution</InputLabel>
@@ -141,7 +169,6 @@ const UploadComponent = () => {
           <MenuItem value="2160">3840x2160 (4K)</MenuItem>
         </Select>
       </FormControl>
-
       {/* Bitrate Slider */}
       <Typography gutterBottom sx={{ mt: 2 }}>
         Bitrate: {bitrate} Mbps
@@ -149,23 +176,15 @@ const UploadComponent = () => {
       <Slider
         value={bitrate}
         min={1}
-        max={20}
+        max={50} // 50 Mbps maximum
         step={1}
         onChange={(e, newValue) => setBitrate(newValue)}
         valueLabelDisplay="auto"
       />
-
-      {/* Framerate Display */}
       <Typography sx={{ mt: 2 }}>
         Framerate: {framerate} fps (fixed)
       </Typography>
-
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={handleUpload}
-        sx={{ mt: 2 }}
-      >
+      <Button variant="contained" color="primary" onClick={handleUpload} sx={{ mt: 2 }}>
         Upload
       </Button>
       {uploadProgress > 0 && (

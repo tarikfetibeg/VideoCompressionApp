@@ -1,37 +1,45 @@
-const express = require('express');
-const app = express(); // Initialize Express app
-const mongoose = require('mongoose');
-const cors = require('cors');
+// Load environment variables as early as possible
 const path = require('path');
-const fs = require('fs');
-
-// Load environment variables using dotenv-flow
 const dotenvFlow = require('dotenv-flow');
-
 dotenvFlow.config({
-  cwd: path.resolve(__dirname), // Load environment variables from .env files based on NODE_ENV
+  cwd: path.resolve(__dirname, '..'),
 });
 
-// Log NODE_ENV and ALLOWED_ORIGINS for debugging
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('ALLOWED_ORIGINS:', process.env.ALLOWED_ORIGINS);
+const express = require('express');
+const app = express(); // Initialize Express app
+const cors = require('cors');
+const mongoose = require('mongoose');
+const fs = require('fs');
 
-// Import Routes
-const authRoutes = require('./routes/auth');
-const uploadRoutes = require('./routes/upload');
-const videoRoutes = require('./routes/videos');
+// Custom logging middleware for incoming request origin with fallback
+// Paste this immediately after app initialization
+app.use((req, res, next) => {
+  const originHeader = req.headers.origin;
+  const refererHeader = req.headers.referer;
+  const hostHeader = req.headers.host;
+  const loggedOrigin = originHeader || refererHeader || hostHeader || 'undefined';
+  console.log('Incoming request origin (with fallback):', loggedOrigin);
+  next();
+});
 
-// CORS configuration
+// Define allowedOrigins only once
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : [];
+console.log('Allowed Origins:', allowedOrigins);
 
-console.log('Allowed Origins:', allowedOrigins); // Log allowed origins for debugging
+app.use((req, res, next) => {
+  const customOrigin = req.headers['x-my-origin'] || 'undefined';
+  console.log('Custom X-My-Origin header:', customOrigin);
+  next();
+});
 
+// CORS middleware using the actual Origin header only
 app.use(
   cors({
     origin: function (origin, callback) {
-      console.log('Incoming request origin:', origin); // Log incoming origin for debugging
+      console.log('CORS check, incoming origin:', origin);
+      // If no Origin header is provided (common in same-origin requests), allow the request.
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -39,18 +47,16 @@ app.use(
       }
     },
     credentials: true,
-    exposedHeaders: ['Content-Length', 'Content-Range'], // Add this line
+    exposedHeaders: ['Content-Length', 'Content-Range'],
   })
 );
 
-
-// Middleware
+// Middleware for parsing JSON and URL-encoded data
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Create directories if they don't exist
 const directories = ['uploads/raw', 'uploads/compressed'];
-
 directories.forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -59,33 +65,34 @@ directories.forEach((dir) => {
 
 // Connect to MongoDB
 const mongoURI = process.env.MONGODB_URI;
-
 if (!mongoURI) {
   console.error('Error: MONGODB_URI is not defined');
 } else {
   console.log('MONGODB_URI is defined');
 }
-
 mongoose
   .connect(mongoURI)
   .then(() => console.log('MongoDB connected successfully'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Routes
+// Register API routes
+const adminRoutes = require('./routes/admin');
+const authRoutes = require('./routes/auth');
+const uploadRoutes = require('./routes/upload');
+const videoRoutes = require('./routes/videos');
+
+app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/uploads', express.static('uploads'));
 
-// Serve static files from the React app (after API routes)
+// Serve static files from the React app's build folder
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
+// Catch-all route: for any request that doesn't match above, send back React's index.html
 app.get('*', (req, res) => {
-  res.sendFile(
-    path.join(__dirname, '..', 'frontend', 'build', 'index.html')
-  );
+  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
 });
 
 // Error Handling Middleware (optional)

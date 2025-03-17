@@ -16,8 +16,10 @@ function authenticateToken(req, res, next) {
 
   jwt.verify(token, jwtSecret, (err, user) => {
     if (err) {
+      console.error("JWT verification error:", err);
       return res.sendStatus(403); // Forbidden
     }
+    console.log("Decoded JWT payload:", user); // Debug log to show decoded token
     req.user = user;
     next();
   });
