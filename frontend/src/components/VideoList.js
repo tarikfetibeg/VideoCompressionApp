@@ -1,54 +1,168 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import axiosInstance from '../axiosConfig';
 import { Link } from 'react-router-dom';
 import {
+  Alert,
   Box,
-  Typography,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemButton,
-  Divider,
-  Checkbox,
   Button,
-  FormControlLabel,
+  Card,
+  CardActions,
+  CardContent,
+  CardMedia,
+  Checkbox,
+  Chip,
   Dialog,
-  DialogTitle,
+  DialogActions,
   DialogContent,
   DialogContentText,
-  DialogActions,
+  DialogTitle,
+  Divider,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { UserContext } from '../contexts/UserContext';
 
-const VideoList = ({ showTimecodeOptions }) => {
+const formatBytes = (bytes) => {
+  if (!bytes || Number.isNaN(Number(bytes))) return 'N/A';
+
+  const value = Number(bytes);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+};
+
+const formatDate = (value) => {
+  if (!value) return 'N/A';
+  return new Date(value).toLocaleDateString();
+};
+
+const getUploaderName = (video) => video.uploader?.username || 'Unknown uploader';
+
+const VideoThumbnail = ({ videoId, title }) => {
+  const [src, setSrc] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+
+    axiosInstance
+      .get(`/videos/thumbnail/${videoId}`, { responseType: 'blob' })
+      .then((response) => {
+        objectUrl = URL.createObjectURL(response.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        setSrc('');
+      });
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [videoId]);
+
+  if (!src) {
+    return (
+      <Box
+        sx={{
+          height: 150,
+          bgcolor: 'grey.100',
+          color: 'text.secondary',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Typography variant="body2">No thumbnail</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <CardMedia
+      component="img"
+      height="150"
+      image={src}
+      alt={title}
+      sx={{ objectFit: 'cover' }}
+    />
+  );
+};
+
+const VideoList = () => {
   const [videos, setVideos] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [eventFilter, setEventFilter] = useState('all');
+  const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const { user } = useContext(UserContext);
 
   useEffect(() => {
-    console.log("DEBUG: VideoList mounted, calling fetchVideos()");
     fetchVideos();
   }, []);
 
   const fetchVideos = () => {
-    console.log("DEBUG: Starting fetchVideos()");
+    setMessage('');
+    setErrorMessage('');
+
     axiosInstance
       .get('/videos', { headers: { Accept: 'application/json' } })
       .then((response) => {
-        console.log("DEBUG: GET /videos response:", response.data);
         const data = Array.isArray(response.data) ? response.data : [];
-        console.log("DEBUG: Number of videos received:", data.length);
         setVideos(data);
       })
       .catch((error) => {
         console.error('Error fetching videos:', error);
+        setErrorMessage('Greška pri učitavanju videa.');
       });
   };
+
+  const eventOptions = useMemo(() => {
+    const events = videos.map((video) => video.event || 'No event');
+    return Array.from(new Set(events)).sort();
+  }, [videos]);
+
+  const filteredVideos = useMemo(() => {
+    const search = searchTerm.toLowerCase().trim();
+
+    return videos.filter((video) => {
+      const eventValue = video.event || 'No event';
+
+      const matchesEvent = eventFilter === 'all' || eventValue === eventFilter;
+
+      const matchesSearch =
+        !search ||
+        [
+          video.originalFilename,
+          video.filename,
+          video.event,
+          video.location,
+          video.status,
+          video.processingStatus,
+          getUploaderName(video),
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(search));
+
+      return matchesEvent && matchesSearch;
+    });
+  }, [videos, searchTerm, eventFilter]);
 
   const handleSelectVideo = (videoId) => {
     setSelectedVideos((prevSelected) =>
@@ -58,337 +172,306 @@ const VideoList = ({ showTimecodeOptions }) => {
     );
   };
 
+  const handleSelectAllFiltered = () => {
+    const filteredIds = filteredVideos.map((video) => video._id);
+    const allSelected = filteredIds.every((id) => selectedVideos.includes(id));
+
+    if (allSelected) {
+      setSelectedVideos((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      setSelectedVideos((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
   const handleDownloadSelected = () => {
     axiosInstance
-      .post(
-        '/videos/download',
-        { videoIds: selectedVideos },
-        { responseType: 'blob' }
-      )
+      .post('/videos/download', { videoIds: selectedVideos }, { responseType: 'blob' })
       .then((response) => {
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
+
         link.href = url;
         link.setAttribute('download', `videos_${Date.now()}.zip`);
         document.body.appendChild(link);
         link.click();
-        link.parentNode.removeChild(link);
+        link.remove();
+
+        window.URL.revokeObjectURL(url);
       })
       .catch((error) => {
         console.error('Error downloading videos:', error);
+        setErrorMessage('Greška pri skidanju odabranih videa.');
       });
   };
 
-  // Bulk delete function: use different endpoint for Admin vs. Reporter.
+  const handleDownloadSingle = (video) => {
+    axiosInstance
+      .get(`/videos/download/${video._id}`, { responseType: 'blob' })
+      .then((response) => {
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.setAttribute('download', video.originalFilename || video.filename || `video_${video._id}`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((error) => {
+        console.error('Error downloading video:', error);
+        setErrorMessage('Greška pri skidanju videa.');
+      });
+  };
+
   const handleBulkDelete = (videoIds) => {
-    if (user.role === 'Admin') {
-      Promise.all(
-        videoIds.map(id =>
-          axiosInstance.delete(`/admin/videos/${id}`)
-        )
-      )
-        .then(() => {
-          setVideos(videos.filter(video => !videoIds.includes(video._id)));
-          setSelectedVideos(selectedVideos.filter(id => !videoIds.includes(id)));
-        })
-        .catch(err => {
-          console.error('Error deleting videos:', err);
-        });
-    } else {
-      Promise.all(
-        videoIds.map(id =>
-          axiosInstance.delete(`/videos/${id}`)
-        )
-      )
-        .then(() => {
-          setVideos(videos.filter(video => !videoIds.includes(video._id)));
-          setSelectedVideos(selectedVideos.filter(id => !videoIds.includes(id)));
-        })
-        .catch(err => {
-          console.error('Error deleting videos:', err);
-        });
-    }
+    const endpoint = user.role === 'Admin' ? '/admin/videos' : '/videos';
+
+    Promise.all(videoIds.map((id) => axiosInstance.delete(`${endpoint}/${id}`)))
+      .then(() => {
+        setVideos((prev) => prev.filter((video) => !videoIds.includes(video._id)));
+        setSelectedVideos([]);
+        setMessage('Odabrani video materijali su obrisani.');
+        setErrorMessage('');
+      })
+      .catch((err) => {
+        console.error('Error deleting videos:', err);
+        setErrorMessage('Greška pri brisanju odabranih videa.');
+      });
   };
 
-  // Helper for group selection
-  const handleGroupSelect = (groupVideos) => {
-    const groupIds = groupVideos.map(video => video._id);
-    const allSelected = groupIds.every(id => selectedVideos.includes(id));
-    if (allSelected) {
-      setSelectedVideos(prev => prev.filter(id => !groupIds.includes(id)));
-    } else {
-      setSelectedVideos(prev => Array.from(new Set([...prev, ...groupIds])));
-    }
-  };
+  const handleDeleteSingle = (videoId) => {
+    const endpoint = user.role === 'Admin' ? '/admin/videos' : '/videos';
 
-  // Group videos conditionally:
-  // For Admin: group by uploader, then event -> location -> date.
-  // For Reporter: group by event -> location -> date.
-  let groupedVideos = {};
-  if (user.role === 'Admin') {
-    videos.forEach(video => {
-      const uploaderKey = video.uploader?.username || 'Unknown Uploader';
-      const eventKey = video.event || 'No Event';
-      const locationKey = video.location || 'No Location';
-      const dateKey = video.tagDate ? new Date(video.tagDate).toLocaleDateString() : 'No Date';
-      if (!groupedVideos[uploaderKey]) groupedVideos[uploaderKey] = {};
-      if (!groupedVideos[uploaderKey][eventKey]) groupedVideos[uploaderKey][eventKey] = {};
-      if (!groupedVideos[uploaderKey][eventKey][locationKey]) groupedVideos[uploaderKey][eventKey][locationKey] = {};
-      if (!groupedVideos[uploaderKey][eventKey][locationKey][dateKey]) groupedVideos[uploaderKey][eventKey][locationKey][dateKey] = [];
-      groupedVideos[uploaderKey][eventKey][locationKey][dateKey].push(video);
-    });
-  } else {
-    videos.forEach(video => {
-      const eventKey = video.event || 'No Event';
-      const locationKey = video.location || 'No Location';
-      const dateKey = video.tagDate ? new Date(video.tagDate).toLocaleDateString() : 'No Date';
-      if (!groupedVideos[eventKey]) groupedVideos[eventKey] = {};
-      if (!groupedVideos[eventKey][locationKey]) groupedVideos[eventKey][locationKey] = {};
-      if (!groupedVideos[eventKey][locationKey][dateKey]) groupedVideos[eventKey][locationKey][dateKey] = [];
-      groupedVideos[eventKey][locationKey][dateKey].push(video);
-    });
-  }
-
-  // Render grouped view
-  const renderGroupedView = () => {
-    if (user.role === 'Admin') {
-      // Admin view: group by uploader first
-      return Object.keys(groupedVideos).map(uploaderKey => (
-        <Accordion key={uploaderKey} defaultExpanded>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const groupVideos = Object.values(groupedVideos[uploaderKey])
-                      .flatMap(eventGroup => Object.values(eventGroup))
-                      .flatMap(locationGroup => Object.values(locationGroup))
-                      .flat();
-                    handleGroupSelect(groupVideos);
-                  }}
-                  checked={Object.values(groupedVideos[uploaderKey])
-                    .flatMap(eventGroup => Object.values(eventGroup))
-                    .flatMap(locationGroup => Object.values(locationGroup))
-                    .flat().every(video => selectedVideos.includes(video._id))}
-                />
-              }
-              label={<Typography variant="h6">{uploaderKey}</Typography>}
-            />
-          </AccordionSummary>
-          <AccordionDetails>
-            {Object.keys(groupedVideos[uploaderKey]).map(eventKey => (
-              <Accordion key={eventKey} defaultExpanded sx={{ ml: 2 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const groupVideos = Object.values(groupedVideos[uploaderKey][eventKey])
-                            .flatMap(locationGroup => Object.values(locationGroup))
-                            .flat();
-                          handleGroupSelect(groupVideos);
-                        }}
-                        checked={Object.values(groupedVideos[uploaderKey][eventKey])
-                          .flatMap(locationGroup => Object.values(locationGroup))
-                          .flat().every(video => selectedVideos.includes(video._id))}
-                      />
-                    }
-                    label={<Typography variant="subtitle1">{eventKey}</Typography>}
-                  />
-                </AccordionSummary>
-                <AccordionDetails>
-                  {Object.keys(groupedVideos[uploaderKey][eventKey]).map(locationKey => (
-                    <Accordion key={locationKey} defaultExpanded sx={{ ml: 4 }}>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const groupVideos = Object.values(groupedVideos[uploaderKey][eventKey][locationKey]).flat();
-                                handleGroupSelect(groupVideos);
-                              }}
-                              checked={Object.values(groupedVideos[uploaderKey][eventKey][locationKey])
-                                .flat().every(video => selectedVideos.includes(video._id))}
-                            />
-                          }
-                          label={<Typography variant="subtitle2">{locationKey}</Typography>}
-                        />
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        {Object.keys(groupedVideos[uploaderKey][eventKey][locationKey]).map(dateKey => (
-                          <Accordion key={dateKey} defaultExpanded sx={{ ml: 6 }}>
-                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                              <FormControlLabel
-                                control={
-                                  <Checkbox
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleGroupSelect(groupedVideos[uploaderKey][eventKey][locationKey][dateKey]);
-                                    }}
-                                    checked={groupedVideos[uploaderKey][eventKey][locationKey][dateKey].every(video => selectedVideos.includes(video._id))}
-                                  />
-                                }
-                                label={<Typography variant="subtitle2">{dateKey}</Typography>}
-                              />
-                            </AccordionSummary>
-                            <AccordionDetails>
-                              <List>
-                                {groupedVideos[uploaderKey][eventKey][locationKey][dateKey].map((video) => (
-                                  <React.Fragment key={video._id}>
-                                    <ListItem disablePadding>
-                                      <FormControlLabel
-                                        control={
-                                          <Checkbox
-                                            checked={selectedVideos.includes(video._id)}
-                                            onChange={() => handleSelectVideo(video._id)}
-                                          />
-                                        }
-                                        label=""
-                                      />
-                                      <ListItemButton component={Link} to={`/video-details/${video._id}`}>
-                                        <ListItemText
-                                          primary={video.originalFilename || video.filename}
-                                          secondary={video.status && `Status: ${video.status}`}
-                                        />
-                                      </ListItemButton>
-                                    </ListItem>
-                                    <Divider />
-                                  </React.Fragment>
-                                ))}
-                              </List>
-                            </AccordionDetails>
-                          </Accordion>
-                        ))}
-                      </AccordionDetails>
-                    </Accordion>
-                  ))}
-                </AccordionDetails>
-              </Accordion>
-            ))}
-          </AccordionDetails>
-        </Accordion>
-      ));
-    } else {
-      // Reporter view: group by event -> location -> date.
-      return Object.keys(groupedVideos).map((eventKey) => (
-        <Accordion key={eventKey} defaultExpanded>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const groupVideos = Object.values(groupedVideos[eventKey])
-                      .flatMap(locationGroup => Object.values(locationGroup))
-                      .flat();
-                    handleGroupSelect(groupVideos);
-                  }}
-                  checked={Object.values(groupedVideos[eventKey])
-                    .flatMap(locationGroup => Object.values(locationGroup))
-                    .flat().every(video => selectedVideos.includes(video._id))}
-                />
-              }
-              label={<Typography variant="h6">{eventKey}</Typography>}
-            />
-          </AccordionSummary>
-          <AccordionDetails>
-            {Object.keys(groupedVideos[eventKey]).map((locationKey) => (
-              <Accordion key={locationKey} defaultExpanded sx={{ ml: 2 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="subtitle1">{locationKey}</Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  {Object.keys(groupedVideos[eventKey][locationKey]).map((dateKey) => (
-                    <Accordion key={dateKey} defaultExpanded sx={{ ml: 4 }}>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Typography variant="subtitle2">{dateKey}</Typography>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        <List>
-                          {groupedVideos[eventKey][locationKey][dateKey].map((video) => (
-                            <React.Fragment key={video._id}>
-                              <ListItem disablePadding>
-                                <FormControlLabel
-                                  control={
-                                    <Checkbox
-                                      checked={selectedVideos.includes(video._id)}
-                                      onChange={() => handleSelectVideo(video._id)}
-                                    />
-                                  }
-                                  label=""
-                                />
-                                <ListItemButton component={Link} to={`/video-details/${video._id}`}>
-                                  <ListItemText
-                                    primary={video.originalFilename || video.filename}
-                                    secondary={video.status && `Status: ${video.status}`}
-                                  />
-                                </ListItemButton>
-                              </ListItem>
-                              <Divider />
-                            </React.Fragment>
-                          ))}
-                        </List>
-                      </AccordionDetails>
-                    </Accordion>
-                  ))}
-                </AccordionDetails>
-              </Accordion>
-            ))}
-          </AccordionDetails>
-        </Accordion>
-      ));
-    }
+    axiosInstance
+      .delete(`${endpoint}/${videoId}`)
+      .then(() => {
+        setVideos((prev) => prev.filter((video) => video._id !== videoId));
+        setSelectedVideos((prev) => prev.filter((id) => id !== videoId));
+        setMessage('Video je obrisan.');
+      })
+      .catch((err) => {
+        console.error('Error deleting video:', err);
+        setErrorMessage('Greška pri brisanju videa.');
+      });
   };
 
   return (
     <Box sx={{ mt: 4 }}>
-      <Typography variant="h5">Videos</Typography>
-      {selectedVideos.length > 0 && (
-        <Box sx={{ mb: 2 }}>
-          <Button variant="contained" color="primary" onClick={handleDownloadSelected}>
-            Download Selected ({selectedVideos.length})
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            sx={{ ml: 2 }}
-            onClick={() => setConfirmOpen(true)}
-          >
-            Delete Selected ({selectedVideos.length})
-          </Button>
-        </Box>
-      )}
-      {videos.length === 0 ? (
-        <Typography>No videos available.</Typography>
-      ) : (
-        renderGroupedView()
-      )}
-      <Dialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'flex-start', md: 'center' }}
+        spacing={2}
+        sx={{ mb: 3 }}
       >
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 800 }}>
+            Videos
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Pregled, preview, skidanje i brisanje dostupnih video materijala.
+          </Typography>
+        </Box>
+
+        <Button variant="outlined" onClick={fetchVideos}>
+          Refresh
+        </Button>
+      </Stack>
+
+      {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
+      {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Search"
+              fullWidth
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Filename, event, location..."
+            />
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Event</InputLabel>
+              <Select
+                value={eventFilter}
+                label="Event"
+                onChange={(e) => setEventFilter(e.target.value)}
+              >
+                <MenuItem value="all">All events</MenuItem>
+                {eventOptions.map((eventName) => (
+                  <MenuItem key={eventName} value={eventName}>
+                    {eventName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={12} md={2}>
+            <Button fullWidth variant="outlined" onClick={handleSelectAllFiltered}>
+              Select
+            </Button>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {selectedVideos.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
+            <Typography sx={{ fontWeight: 700 }}>
+              Selected: {selectedVideos.length}
+            </Typography>
+            <Button variant="contained" onClick={handleDownloadSelected}>
+              Download Selected
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={() => setConfirmOpen(true)}
+            >
+              Delete Selected
+            </Button>
+          </Stack>
+        </Paper>
+      )}
+
+      {filteredVideos.length === 0 ? (
+        <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
+          <Typography variant="h6">No videos available</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Nema video materijala za trenutni prikaz.
+          </Typography>
+        </Paper>
+      ) : (
+        <Grid container spacing={3}>
+          {filteredVideos.map((video) => {
+            const selected = selectedVideos.includes(video._id);
+
+            return (
+              <Grid item xs={12} md={6} lg={4} key={video._id}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                    height: '100%',
+                    borderColor: selected ? 'primary.main' : 'divider',
+                    boxShadow: selected ? 3 : 0,
+                  }}
+                >
+                  <Box sx={{ position: 'relative' }}>
+                    <VideoThumbnail
+                      videoId={video._id}
+                      title={video.originalFilename || video.filename}
+                    />
+                    <Checkbox
+                      checked={selected}
+                      onChange={() => handleSelectVideo(video._id)}
+                      sx={{
+                        position: 'absolute',
+                        top: 8,
+                        left: 8,
+                        bgcolor: 'background.paper',
+                        borderRadius: 1,
+                      }}
+                    />
+                  </Box>
+
+                  <CardContent>
+                    <Typography variant="h6" sx={{ fontWeight: 800 }} noWrap>
+                      {video.originalFilename || video.filename}
+                    </Typography>
+
+                    <Typography variant="body2" color="text.secondary" noWrap>
+                      {video.event || 'No event'} • {video.location || 'No location'}
+                    </Typography>
+
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+                      <Chip label={video.status || 'N/A'} size="small" />
+                      <Chip
+                        label={video.processingStatus || 'N/A'}
+                        size="small"
+                        color={video.processingStatus === 'completed' ? 'success' : 'default'}
+                      />
+                      {video.previewPath && <Chip label="Preview ready" size="small" color="primary" />}
+                    </Stack>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Grid container spacing={1}>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Date</Typography>
+                        <Typography variant="body2">{formatDate(video.tagDate || video.uploadDate)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Uploader</Typography>
+                        <Typography variant="body2" noWrap>{getUploaderName(video)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Master</Typography>
+                        <Typography variant="body2">{formatBytes(video.sizeCompressed)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Preview</Typography>
+                        <Typography variant="body2">{formatBytes(video.sizePreview)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Codec</Typography>
+                        <Typography variant="body2" noWrap>{video.codec || 'N/A'}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Resolution</Typography>
+                        <Typography variant="body2">{video.resolution || 'N/A'}</Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+
+                  <CardActions sx={{ px: 2, pb: 2 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      component={Link}
+                      to={`/video-details/${video._id}`}
+                    >
+                      Preview
+                    </Button>
+                    <Button size="small" variant="outlined" onClick={() => handleDownloadSingle(video)}>
+                      Download
+                    </Button>
+                    <Button size="small" color="error" onClick={() => handleDeleteSingle(video._id)}>
+                      Delete
+                    </Button>
+                  </CardActions>
+                </Card>
+              </Grid>
+            );
+          })}
+        </Grid>
+      )}
+
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete the following videos?
+            Are you sure you want to delete {selectedVideos.length} selected video(s)?
           </DialogContentText>
-          <ul>
-            {videos
-              .filter(video => selectedVideos.includes(video._id))
-              .map(video => (
-                <li key={video._id}>{video.originalFilename || video.filename}</li>
-              ))}
-          </ul>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={() => {
-            handleBulkDelete(selectedVideos);
-            setConfirmOpen(false);
-          }} color="error">
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              handleBulkDelete(selectedVideos);
+              setConfirmOpen(false);
+            }}
+          >
             Confirm Delete
           </Button>
         </DialogActions>
