@@ -191,21 +191,35 @@ router.post(
             frameRate,
           });
 
-          const outputStats = fs.existsSync(outputPath)
-            ? fs.statSync(outputPath)
-            : null;
+const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
 
-          const videoDoc = new Video({
-            filename: outputFilename,
-            filepath: outputPath,
-            uploader: req.user.id,
-            event: tagEvent,
-            location: tagLocation,
-            tagDate: new Date(tagDate),
-            status: 'raw',
-            originalFilename: file.originalname,
-            uploadDate: new Date(),
-          });
+const videoDoc = new Video({
+  filename: outputFilename,
+  filepath: outputPath,
+  originalFilename: file.originalname,
+
+  rawPath: rawVideoPath,
+  compressedPath: outputPath,
+
+  uploader: req.user.id,
+  event: tagEvent,
+  location: tagLocation,
+  tagDate: new Date(tagDate),
+
+  status: 'raw',
+  processingStatus: 'completed',
+
+  codec: ffmpegCodec,
+  resolution: resolutionValue,
+  bitrate: bitrateKbps,
+  framerate: frameRate,
+
+  sizeOriginal: inputStats ? inputStats.size : null,
+  sizeCompressed: outputStats ? outputStats.size : null,
+
+  uploadDate: new Date(),
+});
 
           await videoDoc.save();
           videosProcessed.push(videoDoc);
@@ -287,17 +301,35 @@ router.post(
               frameRate,
             });
 
-            const videoDoc = new Video({
-              filename: outputFilename,
-              filepath: outputPath,
-              uploader: req.user.id,
-              event: rawVideo.event,
-              location: rawVideo.location,
-              tagDate: rawVideo.tagDate,
-              status: 'edited',
-              originalFilename: file.originalname,
-              uploadDate: new Date(),
-            });
+const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+
+const videoDoc = new Video({
+  filename: outputFilename,
+  filepath: outputPath,
+  originalFilename: file.originalname,
+
+  rawPath: rawVideoPath,
+  compressedPath: outputPath,
+
+  uploader: req.user.id,
+  event: rawVideo.event,
+  location: rawVideo.location,
+  tagDate: rawVideo.tagDate,
+
+  status: 'edited',
+  processingStatus: 'completed',
+
+  codec: ffmpegCodec,
+  resolution: resolutionValue,
+  bitrate: bitrateKbps,
+  framerate: frameRate,
+
+  sizeOriginal: inputStats ? inputStats.size : null,
+  sizeCompressed: outputStats ? outputStats.size : null,
+
+  uploadDate: new Date(),
+});
 
             await videoDoc.save();
             videosProcessed.push(videoDoc);
@@ -351,19 +383,29 @@ router.post(
 
             fs.renameSync(rawVideoPath, outputPath);
 
-            const videoDoc = new Video({
-              filename: outputFilename,
-              filepath: outputPath,
-              uploader: req.user.id,
-              event: tagEvent,
-              location: tagLocation,
-              tagDate: new Date(tagDate),
-              status: 'edited',
-              finalCategory,
-              keywords,
-              originalFilename: file.originalname,
-              uploadDate: new Date(),
-            });
+const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+
+const videoDoc = new Video({
+  filename: outputFilename,
+  filepath: outputPath,
+  originalFilename: file.originalname,
+
+  uploader: req.user.id,
+  event: tagEvent,
+  location: tagLocation,
+  tagDate: new Date(tagDate),
+
+  status: 'edited',
+  processingStatus: 'completed',
+
+  finalCategory,
+  keywords,
+
+  sizeOriginal: outputStats ? outputStats.size : null,
+  sizeCompressed: outputStats ? outputStats.size : null,
+
+  uploadDate: new Date(),
+});
 
             await videoDoc.save();
             videosProcessed.push(videoDoc);
