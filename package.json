@@ -6,8 +6,11 @@
   },
   "scripts": {
     "start": "node backend/app.js",
+    "start:all": "node scripts/startAll.js",
     "start:dev": "cross-env NODE_ENV=development node backend/app.js",
     "start:prod": "cross-env NODE_ENV=production node backend/app.js",
+    "worker:video": "node backend/workers/videoWorker.js",
+    "admin:create": "node backend/scripts/createAdmin.js",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend"
   },
   "dependencies": {

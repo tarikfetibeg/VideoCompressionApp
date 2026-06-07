@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import axiosInstance from '../axiosConfig';
 import SearchAndFilterComponent from '../components/editor/SearchAndFilterComponent';
 import VideoListComponent from '../components/editor/VideoListComponent';
 import VideoUploadComponent from '../components/editor/VideoUploadComponent';
 import BulkActionsComponent from '../components/editor/BulkActionsComponent';
+import { UserContext } from '../contexts/UserContext';
 
 const EditorDashboard = () => {
+  const { user } = useContext(UserContext);
   const [videos, setVideos] = useState([]);
   const [filters, setFilters] = useState({ event: '', location: '', date: '', uploader: '', keywords: '' });
   const [selectedVideos, setSelectedVideos] = useState([]);
@@ -39,7 +41,7 @@ const EditorDashboard = () => {
       <Typography variant="h4" gutterBottom>Editor Dashboard</Typography>
       
       {/* Upload Component for Edited Videos */}
-      <VideoUploadComponent />
+      {user?.role === 'Editor' && <VideoUploadComponent />}
       
       {/* Search and Filter Panel */}
       <SearchAndFilterComponent filters={filters} setFilters={setFilters} reporterOptions={reporterOptions} />

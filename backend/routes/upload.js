@@ -5,7 +5,6 @@ const AuditLog = require('../models/AuditLog');
 const FfmpegSettings = require('../models/FfmpegSettings');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
-const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const {
@@ -15,6 +14,7 @@ const {
   createMp4Filename,
   createJpgFilename,
 } = require('../utils/storagePaths');
+const { enqueueVideoProcessing } = require('../queues/videoQueue');
 
 const router = express.Router();
 
@@ -40,8 +40,6 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  console.log(`File Filter: Received file ${file.originalname} with mimetype ${file.mimetype}`);
-
   if (allowedMimetypes.includes(file.mimetype)) {
     return cb(null, true);
   }
@@ -104,12 +102,6 @@ function getFrameRate(value) {
   return parsed || 30;
 }
 
-function removeFileIfExists(filePath) {
-  if (filePath && fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
-}
-
 async function getRawRetentionDays() {
   const settings = await FfmpegSettings.findOne({});
   const value = settings && Number.isInteger(settings.rawRetentionDays)
@@ -140,90 +132,18 @@ function buildRawRetentionInfo(rawRetentionDays) {
   };
 }
 
-function convertVideo({
-  inputPath,
-  outputPath,
-  codec,
-  resolution,
-  bitrateKbps,
-  frameRate,
-}) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .videoCodec(codec)
-      .audioCodec('aac')
-      .size(resolution)
-      .videoBitrate(bitrateKbps)
-      .audioBitrate('128k')
-      .fps(frameRate)
-      .outputOptions([
-        '-pix_fmt yuv420p',
-        '-movflags +faststart',
-      ])
-      .on('start', (cmd) => {
-        console.log('FFmpeg started with command:', cmd);
-      })
-      .on('end', () => {
-        console.log(`FFmpeg finished conversion: ${outputPath}`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error('FFmpeg error:', err);
-        reject(err);
-      })
-      .save(outputPath);
-  });
-}
-
-function convertPreviewVideo({ inputPath, outputPath }) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .size('1280x720')
-      .videoBitrate(2000)
-      .audioBitrate('128k')
-      .fps(30)
-      .outputOptions([
-        '-pix_fmt yuv420p',
-        '-movflags +faststart',
-        '-preset veryfast',
-      ])
-      .on('start', (cmd) => {
-        console.log('FFmpeg preview started with command:', cmd);
-      })
-      .on('end', () => {
-        console.log(`FFmpeg preview finished: ${outputPath}`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error('FFmpeg preview error:', err);
-        reject(err);
-      })
-      .save(outputPath);
-  });
-}
-
-function createThumbnail({ inputPath, outputPath }) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .seekInput('00:00:01')
-      .frames(1)
-      .size('640x360')
-      .outputOptions(['-q:v 3'])
-      .on('start', (cmd) => {
-        console.log('FFmpeg thumbnail started with command:', cmd);
-      })
-      .on('end', () => {
-        console.log(`Thumbnail created: ${outputPath}`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error('Thumbnail generation error:', err);
-        reject(err);
-      })
-      .save(outputPath);
-  });
+async function enqueueOrMarkFailed(videoDoc) {
+  try {
+    const job = await enqueueVideoProcessing(videoDoc._id);
+    videoDoc.processingJobId = job.id.toString();
+    return job;
+  } catch (error) {
+    videoDoc.processingStatus = 'failed';
+    videoDoc.processingError = `Failed to queue video processing: ${error.message}`;
+    videoDoc.processingCompletedAt = new Date();
+    await videoDoc.save();
+    throw error;
+  }
 }
 
 router.post(
@@ -271,43 +191,14 @@ router.post(
           const bitrateKbps = getBitrateKbps(req.body.bitrate);
           const frameRate = getFrameRate(req.body.framerate);
 
-          console.log(`Starting FFmpeg conversion for ${file.originalname}`);
-          console.log('Using codec:', ffmpegCodec);
-          console.log('Using resolution:', resolutionValue);
-          console.log('Using bitrate:', bitrateKbps);
-          console.log('Using framerate:', frameRate);
-
           const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
-
-          await convertVideo({
-            inputPath: rawVideoPath,
-            outputPath,
-            codec: ffmpegCodec,
-            resolution: resolutionValue,
-            bitrateKbps,
-            frameRate,
-          });
-
-          await convertPreviewVideo({
-            inputPath: rawVideoPath,
-            outputPath: previewPath,
-          });
-
-          await createThumbnail({
-            inputPath: rawVideoPath,
-            outputPath: thumbnailPath,
-          });
-
-          const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
-          const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
-          const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
 
           const videoDoc = new Video({
             filename: outputFilename,
             filepath: outputPath,
             originalFilename: file.originalname,
 
-            rawPath: rawRetentionInfo.keepRaw ? rawVideoPath : null,
+            rawPath: rawVideoPath,
             compressedPath: outputPath,
             previewPath,
             thumbnailPath,
@@ -318,7 +209,9 @@ router.post(
             tagDate: new Date(tagDate),
 
             status: 'raw',
-            processingStatus: 'completed',
+            processingStatus: 'queued',
+            processingMode: 'transcode',
+            processingProgress: 0,
 
             codec: ffmpegCodec,
             resolution: resolutionValue,
@@ -326,19 +219,20 @@ router.post(
             framerate: frameRate,
 
             sizeOriginal: inputStats ? inputStats.size : null,
-            sizeCompressed: outputStats ? outputStats.size : null,
-            sizePreview: previewStats ? previewStats.size : null,
-            sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+            sizeCompressed: null,
+            sizePreview: null,
+            sizeThumbnail: null,
 
             rawRetentionDays: rawRetentionInfo.rawRetentionDays,
             rawExpiresAt: rawRetentionInfo.rawExpiresAt,
-            rawDeleted: !rawRetentionInfo.keepRaw,
-            rawDeletedAt: rawRetentionInfo.keepRaw ? null : new Date(),
+            rawDeleted: false,
+            rawDeletedAt: null,
 
             uploadDate: new Date(),
           });
 
           await videoDoc.save();
+          const job = await enqueueOrMarkFailed(videoDoc);
           videosProcessed.push(videoDoc);
 
           auditDetails.push({
@@ -352,14 +246,8 @@ router.post(
             frameRate,
             rawRetentionDays: rawRetentionInfo.rawRetentionDays,
             rawExpiresAt: rawRetentionInfo.rawExpiresAt,
-            outputSize: outputStats ? outputStats.size : null,
-            previewSize: previewStats ? previewStats.size : null,
-            thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
+            processingJobId: job.id.toString(),
           });
-
-          if (!rawRetentionInfo.keepRaw) {
-            removeFileIfExists(rawVideoPath);
-          }
         }
 
         await AuditLog.create({
@@ -419,37 +307,12 @@ router.post(
             const frameRate = getFrameRate(req.body.framerate);
             const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
 
-            console.log(`Starting FFmpeg conversion for ${file.originalname}`);
-
-            await convertVideo({
-              inputPath: rawVideoPath,
-              outputPath,
-              codec: ffmpegCodec,
-              resolution: resolutionValue,
-              bitrateKbps,
-              frameRate,
-            });
-
-            await convertPreviewVideo({
-              inputPath: rawVideoPath,
-              outputPath: previewPath,
-            });
-
-            await createThumbnail({
-              inputPath: rawVideoPath,
-              outputPath: thumbnailPath,
-            });
-
-            const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
-            const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
-            const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
-
             const videoDoc = new Video({
               filename: outputFilename,
               filepath: outputPath,
               originalFilename: file.originalname,
 
-              rawPath: rawRetentionInfo.keepRaw ? rawVideoPath : null,
+              rawPath: rawVideoPath,
               compressedPath: outputPath,
               previewPath,
               thumbnailPath,
@@ -460,7 +323,9 @@ router.post(
               tagDate: rawVideo.tagDate,
 
               status: 'edited',
-              processingStatus: 'completed',
+              processingStatus: 'queued',
+              processingMode: 'transcode',
+              processingProgress: 0,
 
               codec: ffmpegCodec,
               resolution: resolutionValue,
@@ -468,24 +333,21 @@ router.post(
               framerate: frameRate,
 
               sizeOriginal: inputStats ? inputStats.size : null,
-              sizeCompressed: outputStats ? outputStats.size : null,
-              sizePreview: previewStats ? previewStats.size : null,
-              sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+              sizeCompressed: null,
+              sizePreview: null,
+              sizeThumbnail: null,
 
               rawRetentionDays: rawRetentionInfo.rawRetentionDays,
               rawExpiresAt: rawRetentionInfo.rawExpiresAt,
-              rawDeleted: !rawRetentionInfo.keepRaw,
-              rawDeletedAt: rawRetentionInfo.keepRaw ? null : new Date(),
+              rawDeleted: false,
+              rawDeletedAt: null,
 
               uploadDate: new Date(),
             });
 
             await videoDoc.save();
+            const job = await enqueueOrMarkFailed(videoDoc);
             videosProcessed.push(videoDoc);
-
-            if (!rawRetentionInfo.keepRaw) {
-              removeFileIfExists(rawVideoPath);
-            }
 
             auditDetails.push({
               originalFilename: file.originalname,
@@ -494,9 +356,7 @@ router.post(
               previewFilename,
               thumbnailFilename,
               rawRetentionDays: rawRetentionInfo.rawRetentionDays,
-              outputSize: outputStats ? outputStats.size : null,
-              previewSize: previewStats ? previewStats.size : null,
-              thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
+              processingJobId: job.id.toString(),
             });
           }
 
@@ -541,28 +401,12 @@ router.post(
 
             const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
 
-            await convertPreviewVideo({
-              inputPath: rawVideoPath,
-              outputPath: previewPath,
-            });
-
-            await createThumbnail({
-              inputPath: rawVideoPath,
-              outputPath: thumbnailPath,
-            });
-
-            fs.renameSync(rawVideoPath, outputPath);
-
-            const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
-            const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
-            const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
-
             const videoDoc = new Video({
               filename: outputFilename,
               filepath: outputPath,
               originalFilename: file.originalname,
 
-              rawPath: outputPath,
+              rawPath: rawVideoPath,
               compressedPath: outputPath,
               previewPath,
               thumbnailPath,
@@ -573,15 +417,17 @@ router.post(
               tagDate: new Date(tagDate),
 
               status: 'edited',
-              processingStatus: 'completed',
+              processingStatus: 'queued',
+              processingMode: 'finalize',
+              processingProgress: 0,
 
               finalCategory,
               keywords,
 
               sizeOriginal: inputStats ? inputStats.size : null,
-              sizeCompressed: outputStats ? outputStats.size : null,
-              sizePreview: previewStats ? previewStats.size : null,
-              sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+              sizeCompressed: null,
+              sizePreview: null,
+              sizeThumbnail: null,
 
               rawRetentionDays: 0,
               rawExpiresAt: null,
@@ -592,6 +438,7 @@ router.post(
             });
 
             await videoDoc.save();
+            const job = await enqueueOrMarkFailed(videoDoc);
             videosProcessed.push(videoDoc);
 
             auditDetails.push({
@@ -600,9 +447,7 @@ router.post(
               previewFilename,
               thumbnailFilename,
               finalCategory,
-              outputSize: outputStats ? outputStats.size : null,
-              previewSize: previewStats ? previewStats.size : null,
-              thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
+              processingJobId: job.id.toString(),
             });
           }
 
@@ -623,8 +468,8 @@ router.post(
         }
       }
 
-      return res.status(200).json({
-        message: 'Upload, compression, preview, thumbnail, and tagging successful',
+      return res.status(202).json({
+        message: 'Upload accepted. Video processing has been queued.',
         videos: videosProcessed,
       });
     } catch (error) {

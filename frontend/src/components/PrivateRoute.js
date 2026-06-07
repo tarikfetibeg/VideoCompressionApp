@@ -4,7 +4,6 @@ import { UserContext } from '../contexts/UserContext';
 
 const PrivateRoute = ({ roles, children }) => {
   const { user } = useContext(UserContext);
-  console.log('PrivateRoute: user role is', user ? user.role : 'No user');
 
   if (!user) {
     return <Navigate to="/login" />;

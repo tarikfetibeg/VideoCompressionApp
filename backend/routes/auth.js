@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 
-const jwtSecret = process.env.JWT_SECRET || 'your_secret_key'; // Ensure this is consistent across your app
+const jwtSecret = process.env.JWT_SECRET;
 
 // Login Route
 router.post('/login', async (req, res) => {
@@ -48,6 +48,14 @@ router.post('/login', async (req, res) => {
 // Register Route
 router.post('/register', async (req, res) => {
   const { username, password } = req.body;
+
+  if (process.env.ALLOW_PUBLIC_REGISTRATION !== 'true') {
+    return res.status(403).json({ message: 'Public registration is disabled.' });
+  }
+
+  if (!username || !password || password.length < 8) {
+    return res.status(400).json({ message: 'Username and password with at least 8 characters are required.' });
+  }
 
   try {
     // Check if username already exists

@@ -28,7 +28,43 @@ const VideoSchema = new mongoose.Schema({
     default: 'completed',
   },
 
+  processingMode: {
+    type: String,
+    enum: ['transcode', 'finalize'],
+    default: 'transcode',
+  },
+  processingJobId: { type: String },
+  processingProgress: { type: Number, default: 0 },
+  processingStartedAt: { type: Date },
+  processingCompletedAt: { type: Date },
   processingError: { type: String },
+
+  qcStatus: {
+    type: String,
+    enum: ['pending', 'passed', 'failed'],
+    default: 'pending',
+  },
+  qcNotes: { type: String },
+  qcCheckedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  qcCheckedAt: { type: Date },
+
+  broadcastStatus: {
+    type: String,
+    enum: [
+      'not_ready',
+      'qc_pending',
+      'qc_failed',
+      'ready_for_approval',
+      'approved_for_air',
+      'aired',
+      'archived',
+    ],
+    default: 'not_ready',
+  },
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approvedAt: { type: Date },
+  airedAt: { type: Date },
+  archivedAt: { type: Date },
 
   rawPath: { type: String },
   compressedPath: { type: String },

@@ -20,6 +20,7 @@ import {
   FormControl,
   Grid,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -51,6 +52,9 @@ const formatDate = (value) => {
 };
 
 const getUploaderName = (video) => video.uploader?.username || 'Unknown uploader';
+
+const shouldShowProcessingProgress = (video) =>
+  ['queued', 'processing'].includes(video.processingStatus);
 
 const VideoThumbnail = ({ videoId, title }) => {
   const [src, setSrc] = useState('');
@@ -397,10 +401,34 @@ const VideoList = () => {
                       <Chip
                         label={video.processingStatus || 'N/A'}
                         size="small"
-                        color={video.processingStatus === 'completed' ? 'success' : 'default'}
+                        color={
+                          video.processingStatus === 'completed'
+                            ? 'success'
+                            : video.processingStatus === 'failed'
+                              ? 'error'
+                              : 'default'
+                        }
                       />
                       {video.previewPath && <Chip label="Preview ready" size="small" color="primary" />}
                     </Stack>
+
+                    {shouldShowProcessingProgress(video) && (
+                      <Box sx={{ mt: 1.5 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Number(video.processingProgress) || 0}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          Processing: {Number(video.processingProgress) || 0}%
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {video.processingStatus === 'failed' && video.processingError && (
+                      <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                        {video.processingError}
+                      </Typography>
+                    )}
 
                     <Divider sx={{ my: 2 }} />
 

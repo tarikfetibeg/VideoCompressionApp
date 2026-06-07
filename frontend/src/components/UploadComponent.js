@@ -36,7 +36,6 @@ const UploadComponent = () => {
         headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
       })
       .then((response) => {
-        console.log('DEBUG: Fetched default FFmpeg settings:', response.data);
         const defaults = response.data;
         // Map backend "hevc_nvenc" to frontend "h265_nvenc"
         const defaultCodec = defaults.codec === 'hevc_nvenc' ? 'h265_nvenc' : defaults.codec;
@@ -98,7 +97,7 @@ const UploadComponent = () => {
         },
       })
       .then((response) => {
-        setMessage('Upload successful.');
+        setMessage(response.data?.message || 'Upload accepted for processing.');
         setUploadProgress(0);
         setFiles([]);
         setEventTag('');

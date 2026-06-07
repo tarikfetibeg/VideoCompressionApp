@@ -19,7 +19,6 @@ function authenticateToken(req, res, next) {
       console.error("JWT verification error:", err);
       return res.sendStatus(403); // Forbidden
     }
-    console.log("Decoded JWT payload:", user); // Debug log 
     req.user = user;
     next();
   });

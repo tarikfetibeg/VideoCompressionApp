@@ -6,6 +6,7 @@ import {
   TableCell,
   TableBody,
   Button,
+  Box,
   FormControl,
   InputLabel,
   Select,
@@ -16,6 +17,7 @@ import {
   TextField,
   DialogActions,
   Alert,
+  Typography,
 } from '@mui/material';
 import axiosInstance from '../../axiosConfig';
 
@@ -24,8 +26,12 @@ const roles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState('Reporter');
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -49,6 +55,27 @@ const UserManagement = () => {
       .catch(err => {
         console.error('Error updating role:', err);
         setErrorMessage('Error updating role.');
+      });
+  };
+
+  const handleCreateUser = () => {
+    axiosInstance.post('/admin/users', {
+      username: newUsername,
+      password: newUserPassword,
+      role: newUserRole,
+    })
+      .then(response => {
+        setUsers([...users, response.data.user]);
+        setMessage('User created successfully.');
+        setErrorMessage('');
+        setCreateDialogOpen(false);
+        setNewUsername('');
+        setNewUserPassword('');
+        setNewUserRole('Reporter');
+      })
+      .catch(err => {
+        console.error('Error creating user:', err);
+        setErrorMessage(err.response?.data?.message || 'Error creating user.');
       });
   };
 
@@ -78,7 +105,14 @@ const UserManagement = () => {
 
   return (
     <div>
-      <h2>User Management</h2>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800 }}>
+          User Management
+        </Typography>
+        <Button variant="contained" onClick={() => setCreateDialogOpen(true)}>
+          Add User
+        </Button>
+      </Box>
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
       <Table>
@@ -118,6 +152,49 @@ const UserManagement = () => {
           ))}
         </TableBody>
       </Table>
+
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)}>
+        <DialogTitle>Add User</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Username"
+            fullWidth
+            variant="standard"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+          />
+          <TextField
+            margin="dense"
+            label="Password"
+            type="password"
+            fullWidth
+            variant="standard"
+            helperText="Minimum 8 characters."
+            value={newUserPassword}
+            onChange={(e) => setNewUserPassword(e.target.value)}
+          />
+          <FormControl fullWidth variant="standard" sx={{ mt: 2 }}>
+            <InputLabel id="new-user-role-label">Role</InputLabel>
+            <Select
+              labelId="new-user-role-label"
+              value={newUserRole}
+              onChange={(e) => setNewUserRole(e.target.value)}
+            >
+              {roles.map(role => (
+                <MenuItem key={role} value={role}>
+                  {role}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateUser}>Create</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={resetDialogOpen} onClose={handleCloseResetDialog}>

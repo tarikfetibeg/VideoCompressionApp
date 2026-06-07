@@ -13,6 +13,8 @@ const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const { cleanupExpiredRawFiles } = require('../services/rawRetentionService');
 
+const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
+
 function deleteFileIfExists(filePath) {
   if (!filePath) return;
 
@@ -124,15 +126,65 @@ router.get('/users', async (req, res) => {
   }
 });
 
+router.post('/users', async (req, res) => {
+  const { username, password, role = 'Reporter' } = req.body;
+
+  if (!username || !password || password.length < 8) {
+    return res.status(400).json({
+      message: 'Username and password with at least 8 characters are required.',
+    });
+  }
+
+  if (!allowedRoles.includes(role)) {
+    return res.status(400).json({ message: 'Invalid user role.' });
+  }
+
+  try {
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username already taken.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      username,
+      password: hashedPassword,
+      role,
+    });
+
+    await AuditLog.create({
+      action: 'Create User',
+      performedBy: req.user.id,
+      details: { userId: user._id, username: user.username, role: user.role },
+    });
+
+    res.status(201).json({
+      message: 'User created successfully.',
+      user: {
+        _id: user._id,
+        username: user.username,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error('Error creating user:', err);
+    res.status(500).json({ message: 'Error creating user' });
+  }
+});
+
 router.put('/users/:id', async (req, res) => {
   const { role } = req.body;
+
+  if (!allowedRoles.includes(role)) {
+    return res.status(400).json({ message: 'Invalid user role.' });
+  }
 
   try {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { role },
       { new: true }
-    );
+    ).select('-password');
 
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found' });
@@ -154,8 +206,8 @@ router.put('/users/:id', async (req, res) => {
 router.put('/users/:id/reset-password', async (req, res) => {
   const { newPassword } = req.body;
 
-  if (!newPassword) {
-    return res.status(400).json({ message: 'New password is required.' });
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({ message: 'New password with at least 8 characters is required.' });
   }
 
   try {

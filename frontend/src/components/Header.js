@@ -13,8 +13,6 @@ const Header = () => {
     window.location.href = '/login';
   };
 
-  console.log('User in Header:', user);
-
   return (
     <AppBar position="static">
       <Toolbar>
@@ -28,9 +26,9 @@ const Header = () => {
                 Reporter Dashboard
               </Button>
             )}
-            {user?.role === 'Editor' && (
+            {['Editor', 'VideoEditor', 'Producer'].includes(user?.role) && (
               <Button color="inherit" component={Link} to="/editor-dashboard">
-                Editor Dashboard
+                Production Dashboard
               </Button>
             )}
             {user?.role === 'Admin' && (

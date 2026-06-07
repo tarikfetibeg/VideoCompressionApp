@@ -9,6 +9,10 @@ const fs = require('fs');
 const router = express.Router();
 
 const allowedVideoRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
+const allowedQcRoles = ['Editor', 'VideoEditor', 'Producer', 'Admin'];
+const allowedApprovalRoles = ['Producer', 'Admin'];
+const allowedQcStatuses = ['pending', 'passed', 'failed'];
+const allowedBroadcastStatusUpdates = ['approved_for_air', 'aired', 'archived'];
 
 function getUploaderId(video) {
   if (!video || !video.uploader) return null;
@@ -269,6 +273,135 @@ router.post(
     } catch (error) {
       console.error('Failed to add timecode:', error);
       res.status(500).json({ error: 'Failed to add timecode' });
+    }
+  }
+);
+
+router.patch(
+  '/:videoId/qc',
+  authenticateToken,
+  authorize(allowedQcRoles),
+  async (req, res) => {
+    const { videoId } = req.params;
+    const { qcStatus, qcNotes } = req.body;
+
+    if (!allowedQcStatuses.includes(qcStatus)) {
+      return res.status(400).json({ message: 'Invalid QC status.' });
+    }
+
+    try {
+      const video = await Video.findById(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+
+      if (!userCanAccessVideo(req.user, video)) {
+        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+      }
+
+      if (qcStatus === 'passed' && video.processingStatus !== 'completed') {
+        return res.status(400).json({ message: 'Video must finish processing before QC can pass.' });
+      }
+
+      video.qcStatus = qcStatus;
+      video.qcNotes = qcNotes || '';
+      video.qcCheckedBy = req.user.id;
+      video.qcCheckedAt = new Date();
+
+      if (qcStatus === 'passed') {
+        video.broadcastStatus = 'ready_for_approval';
+      } else if (qcStatus === 'failed') {
+        video.broadcastStatus = 'qc_failed';
+        video.approvedBy = null;
+        video.approvedAt = null;
+      } else {
+        video.broadcastStatus = video.processingStatus === 'completed' ? 'qc_pending' : 'not_ready';
+        video.approvedBy = null;
+        video.approvedAt = null;
+      }
+
+      await video.save();
+
+      await AuditLog.create({
+        action: 'Update Video QC',
+        performedBy: req.user.id,
+        details: {
+          videoId: video._id,
+          filename: video.filename,
+          qcStatus,
+          qcNotes: video.qcNotes,
+          broadcastStatus: video.broadcastStatus,
+        },
+      });
+
+      res.json({ message: 'QC status updated successfully', video });
+    } catch (error) {
+      console.error('Failed to update QC status:', error);
+      res.status(500).json({ message: 'Failed to update QC status' });
+    }
+  }
+);
+
+router.patch(
+  '/:videoId/broadcast-status',
+  authenticateToken,
+  authorize(allowedApprovalRoles),
+  async (req, res) => {
+    const { videoId } = req.params;
+    const { broadcastStatus } = req.body;
+
+    if (!allowedBroadcastStatusUpdates.includes(broadcastStatus)) {
+      return res.status(400).json({ message: 'Invalid broadcast status.' });
+    }
+
+    try {
+      const video = await Video.findById(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+
+      if (!userCanAccessVideo(req.user, video)) {
+        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+      }
+
+      if (broadcastStatus === 'approved_for_air') {
+        if (video.processingStatus !== 'completed' || video.qcStatus !== 'passed') {
+          return res.status(400).json({
+            message: 'Video must be processed and QC-passed before approval for air.',
+          });
+        }
+
+        video.broadcastStatus = 'approved_for_air';
+        video.approvedBy = req.user.id;
+        video.approvedAt = new Date();
+      }
+
+      if (broadcastStatus === 'aired') {
+        if (video.broadcastStatus !== 'approved_for_air' && video.broadcastStatus !== 'aired') {
+          return res.status(400).json({ message: 'Video must be approved before it can be marked as aired.' });
+        }
+
+        video.broadcastStatus = 'aired';
+        video.airedAt = video.airedAt || new Date();
+      }
+
+      if (broadcastStatus === 'archived') {
+        video.broadcastStatus = 'archived';
+        video.archivedAt = video.archivedAt || new Date();
+      }
+
+      await video.save();
+
+      await AuditLog.create({
+        action: 'Update Broadcast Status',
+        performedBy: req.user.id,
+        details: {
+          videoId: video._id,
+          filename: video.filename,
+          broadcastStatus: video.broadcastStatus,
+        },
+      });
+
+      res.json({ message: 'Broadcast status updated successfully', video });
+    } catch (error) {
+      console.error('Failed to update broadcast status:', error);
+      res.status(500).json({ message: 'Failed to update broadcast status' });
     }
   }
 );

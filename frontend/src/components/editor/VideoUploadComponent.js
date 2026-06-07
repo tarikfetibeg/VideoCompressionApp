@@ -44,7 +44,7 @@ const VideoUploadComponent = () => {
         },
       })
       .then((response) => {
-        setMessage('Upload successful.');
+        setMessage(response.data?.message || 'Upload accepted for processing.');
         setUploadProgress(0);
         setFiles([]);
         setEventTag('');

@@ -42,7 +42,7 @@ function App() {
             user ? (
               user.role === 'Reporter' || user.role === 'Admin' ? (
                 <Navigate to="/reporter-dashboard" />
-              ) : user.role === 'Editor' ? (
+              ) : ['Editor', 'VideoEditor', 'Producer'].includes(user.role) ? (
                 <Navigate to="/editor-dashboard" />
               ) : (
                 <Navigate to="/login" />
@@ -73,7 +73,7 @@ function App() {
         <Route
           path="/editor-dashboard"
           element={
-            <PrivateRoute roles={['Editor']}>
+            <PrivateRoute roles={['Editor', 'VideoEditor', 'Producer']}>
               <EditorDashboard />
             </PrivateRoute>
           }

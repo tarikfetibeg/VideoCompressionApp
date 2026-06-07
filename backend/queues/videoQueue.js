@@ -1,40 +1,44 @@
 const Queue = require('bull');
-const ffmpeg = require('fluent-ffmpeg');
 const Video = require('../models/Video');
-const path = require('path');
-const FfmpegSettings = require('../models/FfmpegSettings');
 
-const videoQueue = new Queue('video processing');
+const defaultJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 30000,
+  },
+  removeOnComplete: 100,
+  removeOnFail: 250,
+};
 
-videoQueue.process(async (job, done) => {
-  const { videoId } = job.data;
-  const video = await Video.findById(videoId);
-  const inputPath = path.join(process.cwd(), video.filepath);
-  const outputFilename = `${video.filename}-compressed.mp4`;
-  const outputPath = path.join('uploads', 'compressed', outputFilename);
-
-  // Retrieve FFmpeg settings from the database (or use defaults)
-  let settings = await FfmpegSettings.findOne({});
-  if (!settings) {
-    // Create default settings if not present
-    settings = await FfmpegSettings.create({});
+function createQueue() {
+  if (process.env.REDIS_URL) {
+    return new Queue('video processing', process.env.REDIS_URL, {
+      defaultJobOptions,
+    });
   }
 
-  ffmpeg(inputPath)
-    .videoCodec(settings.codec)
-    .size(settings.resolution)
-    .videoBitrate(settings.bitrate)
-    .fps(settings.framerate)
-    .save(outputPath)
-    .on('end', async () => {
-      video.filepath = outputPath;
-      await video.save();
-      done();
-    })
-    .on('error', (err) => {
-      console.error('Compression error:', err);
-      done(err);
-    });
-});
+  return new Queue('video processing', {
+    defaultJobOptions,
+  });
+}
 
-module.exports = videoQueue;
+const videoQueue = createQueue();
+
+async function enqueueVideoProcessing(videoId) {
+  const job = await videoQueue.add({ videoId: videoId.toString() });
+
+  await Video.findByIdAndUpdate(videoId, {
+    processingStatus: 'queued',
+    processingJobId: job.id.toString(),
+    processingProgress: 0,
+    processingError: null,
+  });
+
+  return job;
+}
+
+module.exports = {
+  videoQueue,
+  enqueueVideoProcessing,
+};

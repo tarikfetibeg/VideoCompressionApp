@@ -13,16 +13,6 @@ const mongoose = require('mongoose');
 const { ensureStorageFolders } = require('./utils/storagePaths');
 const { cleanupExpiredRawFiles } = require('./services/rawRetentionService');
 
-// Custom logging middleware for incoming request origin with fallback
-app.use((req, res, next) => {
-  const originHeader = req.headers.origin;
-  const refererHeader = req.headers.referer;
-  const hostHeader = req.headers.host;
-  const loggedOrigin = originHeader || refererHeader || hostHeader || 'undefined';
-  console.log('Incoming request origin (with fallback):', loggedOrigin);
-  next();
-});
-
 // Define allowedOrigins only once
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -30,18 +20,10 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 console.log('Allowed Origins:', allowedOrigins);
 
-app.use((req, res, next) => {
-  const customOrigin = req.headers['x-my-origin'] || 'undefined';
-  console.log('Custom X-My-Origin header:', customOrigin);
-  next();
-});
-
 // CORS middleware using the actual Origin header only
 app.use(
   cors({
     origin: function (origin, callback) {
-      console.log('CORS check, incoming origin:', origin);
-
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
