@@ -16,9 +16,9 @@ const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 // Supported MIME types and file extensions for videos, including MXF.
 const allowedMimetypes = [
   'video/mp4',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
+  'video/quicktime', // mov
+  'video/x-msvideo', // avi
+  'video/x-matroska', // mkv
   'video/webm',
   'video/mxf',
   'application/mxf',
@@ -26,6 +26,7 @@ const allowedMimetypes = [
 
 const allowedExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.mxf'];
 
+// Multer storage configuration. Raw uploads are stored temporarily in storage/raw.
 const storage = multer.diskStorage({
   destination: paths.raw,
   filename: (req, file, cb) => {
@@ -33,25 +34,20 @@ const storage = multer.diskStorage({
   },
 });
 
+// File filter for supported video formats.
 const fileFilter = (req, file, cb) => {
-  console.log(
-    `File Filter: Received file ${file.originalname} with mimetype ${file.mimetype}`
-  );
+  console.log(`File Filter: Received file ${file.originalname} with mimetype ${file.mimetype}`);
 
   if (allowedMimetypes.includes(file.mimetype)) {
     return cb(null, true);
   }
 
   const ext = path.extname(file.originalname).toLowerCase();
-
   if (allowedExtensions.includes(ext)) {
     return cb(null, true);
   }
 
-  return cb(
-    new Error(`Unsupported file type: ${file.mimetype} or extension ${ext}`),
-    false
-  );
+  return cb(new Error(`Unsupported file type: ${file.mimetype} or extension ${ext}`), false);
 };
 
 const upload = multer({
@@ -109,6 +105,18 @@ function removeFileIfExists(filePath) {
   }
 }
 
+function ensureFolderExists(folderPath) {
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+}
+
+function createMp4PreviewFilename(originalName) {
+  const parsed = path.parse(originalName);
+  const safeBaseName = parsed.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `preview_${Date.now()}_${safeBaseName}.mp4`;
+}
+
 function convertVideo({
   inputPath,
   outputPath,
@@ -118,11 +126,19 @@ function convertVideo({
   frameRate,
 }) {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .videoCodec(codec)
+      .audioCodec('aac')
       .size(resolution)
       .videoBitrate(bitrateKbps)
+      .audioBitrate('128k')
       .fps(frameRate)
+      .outputOptions([
+        '-pix_fmt yuv420p',
+        '-movflags +faststart',
+      ]);
+
+    command
       .on('start', (cmd) => {
         console.log('FFmpeg started with command:', cmd);
       })
@@ -138,6 +154,36 @@ function convertVideo({
   });
 }
 
+function convertPreviewVideo({ inputPath, outputPath }) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .size('1280x720')
+      .videoBitrate(2000)
+      .audioBitrate('128k')
+      .fps(30)
+      .outputOptions([
+        '-pix_fmt yuv420p',
+        '-movflags +faststart',
+        '-preset veryfast',
+      ])
+      .on('start', (cmd) => {
+        console.log('FFmpeg preview started with command:', cmd);
+      })
+      .on('end', () => {
+        console.log(`FFmpeg preview finished: ${outputPath}`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('FFmpeg preview error:', err);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+}
+
+// Upload Video Route - supports multiple files.
 router.post(
   '/',
   authenticateToken,
@@ -152,24 +198,25 @@ router.post(
       const videosProcessed = [];
       const auditDetails = [];
 
+      // Reporter and Admin branch: These users must supply tags.
       if (req.user.role === 'Reporter' || req.user.role === 'Admin') {
         const tagEvent = req.body.event;
         const tagLocation = req.body.location;
         const tagDate = req.body.date;
 
         if (!tagEvent || !tagLocation || !tagDate) {
-          return res.status(400).json({
-            message: 'Missing required tags: event, location, or date.',
-          });
+          return res.status(400).json({ message: 'Missing required tags: event, location, or date.' });
         }
 
         for (const file of req.files) {
           const rawVideoPath = file.path;
-          const outputFilename = createStoredFilename(
-            'compressed',
-            file.originalname
-          );
+          const outputFilename = createStoredFilename('compressed', file.originalname);
           const outputPath = path.join(paths.compressed, outputFilename);
+          const previewFilename = createMp4PreviewFilename(file.originalname);
+          const previewPath = path.join(paths.previews, previewFilename);
+
+          ensureFolderExists(paths.compressed);
+          ensureFolderExists(paths.previews);
 
           const ffmpegCodec = mapCodec(req.body.codec);
           const resolutionValue = mapResolution(req.body.resolution);
@@ -182,6 +229,8 @@ router.post(
           console.log('Using bitrate:', bitrateKbps);
           console.log('Using framerate:', frameRate);
 
+          const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+
           await convertVideo({
             inputPath: rawVideoPath,
             outputPath,
@@ -191,35 +240,41 @@ router.post(
             frameRate,
           });
 
-const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
-const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+          await convertPreviewVideo({
+            inputPath: rawVideoPath,
+            outputPath: previewPath,
+          });
 
-const videoDoc = new Video({
-  filename: outputFilename,
-  filepath: outputPath,
-  originalFilename: file.originalname,
+          const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+          const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
 
-  rawPath: rawVideoPath,
-  compressedPath: outputPath,
+          const videoDoc = new Video({
+            filename: outputFilename,
+            filepath: outputPath,
+            originalFilename: file.originalname,
 
-  uploader: req.user.id,
-  event: tagEvent,
-  location: tagLocation,
-  tagDate: new Date(tagDate),
+            rawPath: rawVideoPath,
+            compressedPath: outputPath,
+            previewPath,
 
-  status: 'raw',
-  processingStatus: 'completed',
+            uploader: req.user.id,
+            event: tagEvent,
+            location: tagLocation,
+            tagDate: new Date(tagDate),
 
-  codec: ffmpegCodec,
-  resolution: resolutionValue,
-  bitrate: bitrateKbps,
-  framerate: frameRate,
+            status: 'raw',
+            processingStatus: 'completed',
 
-  sizeOriginal: inputStats ? inputStats.size : null,
-  sizeCompressed: outputStats ? outputStats.size : null,
+            codec: ffmpegCodec,
+            resolution: resolutionValue,
+            bitrate: bitrateKbps,
+            framerate: frameRate,
 
-  uploadDate: new Date(),
-});
+            sizeOriginal: inputStats ? inputStats.size : null,
+            sizeCompressed: outputStats ? outputStats.size : null,
+
+            uploadDate: new Date(),
+          });
 
           await videoDoc.save();
           videosProcessed.push(videoDoc);
@@ -227,15 +282,16 @@ const videoDoc = new Video({
           auditDetails.push({
             originalFilename: file.originalname,
             storedFilename: outputFilename,
+            previewFilename,
             codec: ffmpegCodec,
             resolution: resolutionValue,
             bitrateKbps,
             frameRate,
             outputSize: outputStats ? outputStats.size : null,
+            previewSize: previewStats ? previewStats.size : null,
           });
 
-          // Current behavior: delete raw file after successful conversion.
-          // Later, we can change this if you want to preserve originals.
+          // Current behavior: delete raw file after successful conversion and preview generation.
           removeFileIfExists(rawVideoPath);
         }
 
@@ -244,15 +300,14 @@ const videoDoc = new Video({
           performedBy: req.user.id,
           details: {
             count: req.files.length,
-            tags: {
-              event: tagEvent,
-              location: tagLocation,
-              date: tagDate,
-            },
+            tags: { event: tagEvent, location: tagLocation, date: tagDate },
             files: auditDetails,
           },
         });
-      } else if (req.user.role === 'Editor') {
+      }
+
+      // Editor branch.
+      else if (req.user.role === 'Editor') {
         let rawVideoIds = req.body.rawVideoIds;
 
         if (rawVideoIds && typeof rawVideoIds === 'string') {
@@ -261,34 +316,33 @@ const videoDoc = new Video({
 
         if (rawVideoIds && rawVideoIds.length > 0) {
           if (rawVideoIds.length !== req.files.length) {
-            return res.status(400).json({
-              message:
-                'Mismatch between number of files and provided rawVideoIds.',
-            });
+            return res.status(400).json({ message: 'Mismatch between number of files and provided rawVideoIds.' });
           }
 
+          // Conversion branch: Use tags from raw videos.
           for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const rawVideoId = rawVideoIds[i];
             const rawVideo = await Video.findById(rawVideoId);
 
             if (!rawVideo) {
-              return res.status(404).json({
-                message: `Raw video not found for id ${rawVideoId}`,
-              });
+              return res.status(404).json({ message: `Raw video not found for id ${rawVideoId}` });
             }
 
             const rawVideoPath = file.path;
-            const outputFilename = createStoredFilename(
-              'compressed',
-              file.originalname
-            );
+            const outputFilename = createStoredFilename('compressed', file.originalname);
             const outputPath = path.join(paths.compressed, outputFilename);
+            const previewFilename = createMp4PreviewFilename(file.originalname);
+            const previewPath = path.join(paths.previews, previewFilename);
+
+            ensureFolderExists(paths.compressed);
+            ensureFolderExists(paths.previews);
 
             const ffmpegCodec = mapCodec(req.body.codec);
             const resolutionValue = mapResolution(req.body.resolution);
             const bitrateKbps = getBitrateKbps(req.body.bitrate);
             const frameRate = getFrameRate(req.body.framerate);
+            const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
 
             console.log(`Starting FFmpeg conversion for ${file.originalname}`);
 
@@ -301,35 +355,41 @@ const videoDoc = new Video({
               frameRate,
             });
 
-const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
-const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+            await convertPreviewVideo({
+              inputPath: rawVideoPath,
+              outputPath: previewPath,
+            });
 
-const videoDoc = new Video({
-  filename: outputFilename,
-  filepath: outputPath,
-  originalFilename: file.originalname,
+            const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+            const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
 
-  rawPath: rawVideoPath,
-  compressedPath: outputPath,
+            const videoDoc = new Video({
+              filename: outputFilename,
+              filepath: outputPath,
+              originalFilename: file.originalname,
 
-  uploader: req.user.id,
-  event: rawVideo.event,
-  location: rawVideo.location,
-  tagDate: rawVideo.tagDate,
+              rawPath: rawVideoPath,
+              compressedPath: outputPath,
+              previewPath,
 
-  status: 'edited',
-  processingStatus: 'completed',
+              uploader: req.user.id,
+              event: rawVideo.event,
+              location: rawVideo.location,
+              tagDate: rawVideo.tagDate,
 
-  codec: ffmpegCodec,
-  resolution: resolutionValue,
-  bitrate: bitrateKbps,
-  framerate: frameRate,
+              status: 'edited',
+              processingStatus: 'completed',
 
-  sizeOriginal: inputStats ? inputStats.size : null,
-  sizeCompressed: outputStats ? outputStats.size : null,
+              codec: ffmpegCodec,
+              resolution: resolutionValue,
+              bitrate: bitrateKbps,
+              framerate: frameRate,
 
-  uploadDate: new Date(),
-});
+              sizeOriginal: inputStats ? inputStats.size : null,
+              sizeCompressed: outputStats ? outputStats.size : null,
+
+              uploadDate: new Date(),
+            });
 
             await videoDoc.save();
             videosProcessed.push(videoDoc);
@@ -339,73 +399,77 @@ const videoDoc = new Video({
               originalFilename: file.originalname,
               rawVideoId,
               storedFilename: outputFilename,
+              previewFilename,
+              outputSize: outputStats ? outputStats.size : null,
+              previewSize: previewStats ? previewStats.size : null,
             });
           }
 
           await AuditLog.create({
             action: 'Bulk Edited Video Upload & Tagging',
             performedBy: req.user.id,
-            details: {
-              count: req.files.length,
-              rawVideoIds,
-              files: auditDetails,
-            },
+            details: { count: req.files.length, rawVideoIds, files: auditDetails },
           });
         } else {
+          // Final upload branch: rawVideoIds not provided or empty.
           const tagEvent = req.body.event;
           const tagLocation = req.body.location;
           const tagDate = req.body.date;
 
           if (!tagEvent || !tagLocation || !tagDate) {
-            return res.status(400).json({
-              message: 'Missing required tags: event, location, or date.',
-            });
+            return res.status(400).json({ message: 'Missing required tags: event, location, or date.' });
           }
 
           const finalCategory = req.body.finalCategory || 'video-report';
-          const keywords = req.body.keywords
-            ? req.body.keywords.split(',').map((s) => s.trim())
-            : [];
-
+          const keywords = req.body.keywords ? req.body.keywords.split(',').map((s) => s.trim()) : [];
           const finalFolder = path.join(paths.final, finalCategory);
 
-          if (!fs.existsSync(finalFolder)) {
-            fs.mkdirSync(finalFolder, { recursive: true });
-          }
+          ensureFolderExists(finalFolder);
+          ensureFolderExists(paths.previews);
 
           for (const file of req.files) {
             const rawVideoPath = file.path;
-            const outputFilename = createStoredFilename(
-              'final',
-              file.originalname
-            );
+            const outputFilename = createStoredFilename('final', file.originalname);
             const outputPath = path.join(finalFolder, outputFilename);
+            const previewFilename = createMp4PreviewFilename(file.originalname);
+            const previewPath = path.join(paths.previews, previewFilename);
+            const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+
+            await convertPreviewVideo({
+              inputPath: rawVideoPath,
+              outputPath: previewPath,
+            });
 
             fs.renameSync(rawVideoPath, outputPath);
 
-const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+            const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+            const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
 
-const videoDoc = new Video({
-  filename: outputFilename,
-  filepath: outputPath,
-  originalFilename: file.originalname,
+            const videoDoc = new Video({
+              filename: outputFilename,
+              filepath: outputPath,
+              originalFilename: file.originalname,
 
-  uploader: req.user.id,
-  event: tagEvent,
-  location: tagLocation,
-  tagDate: new Date(tagDate),
+              rawPath: outputPath,
+              compressedPath: outputPath,
+              previewPath,
 
-  status: 'edited',
-  processingStatus: 'completed',
+              uploader: req.user.id,
+              event: tagEvent,
+              location: tagLocation,
+              tagDate: new Date(tagDate),
 
-  finalCategory,
-  keywords,
+              status: 'edited',
+              processingStatus: 'completed',
 
-  sizeOriginal: outputStats ? outputStats.size : null,
-  sizeCompressed: outputStats ? outputStats.size : null,
+              finalCategory,
+              keywords,
 
-  uploadDate: new Date(),
-});
+              sizeOriginal: inputStats ? inputStats.size : null,
+              sizeCompressed: outputStats ? outputStats.size : null,
+
+              uploadDate: new Date(),
+            });
 
             await videoDoc.save();
             videosProcessed.push(videoDoc);
@@ -413,7 +477,10 @@ const videoDoc = new Video({
             auditDetails.push({
               originalFilename: file.originalname,
               storedFilename: outputFilename,
+              previewFilename,
               finalCategory,
+              outputSize: outputStats ? outputStats.size : null,
+              previewSize: previewStats ? previewStats.size : null,
             });
           }
 
@@ -422,11 +489,7 @@ const videoDoc = new Video({
             performedBy: req.user.id,
             details: {
               count: req.files.length,
-              tags: {
-                event: tagEvent,
-                location: tagLocation,
-                date: tagDate,
-              },
+              tags: { event: tagEvent, location: tagLocation, date: tagDate },
               finalCategory,
               files: auditDetails,
             },
@@ -435,16 +498,14 @@ const videoDoc = new Video({
       }
 
       return res.status(200).json({
-        message: 'Upload, compression, and tagging successful',
+        message: 'Upload, compression, preview generation, and tagging successful',
         videos: videosProcessed,
       });
     } catch (error) {
       console.error('Upload error:', error);
 
       if (error.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({
-          message: 'File is too large. Maximum allowed file size is 5 GB.',
-        });
+        return res.status(413).json({ message: 'File is too large. Maximum allowed file size is 5 GB.' });
       }
 
       return res.status(500).json({

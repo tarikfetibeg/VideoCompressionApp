@@ -1,7 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 
-const STORAGE_ROOT = path.join(process.cwd(), 'storage');
+// Always resolve storage relative to project root.
+// This file is in backend/utils, so ../.. points to project root.
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const STORAGE_ROOT = path.join(PROJECT_ROOT, 'storage');
 
 const paths = {
   root: STORAGE_ROOT,
@@ -13,21 +16,68 @@ const paths = {
   final: path.join(STORAGE_ROOT, 'final'),
 };
 
+function ensureFolderExists(folderPath) {
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+}
+
 function ensureStorageFolders() {
   Object.values(paths).forEach((folderPath) => {
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true });
-    }
+    ensureFolderExists(folderPath);
   });
 }
 
+function sanitizeFileName(fileName) {
+  const parsed = path.parse(fileName);
+
+  const safeBaseName = parsed.name
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const safeExtension = parsed.ext
+    .toLowerCase()
+    .replace(/[^a-zA-Z0-9.]/g, '');
+
+  return {
+    baseName: safeBaseName || 'file',
+    extension: safeExtension,
+  };
+}
+
+function createUniqueSuffix() {
+  const timestamp = Date.now();
+  const random = Math.round(Math.random() * 1e9);
+  return `${timestamp}_${random}`;
+}
+
 function createStoredFilename(prefix, originalName) {
-  const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${prefix}_${Date.now()}_${safeName}`;
+  const { baseName, extension } = sanitizeFileName(originalName);
+  return `${prefix}_${createUniqueSuffix()}_${baseName}${extension}`;
+}
+
+function createMp4Filename(prefix, originalName) {
+  const { baseName } = sanitizeFileName(originalName);
+  return `${prefix}_${createUniqueSuffix()}_${baseName}.mp4`;
+}
+
+function getStoragePath(storageType, filename) {
+  if (!paths[storageType]) {
+    throw new Error(`Invalid storage type: ${storageType}`);
+  }
+
+  return path.join(paths[storageType], filename);
 }
 
 module.exports = {
+  PROJECT_ROOT,
+  STORAGE_ROOT,
   paths,
+  ensureFolderExists,
   ensureStorageFolders,
+  sanitizeFileName,
   createStoredFilename,
+  createMp4Filename,
+  getStoragePath,
 };
