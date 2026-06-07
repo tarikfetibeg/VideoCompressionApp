@@ -17,7 +17,7 @@ const VideoPlayer = ({ videoId }) => {
   useEffect(() => {
     const fetchVideo = async () => {
       try {
-        const response = await axiosInstance.get(`/videos/stream/${videoId}`, {
+        const response = await axiosInstance.get(`/videos/preview/${videoId}`, {
           responseType: 'blob',
         });
         const blob = new Blob([response.data], { type: 'video/mp4' });
