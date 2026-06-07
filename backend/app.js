@@ -10,6 +10,7 @@ const app = express(); // Initialize Express app
 const cors = require('cors');
 const mongoose = require('mongoose');
 const fs = require('fs');
+const { ensureStorageFolders } = require('./utils/storagePaths');
 
 // Custom logging middleware for incoming request origin with fallback
 // Paste this immediately after app initialization
@@ -56,12 +57,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Create directories if they don't exist
-const directories = ['uploads/raw', 'uploads/compressed'];
-directories.forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+ensureStorageFolders();
 
 // Connect to MongoDB
 const mongoURI = process.env.MONGODB_URI;
