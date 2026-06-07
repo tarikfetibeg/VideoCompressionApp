@@ -12,7 +12,29 @@ const AuditLog = require('../models/AuditLog');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 
-// Protect all routes with Admin role
+/* --- Public Endpoint for FFmpeg Default Settings ---
+   This endpoint returns the default FFmpeg settings.
+   It only requires that the requester is authenticated,
+   making it accessible to reporters (and others) without needing admin rights.
+*/
+router.get('/ffmpeg-settings-default', authenticateToken, async (req, res) => {
+  try {
+    let settings = await FfmpegSettings.findOne({});
+    if (!settings) {
+      settings = await FfmpegSettings.create({
+        codec: 'libx264',
+        resolution: '1920x1080',
+        bitrate: 1500, // in Kbps
+        framerate: 30,
+      });
+    }
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ message: 'Error fetching default FFmpeg settings' });
+  }
+});
+
+/* --- Protect all subsequent routes with Admin role --- */
 router.use(authenticateToken);
 router.use(authorize(['Admin']));
 

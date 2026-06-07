@@ -1,13 +1,11 @@
-// axiosConfig.js
-
 import axios from 'axios';
 
-// Use environment variable or default to 'http://localhost:5000/api'
+// Koristi environment variable ili default 'http://localhost:5000/api'
 const baseURL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
 console.log('Axios baseURL:', baseURL);
 
 const axiosInstance = axios.create({
-  baseURL, // Set the base URL for API calls
+  baseURL, // Postavi base URL za API zahtjeve
 });
 
 // Request interceptor: attach JWT token if available and add a custom origin header

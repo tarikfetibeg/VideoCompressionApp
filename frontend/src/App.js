@@ -1,5 +1,3 @@
-// App.js
-
 import React, { useContext } from 'react';
 import {
   BrowserRouter as Router,
@@ -32,11 +30,11 @@ function App() {
           element={user ? <Navigate to="/" /> : <LoginPage />}
         />
 
-        {/* Default route based on user role:
-            - Reporter and Admin users are redirected to the ReporterDashboard
-              (so Admin users get the upload page by default).
-            - Editor users go to the EditorDashboard.
-            - Other roles (if any) or no user go to Login.
+        {/* Rute bazirane na ulogama korisnika:
+            - Reporteri i Admini po defoultu učitavaju reporter-dashboard
+              (tako da Admini po defoultu vide upload stranicu).
+            - Editori po defoultu budu preusmjereni prema editor-dashbourdu
+            - Drugi tipovi korisnika ne budu preusmjereni nigdje pa im se opet učita log in stranica
          */}
         <Route
           path="/"

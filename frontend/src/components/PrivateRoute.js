@@ -11,7 +11,7 @@ const PrivateRoute = ({ roles, children }) => {
   }
 
   if (roles && !roles.includes(user.role)) {
-    // If the user does not have the required role, redirect or show an error
+    // Ako korisnik nema potrebni role, prikažu unauthorized.
     return <Navigate to="/unauthorized" />;
   }
 

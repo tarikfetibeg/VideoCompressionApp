@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const TimecodeSchema = new mongoose.Schema({
   description: String,
-  timestamp: Number, // Time in seconds
+  timestamp: Number, // Vrijeme u sekundama
 });
 
 const VideoSchema = new mongoose.Schema({
@@ -10,16 +10,17 @@ const VideoSchema = new mongoose.Schema({
   filepath: String,
   originalFilename: String,
   uploader: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  // New tagging fields:
-  event: { type: String },
-  location: { type: String },
-  tagDate: { type: Date },
-  status: { // "raw" or "edited"
+  event: { type: String },      //kategorija događaja
+  location: { type: String },   //kategorija lokacija
+  tagDate: { type: Date },      //datum
+  status: {
     type: String,
-    enum: ['raw', 'edited'],
+    enum: ['raw', 'edited'],  //Kategorisanje video materijala kao sirovi materijal ili editovani
     default: 'raw',
   },
-  timecodes: [TimecodeSchema],
+  isBroll: { type: Boolean, default: false },  // Kategorija za tagovanje inserata
+  keywords: [{ type: String }],               // Kategorija za "keywords"
+  timecodes: [TimecodeSchema],                // tag nije implementiran
   uploadDate: { type: Date, default: Date.now },
 });
 

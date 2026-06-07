@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from '../axiosConfig';
 import {
   Box,
@@ -20,20 +20,53 @@ const UploadComponent = () => {
   const [eventTag, setEventTag] = useState('');
   const [location, setLocation] = useState('');
   const [date, setDate] = useState('');
+  // Temporary defaults – will be updated from backend endpoint.
   const [codec, setCodec] = useState('h264');
   const [resolution, setResolution] = useState('1080');
   const [bitrate, setBitrate] = useState(10); // in Mbps
-  const framerate = 30; // Fixed at 30 fps
+  const [framerate, setFramerate] = useState(30);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Fetch admin-defined default FFmpeg settings on mount.
+  useEffect(() => {
+    axios
+      .get('/admin/ffmpeg-settings-default', {
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+      })
+      .then((response) => {
+        console.log('DEBUG: Fetched default FFmpeg settings:', response.data);
+        const defaults = response.data;
+        // Map backend "hevc_nvenc" to frontend "h265_nvenc"
+        const defaultCodec = defaults.codec === 'hevc_nvenc' ? 'h265_nvenc' : defaults.codec;
+        setCodec(defaultCodec || 'h264');
+        const resVal = defaults.resolution || '1920x1080';
+        if (resVal.includes('720')) {
+          setResolution('720');
+        } else if (resVal.includes('1080')) {
+          setResolution('1080');
+        } else if (resVal.includes('1440')) {
+          setResolution('1440');
+        } else if (resVal.includes('2160') || resVal.includes('3840')) {
+          setResolution('2160');
+        } else {
+          setResolution('1080');
+        }
+        setBitrate(Math.round((defaults.bitrate || 1500) / 1000));
+        setFramerate(defaults.framerate || 30);
+      })
+      .catch((err) => {
+        console.error('Error fetching default FFmpeg settings:', err);
+        // Fallback defaults remain in place.
+      });
+  }, []);
+  
   const handleFileChange = (e) => {
     setFiles(Array.from(e.target.files));
   };
 
   const handleUpload = () => {
-    // Validate mandatory fields for Reporter uploads
     if (files.length === 0) {
       setErrorMessage('Please select at least one file to upload.');
       return;
@@ -47,7 +80,7 @@ const UploadComponent = () => {
     files.forEach(file => {
       formData.append('videos', file);
     });
-    // Append additional tagging and settings information
+    // Append additional tagging and FFmpeg settings information
     formData.append('event', eventTag);
     formData.append('location', location);
     formData.append('date', date);
@@ -58,9 +91,7 @@ const UploadComponent = () => {
 
     axios
       .post('/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           setUploadProgress(percentCompleted);
@@ -74,9 +105,7 @@ const UploadComponent = () => {
         setLocation('');
         setDate('');
         setErrorMessage('');
-        setCodec('h264');
-        setResolution('1080');
-        setBitrate(10);
+        // Optionally, you could re-fetch defaults here, or simply reset to our current values.
       })
       .catch((error) => {
         console.error('Error uploading file:', error);
@@ -136,9 +165,7 @@ const UploadComponent = () => {
         onChange={(e) => setDate(e.target.value)}
         fullWidth
         margin="normal"
-        InputLabelProps={{
-          shrink: true,
-        }}
+        InputLabelProps={{ shrink: true }}
         required
       />
       {/* Codec Selection */}
@@ -169,21 +196,26 @@ const UploadComponent = () => {
           <MenuItem value="2160">3840x2160 (4K)</MenuItem>
         </Select>
       </FormControl>
-      {/* Bitrate Slider */}
+      {/* Frame Rate Input */}
+      <TextField
+        label="Frame Rate (fps)"
+        type="number"
+        fullWidth
+        margin="normal"
+        value={framerate}
+        onChange={(e) => setFramerate(parseInt(e.target.value))}
+      />
       <Typography gutterBottom sx={{ mt: 2 }}>
         Bitrate: {bitrate} Mbps
       </Typography>
       <Slider
         value={bitrate}
         min={1}
-        max={50} // 50 Mbps maximum
+        max={50}
         step={1}
         onChange={(e, newValue) => setBitrate(newValue)}
         valueLabelDisplay="auto"
       />
-      <Typography sx={{ mt: 2 }}>
-        Framerate: {framerate} fps (fixed)
-      </Typography>
       <Button variant="contained" color="primary" onClick={handleUpload} sx={{ mt: 2 }}>
         Upload
       </Button>

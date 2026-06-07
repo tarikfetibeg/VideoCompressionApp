@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
   console.error('Error: JWT_SECRET is not defined');
-  process.exit(1); // Exit the application if JWT_SECRET is not set
+  process.exit(1); // Exit ako token nije definiran
 }
 
 function authenticateToken(req, res, next) {
@@ -19,7 +19,7 @@ function authenticateToken(req, res, next) {
       console.error("JWT verification error:", err);
       return res.sendStatus(403); // Forbidden
     }
-    console.log("Decoded JWT payload:", user); // Debug log to show decoded token
+    console.log("Decoded JWT payload:", user); // Debug log 
     req.user = user;
     next();
   });

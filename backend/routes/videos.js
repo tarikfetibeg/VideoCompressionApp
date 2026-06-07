@@ -9,7 +9,6 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 // Get All Videos
-// Get All Videos
 router.get(
   '/',
   authenticateToken,
@@ -20,8 +19,8 @@ router.get(
     if (event) {
       filter.event = event;
     }
-    // If the user is not an Admin, filter videos by uploader.
-    if (req.user.role !== 'Admin') {
+    // Only filter by uploader for Reporters
+    if (req.user.role === 'Reporter') {
       filter.uploader = req.user.id;
     }
     try {
@@ -33,6 +32,29 @@ router.get(
   }
 );
 
+router.delete('/:videoId', authenticateToken, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.videoId);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+    // Allow deletion if the requester is Admin OR the owner of the video
+    if (req.user.role !== 'Admin' && video.uploader.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Access Forbidden: You can only delete your own videos.' });
+    }
+    if (fs.existsSync(video.filepath)) {
+      fs.unlinkSync(video.filepath);
+    }
+    await Video.findByIdAndDelete(req.params.videoId);
+    await AuditLog.create({
+      action: 'Delete Video',
+      performedBy: req.user.id,
+      details: { videoId: req.params.videoId, filename: video.filename }
+    });
+    res.json({ message: 'Video deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting video:', err);
+    res.status(500).json({ message: 'Error deleting video' });
+  }
+});
 
 // Get Video Stream (for playback)
 router.get('/stream/:videoId', authenticateToken, async (req, res) => {
