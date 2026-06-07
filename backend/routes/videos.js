@@ -24,12 +24,10 @@ function userCanAccessVideo(user, video) {
   if (!user || !video) return false;
   if (user.role === 'Admin') return true;
 
-  // Reporters can access only their own videos.
   if (user.role === 'Reporter') {
     return getUploaderId(video) === user.id;
   }
 
-  // Editorial roles can access listed materials.
   return ['Editor', 'VideoEditor', 'Producer'].includes(user.role);
 }
 
@@ -96,7 +94,6 @@ function sendVideoFile(req, res, videoPath, contentType = 'video/mp4') {
   file.pipe(res);
 }
 
-// Get All Videos
 router.get(
   '/',
   authenticateToken,
@@ -109,7 +106,6 @@ router.get(
       filter.event = event;
     }
 
-    // Only filter by uploader for Reporters.
     if (req.user.role === 'Reporter') {
       filter.uploader = req.user.id;
     }
@@ -129,7 +125,6 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(req.params.videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    // Allow deletion if the requester is Admin OR the owner of the video.
     if (req.user.role !== 'Admin' && getUploaderId(video) !== req.user.id) {
       return res.status(403).json({ message: 'Access Forbidden: You can only delete your own videos.' });
     }
@@ -139,6 +134,7 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
       video.compressedPath,
       video.previewPath,
       video.thumbnailPath,
+      video.rawPath,
     ].filter(Boolean)));
 
     pathsToDelete.forEach(deleteFileIfExists);
@@ -158,8 +154,6 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
   }
 });
 
-// Get browser-compatible preview stream.
-// New uploads should have previewPath pointing to storage/previews/*.mp4.
 router.get('/preview/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
@@ -189,7 +183,40 @@ router.get('/preview/:videoId', authenticateToken, async (req, res) => {
   }
 });
 
-// Get Video Stream (for playback of compressed/master file)
+router.get('/thumbnail/:videoId', authenticateToken, async (req, res) => {
+  const { videoId } = req.params;
+  const user = req.user;
+
+  if (!allowedVideoRoles.includes(user.role)) {
+    return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+  }
+
+  try {
+    const video = await Video.findById(videoId);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    if (!userCanAccessVideo(user, video)) {
+      return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+    }
+
+    const thumbnailPath = resolveExistingPath(video.thumbnailPath);
+
+    if (!thumbnailPath) {
+      return res.status(404).json({ message: 'Thumbnail file not found on server' });
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'private, max-age=3600',
+    });
+
+    fs.createReadStream(thumbnailPath).pipe(res);
+  } catch (error) {
+    console.error('Error serving thumbnail:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 router.get('/stream/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
@@ -219,7 +246,6 @@ router.get('/stream/:videoId', authenticateToken, async (req, res) => {
   }
 });
 
-// Add a timecode to a video
 router.post(
   '/:videoId/timecodes',
   authenticateToken,
@@ -247,7 +273,6 @@ router.post(
   }
 );
 
-// Download Video
 router.get(
   '/download/:videoId',
   authenticateToken,
@@ -284,7 +309,6 @@ router.get(
   }
 );
 
-// Get timecodes for a video
 router.get(
   '/:videoId/timecodes',
   authenticateToken,
@@ -308,7 +332,6 @@ router.get(
   }
 );
 
-// Bulk Download
 router.post(
   '/download',
   authenticateToken,
@@ -351,7 +374,6 @@ router.post(
   }
 );
 
-// Get Single Video Details
 router.get(
   '/details/:videoId',
   authenticateToken,

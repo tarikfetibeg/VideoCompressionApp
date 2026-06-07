@@ -62,6 +62,11 @@ function createMp4Filename(prefix, originalName) {
   return `${prefix}_${createUniqueSuffix()}_${baseName}.mp4`;
 }
 
+function createJpgFilename(prefix, originalName) {
+  const { baseName } = sanitizeFileName(originalName);
+  return `${prefix}_${createUniqueSuffix()}_${baseName}.jpg`;
+}
+
 function getStoragePath(storageType, filename) {
   if (!paths[storageType]) {
     throw new Error(`Invalid storage type: ${storageType}`);
@@ -79,5 +84,6 @@ module.exports = {
   sanitizeFileName,
   createStoredFilename,
   createMp4Filename,
+  createJpgFilename,
   getStoragePath,
 };

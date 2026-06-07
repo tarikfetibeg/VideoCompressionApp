@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const TimecodeSchema = new mongoose.Schema({
   description: String,
-  timestamp: Number, // Vrijeme u sekundama
+  timestamp: Number, // Time in seconds
 });
 
 const VideoSchema = new mongoose.Schema({
@@ -12,18 +12,16 @@ const VideoSchema = new mongoose.Schema({
 
   uploader: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
-  event: { type: String },      // kategorija događaja
-  location: { type: String },   // kategorija lokacija
-  tagDate: { type: Date },      // datum
+  event: { type: String },
+  location: { type: String },
+  tagDate: { type: Date },
 
   status: {
     type: String,
-    enum: ['raw', 'edited'],  // Kategorisanje video materijala kao sirovi materijal ili editovani
+    enum: ['raw', 'edited'],
     default: 'raw',
   },
 
-  // Novi status obrade videa.
-  // Ne zamjenjuje postojeći "status", nego ga dopunjava.
   processingStatus: {
     type: String,
     enum: ['uploaded', 'queued', 'processing', 'completed', 'failed'],
@@ -44,11 +42,21 @@ const VideoSchema = new mongoose.Schema({
 
   sizeOriginal: { type: Number },
   sizeCompressed: { type: Number },
+  sizePreview: { type: Number },
+  sizeThumbnail: { type: Number },
+
   duration: { type: Number },
 
-  isBroll: { type: Boolean, default: false },  // Kategorija za tagovanje inserata
-  keywords: [{ type: String }],                // Kategorija za "keywords"
-  timecodes: [TimecodeSchema],                 // tag nije implementiran
+  rawRetentionDays: { type: Number, default: 0 },
+  rawExpiresAt: { type: Date },
+  rawDeleted: { type: Boolean, default: false },
+  rawDeletedAt: { type: Date },
+
+  isBroll: { type: Boolean, default: false },
+  keywords: [{ type: String }],
+  timecodes: [TimecodeSchema],
+
+  finalCategory: { type: String },
 
   uploadDate: { type: Date, default: Date.now },
 });

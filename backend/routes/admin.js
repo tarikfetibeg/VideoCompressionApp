@@ -4,32 +4,84 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const bcrypt = require('bcrypt'); // Needed for hashing new passwords
+const bcrypt = require('bcrypt');
 const User = require('../models/User');
 const Video = require('../models/Video');
 const FfmpegSettings = require('../models/FfmpegSettings');
 const AuditLog = require('../models/AuditLog');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
+const { cleanupExpiredRawFiles } = require('../services/rawRetentionService');
+
+function deleteFileIfExists(filePath) {
+  if (!filePath) return;
+
+  const resolvedPath = path.resolve(filePath);
+  if (fs.existsSync(resolvedPath)) {
+    fs.unlinkSync(resolvedPath);
+  }
+}
+
+function normalizeFfmpegSettingsUpdate(update) {
+  const normalized = { ...update };
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'rawRetentionDays')) {
+    const rawRetentionDays = Number(normalized.rawRetentionDays);
+
+    if (
+      !Number.isInteger(rawRetentionDays) ||
+      rawRetentionDays < 0 ||
+      rawRetentionDays > 365
+    ) {
+      const error = new Error('rawRetentionDays must be an integer between 0 and 365.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    normalized.rawRetentionDays = rawRetentionDays;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'bitrate')) {
+    const bitrate = Number(normalized.bitrate);
+
+    if (!Number.isFinite(bitrate) || bitrate <= 0) {
+      const error = new Error('bitrate must be a positive number.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    normalized.bitrate = bitrate;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'framerate')) {
+    const framerate = Number(normalized.framerate);
+
+    if (!Number.isFinite(framerate) || framerate <= 0) {
+      const error = new Error('framerate must be a positive number.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    normalized.framerate = framerate;
+  }
+
+  return normalized;
+}
 
 /* --- Public Endpoint for FFmpeg Default Settings ---
    This endpoint returns the default FFmpeg settings.
    It only requires that the requester is authenticated,
-   making it accessible to reporters (and others) without needing admin rights.
+   making it accessible to reporters and other authenticated roles.
 */
 router.get('/ffmpeg-settings-default', authenticateToken, async (req, res) => {
   try {
     let settings = await FfmpegSettings.findOne({});
     if (!settings) {
-      settings = await FfmpegSettings.create({
-        codec: 'libx264',
-        resolution: '1920x1080',
-        bitrate: 1500, // in Kbps
-        framerate: 30,
-      });
+      settings = await FfmpegSettings.create({});
     }
     res.json(settings);
   } catch (err) {
+    console.error('Error fetching default FFmpeg settings:', err);
     res.status(500).json({ message: 'Error fetching default FFmpeg settings' });
   }
 });
@@ -38,101 +90,137 @@ router.get('/ffmpeg-settings-default', authenticateToken, async (req, res) => {
 router.use(authenticateToken);
 router.use(authorize(['Admin']));
 
+/* ----- Raw Retention Cleanup ----- */
+
+router.post('/cleanup-raw', async (req, res) => {
+  try {
+    const result = await cleanupExpiredRawFiles();
+
+    await AuditLog.create({
+      action: 'Manual Raw Retention Cleanup',
+      performedBy: req.user.id,
+      details: result,
+    });
+
+    res.json({
+      message: 'Raw retention cleanup completed',
+      result,
+    });
+  } catch (err) {
+    console.error('Manual raw cleanup error:', err);
+    res.status(500).json({ message: 'Error running raw cleanup' });
+  }
+});
+
 /* ----- User Management ----- */
 
-// Get all users (excluding passwords)
 router.get('/users', async (req, res) => {
   try {
     const users = await User.find({}, '-password');
     res.json(users);
   } catch (err) {
+    console.error('Error retrieving users:', err);
     res.status(500).json({ message: 'Error retrieving users' });
   }
 });
 
-// Update user permissions (role)
 router.put('/users/:id', async (req, res) => {
   const { role } = req.body;
+
   try {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { role },
       { new: true }
     );
+
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found' });
     }
-    // Log the role update
+
     await AuditLog.create({
       action: 'Update User Role',
       performedBy: req.user.id,
-      details: { userId: req.params.id, newRole: role }
+      details: { userId: req.params.id, newRole: role },
     });
+
     res.json({ message: 'User role updated successfully', user: updatedUser });
   } catch (err) {
+    console.error('Error updating user role:', err);
     res.status(500).json({ message: 'Error updating user role' });
   }
 });
 
-// Reset user password endpoint
 router.put('/users/:id/reset-password', async (req, res) => {
   const { newPassword } = req.body;
+
   if (!newPassword) {
     return res.status(400).json({ message: 'New password is required.' });
   }
+
   try {
-    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { password: hashedPassword },
       { new: true }
     );
+
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found.' });
     }
-    // Log the password reset action
+
     await AuditLog.create({
       action: 'Reset User Password',
       performedBy: req.user.id,
-      details: { userId: req.params.id }
+      details: { userId: req.params.id },
     });
+
     res.json({ message: 'User password reset successfully' });
   } catch (err) {
+    console.error('Error resetting password:', err);
     res.status(500).json({ message: 'Error resetting password' });
   }
 });
 
 /* ----- Video Management ----- */
 
-// Delete a video by its ID
 router.delete('/videos/:id', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
+
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
-    // Delete the file from the file system if it exists
-    if (fs.existsSync(video.filepath)) {
-      fs.unlinkSync(video.filepath);
-    }
-    // Remove the video document
+
+    const pathsToDelete = Array.from(new Set([
+      video.filepath,
+      video.compressedPath,
+      video.previewPath,
+      video.thumbnailPath,
+      video.rawPath,
+    ].filter(Boolean)));
+
+    pathsToDelete.forEach(deleteFileIfExists);
+
     await Video.findByIdAndDelete(req.params.id);
-    // Log the deletion
+
     await AuditLog.create({
       action: 'Delete Video',
       performedBy: req.user.id,
-      details: { videoId: req.params.id, filename: video.filename }
+      details: { videoId: req.params.id, filename: video.filename },
     });
+
     res.json({ message: 'Video deleted successfully' });
   } catch (err) {
+    console.error('Error deleting video:', err);
     res.status(500).json({ message: 'Error deleting video' });
   }
 });
 
 /* ----- FFmpeg Settings Management ----- */
 
-// Get current FFmpeg settings
 router.get('/ffmpeg-settings', async (req, res) => {
   try {
     let settings = await FfmpegSettings.findOne({});
@@ -141,43 +229,56 @@ router.get('/ffmpeg-settings', async (req, res) => {
     }
     res.json(settings);
   } catch (err) {
+    console.error('Error retrieving FFmpeg settings:', err);
     res.status(500).json({ message: 'Error retrieving FFmpeg settings' });
   }
 });
 
-// Update FFmpeg settings
 router.put('/ffmpeg-settings', async (req, res) => {
   try {
-    const update = req.body;
+    const update = normalizeFfmpegSettingsUpdate(req.body);
+
     let settings = await FfmpegSettings.findOne({});
+
     if (!settings) {
       settings = await FfmpegSettings.create(update);
     } else {
-      settings = await FfmpegSettings.findByIdAndUpdate(settings._id, update, { new: true });
+      settings = await FfmpegSettings.findByIdAndUpdate(
+        settings._id,
+        update,
+        { new: true }
+      );
     }
-    // Log the settings update
+
     await AuditLog.create({
       action: 'Update FFmpeg Settings',
       performedBy: req.user.id,
-      details: update
+      details: update,
     });
+
     res.json({ message: 'FFmpeg settings updated successfully', settings });
   } catch (err) {
+    console.error('Error updating FFmpeg settings:', err);
+
+    if (err.statusCode === 400) {
+      return res.status(400).json({ message: err.message });
+    }
+
     res.status(500).json({ message: 'Error updating FFmpeg settings' });
   }
 });
 
 /* ----- Audit Logs Endpoint ----- */
 
-// Retrieve all audit logs
 router.get('/audit-logs', async (req, res) => {
   try {
-    // Populate performedBy with username for clarity and sort by most recent first
     const logs = await AuditLog.find({})
       .populate('performedBy', 'username')
       .sort({ timestamp: -1 });
+
     res.json(logs);
   } catch (err) {
+    console.error('Error retrieving audit logs:', err);
     res.status(500).json({ message: 'Error retrieving audit logs' });
   }
 });

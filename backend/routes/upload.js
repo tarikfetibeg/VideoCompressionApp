@@ -2,23 +2,29 @@ const express = require('express');
 const multer = require('multer');
 const Video = require('../models/Video');
 const AuditLog = require('../models/AuditLog');
+const FfmpegSettings = require('../models/FfmpegSettings');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const { paths, createStoredFilename } = require('../utils/storagePaths');
+const {
+  paths,
+  ensureFolderExists,
+  createStoredFilename,
+  createMp4Filename,
+  createJpgFilename,
+} = require('../utils/storagePaths');
 
 const router = express.Router();
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 
-// Supported MIME types and file extensions for videos, including MXF.
 const allowedMimetypes = [
   'video/mp4',
-  'video/quicktime', // mov
-  'video/x-msvideo', // avi
-  'video/x-matroska', // mkv
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska',
   'video/webm',
   'video/mxf',
   'application/mxf',
@@ -26,7 +32,6 @@ const allowedMimetypes = [
 
 const allowedExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.mxf'];
 
-// Multer storage configuration. Raw uploads are stored temporarily in storage/raw.
 const storage = multer.diskStorage({
   destination: paths.raw,
   filename: (req, file, cb) => {
@@ -34,7 +39,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter for supported video formats.
 const fileFilter = (req, file, cb) => {
   console.log(`File Filter: Received file ${file.originalname} with mimetype ${file.mimetype}`);
 
@@ -43,6 +47,7 @@ const fileFilter = (req, file, cb) => {
   }
 
   const ext = path.extname(file.originalname).toLowerCase();
+
   if (allowedExtensions.includes(ext)) {
     return cb(null, true);
   }
@@ -105,16 +110,34 @@ function removeFileIfExists(filePath) {
   }
 }
 
-function ensureFolderExists(folderPath) {
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
+async function getRawRetentionDays() {
+  const settings = await FfmpegSettings.findOne({});
+  const value = settings && Number.isInteger(settings.rawRetentionDays)
+    ? settings.rawRetentionDays
+    : 0;
+
+  if (value < 0) return 0;
+  if (value > 365) return 365;
+
+  return value;
 }
 
-function createMp4PreviewFilename(originalName) {
-  const parsed = path.parse(originalName);
-  const safeBaseName = parsed.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `preview_${Date.now()}_${safeBaseName}.mp4`;
+function buildRawRetentionInfo(rawRetentionDays) {
+  const days = Number(rawRetentionDays) || 0;
+
+  if (days <= 0) {
+    return {
+      keepRaw: false,
+      rawRetentionDays: 0,
+      rawExpiresAt: null,
+    };
+  }
+
+  return {
+    keepRaw: true,
+    rawRetentionDays: days,
+    rawExpiresAt: new Date(Date.now() + days * 24 * 60 * 60 * 1000),
+  };
 }
 
 function convertVideo({
@@ -126,7 +149,7 @@ function convertVideo({
   frameRate,
 }) {
   return new Promise((resolve, reject) => {
-    const command = ffmpeg(inputPath)
+    ffmpeg(inputPath)
       .videoCodec(codec)
       .audioCodec('aac')
       .size(resolution)
@@ -136,9 +159,7 @@ function convertVideo({
       .outputOptions([
         '-pix_fmt yuv420p',
         '-movflags +faststart',
-      ]);
-
-    command
+      ])
       .on('start', (cmd) => {
         console.log('FFmpeg started with command:', cmd);
       })
@@ -183,7 +204,28 @@ function convertPreviewVideo({ inputPath, outputPath }) {
   });
 }
 
-// Upload Video Route - supports multiple files.
+function createThumbnail({ inputPath, outputPath }) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .seekInput('00:00:01')
+      .frames(1)
+      .size('640x360')
+      .outputOptions(['-q:v 3'])
+      .on('start', (cmd) => {
+        console.log('FFmpeg thumbnail started with command:', cmd);
+      })
+      .on('end', () => {
+        console.log(`Thumbnail created: ${outputPath}`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('Thumbnail generation error:', err);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+}
+
 router.post(
   '/',
   authenticateToken,
@@ -197,26 +239,32 @@ router.post(
 
       const videosProcessed = [];
       const auditDetails = [];
+      const rawRetentionDays = await getRawRetentionDays();
 
-      // Reporter and Admin branch: These users must supply tags.
       if (req.user.role === 'Reporter' || req.user.role === 'Admin') {
         const tagEvent = req.body.event;
         const tagLocation = req.body.location;
         const tagDate = req.body.date;
 
         if (!tagEvent || !tagLocation || !tagDate) {
-          return res.status(400).json({ message: 'Missing required tags: event, location, or date.' });
+          return res.status(400).json({
+            message: 'Missing required tags: event, location, or date.',
+          });
         }
 
         for (const file of req.files) {
           const rawVideoPath = file.path;
-          const outputFilename = createStoredFilename('compressed', file.originalname);
+          const outputFilename = createMp4Filename('compressed', file.originalname);
           const outputPath = path.join(paths.compressed, outputFilename);
-          const previewFilename = createMp4PreviewFilename(file.originalname);
+          const previewFilename = createMp4Filename('preview', file.originalname);
           const previewPath = path.join(paths.previews, previewFilename);
+          const thumbnailFilename = createJpgFilename('thumb', file.originalname);
+          const thumbnailPath = path.join(paths.thumbnails, thumbnailFilename);
+          const rawRetentionInfo = buildRawRetentionInfo(rawRetentionDays);
 
           ensureFolderExists(paths.compressed);
           ensureFolderExists(paths.previews);
+          ensureFolderExists(paths.thumbnails);
 
           const ffmpegCodec = mapCodec(req.body.codec);
           const resolutionValue = mapResolution(req.body.resolution);
@@ -245,17 +293,24 @@ router.post(
             outputPath: previewPath,
           });
 
+          await createThumbnail({
+            inputPath: rawVideoPath,
+            outputPath: thumbnailPath,
+          });
+
           const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
           const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
+          const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
 
           const videoDoc = new Video({
             filename: outputFilename,
             filepath: outputPath,
             originalFilename: file.originalname,
 
-            rawPath: rawVideoPath,
+            rawPath: rawRetentionInfo.keepRaw ? rawVideoPath : null,
             compressedPath: outputPath,
             previewPath,
+            thumbnailPath,
 
             uploader: req.user.id,
             event: tagEvent,
@@ -272,6 +327,13 @@ router.post(
 
             sizeOriginal: inputStats ? inputStats.size : null,
             sizeCompressed: outputStats ? outputStats.size : null,
+            sizePreview: previewStats ? previewStats.size : null,
+            sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+
+            rawRetentionDays: rawRetentionInfo.rawRetentionDays,
+            rawExpiresAt: rawRetentionInfo.rawExpiresAt,
+            rawDeleted: !rawRetentionInfo.keepRaw,
+            rawDeletedAt: rawRetentionInfo.keepRaw ? null : new Date(),
 
             uploadDate: new Date(),
           });
@@ -283,16 +345,21 @@ router.post(
             originalFilename: file.originalname,
             storedFilename: outputFilename,
             previewFilename,
+            thumbnailFilename,
             codec: ffmpegCodec,
             resolution: resolutionValue,
             bitrateKbps,
             frameRate,
+            rawRetentionDays: rawRetentionInfo.rawRetentionDays,
+            rawExpiresAt: rawRetentionInfo.rawExpiresAt,
             outputSize: outputStats ? outputStats.size : null,
             previewSize: previewStats ? previewStats.size : null,
+            thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
           });
 
-          // Current behavior: delete raw file after successful conversion and preview generation.
-          removeFileIfExists(rawVideoPath);
+          if (!rawRetentionInfo.keepRaw) {
+            removeFileIfExists(rawVideoPath);
+          }
         }
 
         await AuditLog.create({
@@ -300,14 +367,15 @@ router.post(
           performedBy: req.user.id,
           details: {
             count: req.files.length,
-            tags: { event: tagEvent, location: tagLocation, date: tagDate },
+            tags: {
+              event: tagEvent,
+              location: tagLocation,
+              date: tagDate,
+            },
             files: auditDetails,
           },
         });
-      }
-
-      // Editor branch.
-      else if (req.user.role === 'Editor') {
+      } else if (req.user.role === 'Editor') {
         let rawVideoIds = req.body.rawVideoIds;
 
         if (rawVideoIds && typeof rawVideoIds === 'string') {
@@ -316,27 +384,34 @@ router.post(
 
         if (rawVideoIds && rawVideoIds.length > 0) {
           if (rawVideoIds.length !== req.files.length) {
-            return res.status(400).json({ message: 'Mismatch between number of files and provided rawVideoIds.' });
+            return res.status(400).json({
+              message: 'Mismatch between number of files and provided rawVideoIds.',
+            });
           }
 
-          // Conversion branch: Use tags from raw videos.
           for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const rawVideoId = rawVideoIds[i];
             const rawVideo = await Video.findById(rawVideoId);
 
             if (!rawVideo) {
-              return res.status(404).json({ message: `Raw video not found for id ${rawVideoId}` });
+              return res.status(404).json({
+                message: `Raw video not found for id ${rawVideoId}`,
+              });
             }
 
             const rawVideoPath = file.path;
-            const outputFilename = createStoredFilename('compressed', file.originalname);
+            const outputFilename = createMp4Filename('compressed', file.originalname);
             const outputPath = path.join(paths.compressed, outputFilename);
-            const previewFilename = createMp4PreviewFilename(file.originalname);
+            const previewFilename = createMp4Filename('preview', file.originalname);
             const previewPath = path.join(paths.previews, previewFilename);
+            const thumbnailFilename = createJpgFilename('thumb', file.originalname);
+            const thumbnailPath = path.join(paths.thumbnails, thumbnailFilename);
+            const rawRetentionInfo = buildRawRetentionInfo(rawRetentionDays);
 
             ensureFolderExists(paths.compressed);
             ensureFolderExists(paths.previews);
+            ensureFolderExists(paths.thumbnails);
 
             const ffmpegCodec = mapCodec(req.body.codec);
             const resolutionValue = mapResolution(req.body.resolution);
@@ -360,17 +435,24 @@ router.post(
               outputPath: previewPath,
             });
 
+            await createThumbnail({
+              inputPath: rawVideoPath,
+              outputPath: thumbnailPath,
+            });
+
             const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
             const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
+            const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
 
             const videoDoc = new Video({
               filename: outputFilename,
               filepath: outputPath,
               originalFilename: file.originalname,
 
-              rawPath: rawVideoPath,
+              rawPath: rawRetentionInfo.keepRaw ? rawVideoPath : null,
               compressedPath: outputPath,
               previewPath,
+              thumbnailPath,
 
               uploader: req.user.id,
               event: rawVideo.event,
@@ -387,52 +469,76 @@ router.post(
 
               sizeOriginal: inputStats ? inputStats.size : null,
               sizeCompressed: outputStats ? outputStats.size : null,
+              sizePreview: previewStats ? previewStats.size : null,
+              sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+
+              rawRetentionDays: rawRetentionInfo.rawRetentionDays,
+              rawExpiresAt: rawRetentionInfo.rawExpiresAt,
+              rawDeleted: !rawRetentionInfo.keepRaw,
+              rawDeletedAt: rawRetentionInfo.keepRaw ? null : new Date(),
 
               uploadDate: new Date(),
             });
 
             await videoDoc.save();
             videosProcessed.push(videoDoc);
-            removeFileIfExists(rawVideoPath);
+
+            if (!rawRetentionInfo.keepRaw) {
+              removeFileIfExists(rawVideoPath);
+            }
 
             auditDetails.push({
               originalFilename: file.originalname,
               rawVideoId,
               storedFilename: outputFilename,
               previewFilename,
+              thumbnailFilename,
+              rawRetentionDays: rawRetentionInfo.rawRetentionDays,
               outputSize: outputStats ? outputStats.size : null,
               previewSize: previewStats ? previewStats.size : null,
+              thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
             });
           }
 
           await AuditLog.create({
             action: 'Bulk Edited Video Upload & Tagging',
             performedBy: req.user.id,
-            details: { count: req.files.length, rawVideoIds, files: auditDetails },
+            details: {
+              count: req.files.length,
+              rawVideoIds,
+              files: auditDetails,
+            },
           });
         } else {
-          // Final upload branch: rawVideoIds not provided or empty.
           const tagEvent = req.body.event;
           const tagLocation = req.body.location;
           const tagDate = req.body.date;
 
           if (!tagEvent || !tagLocation || !tagDate) {
-            return res.status(400).json({ message: 'Missing required tags: event, location, or date.' });
+            return res.status(400).json({
+              message: 'Missing required tags: event, location, or date.',
+            });
           }
 
           const finalCategory = req.body.finalCategory || 'video-report';
-          const keywords = req.body.keywords ? req.body.keywords.split(',').map((s) => s.trim()) : [];
-          const finalFolder = path.join(paths.final, finalCategory);
+          const keywords = req.body.keywords
+            ? req.body.keywords.split(',').map((s) => s.trim())
+            : [];
 
+          const finalFolder = path.join(paths.final, finalCategory);
           ensureFolderExists(finalFolder);
           ensureFolderExists(paths.previews);
+          ensureFolderExists(paths.thumbnails);
 
           for (const file of req.files) {
             const rawVideoPath = file.path;
             const outputFilename = createStoredFilename('final', file.originalname);
             const outputPath = path.join(finalFolder, outputFilename);
-            const previewFilename = createMp4PreviewFilename(file.originalname);
+            const previewFilename = createMp4Filename('preview', file.originalname);
             const previewPath = path.join(paths.previews, previewFilename);
+            const thumbnailFilename = createJpgFilename('thumb', file.originalname);
+            const thumbnailPath = path.join(paths.thumbnails, thumbnailFilename);
+
             const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
 
             await convertPreviewVideo({
@@ -440,10 +546,16 @@ router.post(
               outputPath: previewPath,
             });
 
+            await createThumbnail({
+              inputPath: rawVideoPath,
+              outputPath: thumbnailPath,
+            });
+
             fs.renameSync(rawVideoPath, outputPath);
 
             const outputStats = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
             const previewStats = fs.existsSync(previewPath) ? fs.statSync(previewPath) : null;
+            const thumbnailStats = fs.existsSync(thumbnailPath) ? fs.statSync(thumbnailPath) : null;
 
             const videoDoc = new Video({
               filename: outputFilename,
@@ -453,6 +565,7 @@ router.post(
               rawPath: outputPath,
               compressedPath: outputPath,
               previewPath,
+              thumbnailPath,
 
               uploader: req.user.id,
               event: tagEvent,
@@ -467,6 +580,13 @@ router.post(
 
               sizeOriginal: inputStats ? inputStats.size : null,
               sizeCompressed: outputStats ? outputStats.size : null,
+              sizePreview: previewStats ? previewStats.size : null,
+              sizeThumbnail: thumbnailStats ? thumbnailStats.size : null,
+
+              rawRetentionDays: 0,
+              rawExpiresAt: null,
+              rawDeleted: false,
+              rawDeletedAt: null,
 
               uploadDate: new Date(),
             });
@@ -478,9 +598,11 @@ router.post(
               originalFilename: file.originalname,
               storedFilename: outputFilename,
               previewFilename,
+              thumbnailFilename,
               finalCategory,
               outputSize: outputStats ? outputStats.size : null,
               previewSize: previewStats ? previewStats.size : null,
+              thumbnailSize: thumbnailStats ? thumbnailStats.size : null,
             });
           }
 
@@ -489,7 +611,11 @@ router.post(
             performedBy: req.user.id,
             details: {
               count: req.files.length,
-              tags: { event: tagEvent, location: tagLocation, date: tagDate },
+              tags: {
+                event: tagEvent,
+                location: tagLocation,
+                date: tagDate,
+              },
               finalCategory,
               files: auditDetails,
             },
@@ -498,14 +624,16 @@ router.post(
       }
 
       return res.status(200).json({
-        message: 'Upload, compression, preview generation, and tagging successful',
+        message: 'Upload, compression, preview, thumbnail, and tagging successful',
         videos: videosProcessed,
       });
     } catch (error) {
       console.error('Upload error:', error);
 
       if (error.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ message: 'File is too large. Maximum allowed file size is 5 GB.' });
+        return res.status(413).json({
+          message: 'File is too large. Maximum allowed file size is 5 GB.',
+        });
       }
 
       return res.status(500).json({
