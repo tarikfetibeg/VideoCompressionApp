@@ -5,6 +5,11 @@ const AuditLog = require('../models/AuditLog');
 const FfmpegSettings = require('../models/FfmpegSettings');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
+const {
+  allowedVideoExtensions,
+  allowedVideoMimetypes,
+  supportedVideoFormatSummary,
+} = require('../config/mediaFormats');
 const path = require('path');
 const fs = require('fs');
 const {
@@ -13,24 +18,20 @@ const {
   createStoredFilename,
   createMp4Filename,
   createJpgFilename,
+  createRawManifestPath,
 } = require('../utils/storagePaths');
 const { enqueueVideoProcessing } = require('../queues/videoQueue');
+const { probeMedia } = require('../services/videoProcessingService');
+const { getQueueErrorMessage } = require('../utils/queueErrors');
 
 const router = express.Router();
 
-const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
-
-const allowedMimetypes = [
-  'video/mp4',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
-  'video/webm',
-  'video/mxf',
-  'application/mxf',
-];
-
-const allowedExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.mxf'];
+const DEFAULT_MAX_UPLOAD_SIZE_GB = 25;
+const MAX_UPLOAD_SIZE_GB = Number(process.env.MAX_UPLOAD_SIZE_GB) > 0
+  ? Number(process.env.MAX_UPLOAD_SIZE_GB)
+  : DEFAULT_MAX_UPLOAD_SIZE_GB;
+const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_GB * 1024 * 1024 * 1024;
+const MAX_UPLOAD_FILES = parseInt(process.env.MAX_UPLOAD_FILES || '50', 10) || 50;
 
 const storage = multer.diskStorage({
   destination: paths.raw,
@@ -40,17 +41,22 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (allowedMimetypes.includes(file.mimetype)) {
+  const mimetype = String(file.mimetype || '').toLowerCase();
+
+  if (allowedVideoMimetypes.includes(mimetype)) {
     return cb(null, true);
   }
 
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (allowedExtensions.includes(ext)) {
+  if (allowedVideoExtensions.includes(ext)) {
     return cb(null, true);
   }
 
-  return cb(new Error(`Unsupported file type: ${file.mimetype} or extension ${ext}`), false);
+  return cb(
+    new Error(`Unsupported file type: ${file.mimetype} or extension ${ext}. Supported: ${supportedVideoFormatSummary}.`),
+    false
+  );
 };
 
 const upload = multer({
@@ -58,7 +64,7 @@ const upload = multer({
   fileFilter,
   limits: {
     fileSize: MAX_UPLOAD_SIZE_BYTES,
-    files: 50,
+    files: MAX_UPLOAD_FILES,
   },
 });
 
@@ -132,25 +138,73 @@ function buildRawRetentionInfo(rawRetentionDays) {
   };
 }
 
+function buildSourceMetadata(mediaProbe = {}) {
+  return {
+    sourceFormat: mediaProbe.container || null,
+    sourceCodec: mediaProbe.codec || null,
+    sourceResolution: mediaProbe.resolution || null,
+    sourceBitrate: mediaProbe.bitrate || null,
+    sourceFramerate: mediaProbe.framerate || null,
+    sourceDuration: mediaProbe.duration || null,
+    sourceAudioCodec: mediaProbe.audioCodec || null,
+    sourceAudioChannels: mediaProbe.audioChannels || null,
+    sourceAudioSampleRate: mediaProbe.audioSampleRate || null,
+  };
+}
+
+async function inspectSourceMedia(rawVideoPath) {
+  try {
+    const mediaProbe = await probeMedia(rawVideoPath);
+    return buildSourceMetadata(mediaProbe);
+  } catch (error) {
+    console.warn(`Could not probe source media "${rawVideoPath}":`, error.message);
+    return buildSourceMetadata();
+  }
+}
+
 async function enqueueOrMarkFailed(videoDoc) {
   try {
     const job = await enqueueVideoProcessing(videoDoc._id);
     videoDoc.processingJobId = job.id.toString();
-    return job;
+    return { job, error: null };
   } catch (error) {
+    const queueMessage = getQueueErrorMessage(error);
     videoDoc.processingStatus = 'failed';
-    videoDoc.processingError = `Failed to queue video processing: ${error.message}`;
+    videoDoc.processingError = queueMessage;
     videoDoc.processingCompletedAt = new Date();
     await videoDoc.save();
-    throw error;
+
+    return { job: null, error: queueMessage };
+  }
+}
+
+async function writeRawUploadManifest(rawVideoPath, manifest) {
+  try {
+    ensureFolderExists(paths.rawManifests);
+
+    await fs.promises.writeFile(
+      createRawManifestPath(rawVideoPath),
+      JSON.stringify(
+        {
+          ...manifest,
+          rawPath: rawVideoPath,
+          recordedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+  } catch (error) {
+    console.warn('Could not write raw upload manifest:', error.message);
   }
 }
 
 router.post(
   '/',
   authenticateToken,
-  authorize(['Reporter', 'Editor', 'Admin']),
-  upload.array('videos', 50),
+  authorize(['Reporter', 'Editor', 'VideoEditor', 'Admin']),
+  upload.array('videos', MAX_UPLOAD_FILES),
   async (req, res) => {
     try {
       if (!req.files || req.files.length === 0) {
@@ -159,16 +213,17 @@ router.post(
 
       const videosProcessed = [];
       const auditDetails = [];
+      const queueFailures = [];
       const rawRetentionDays = await getRawRetentionDays();
 
       if (req.user.role === 'Reporter' || req.user.role === 'Admin') {
         const tagEvent = req.body.event;
-        const tagLocation = req.body.location;
+        const tagLocation = req.body.location || '';
         const tagDate = req.body.date;
 
-        if (!tagEvent || !tagLocation || !tagDate) {
+        if (!tagEvent || !tagDate) {
           return res.status(400).json({
-            message: 'Missing required tags: event, location, or date.',
+            message: 'Missing required tags: event or date.',
           });
         }
 
@@ -191,7 +246,21 @@ router.post(
           const bitrateKbps = getBitrateKbps(req.body.bitrate);
           const frameRate = getFrameRate(req.body.framerate);
 
+          await writeRawUploadManifest(rawVideoPath, {
+            uploadKind: 'raw-ingest',
+            originalFilename: file.originalname,
+            uploaderId: req.user.id,
+            uploaderUsername: req.user.username,
+            uploaderRole: req.user.role,
+            event: tagEvent,
+            location: tagLocation,
+            tagDate,
+            status: 'raw',
+            processingMode: 'transcode',
+          });
+
           const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+          const sourceMetadata = await inspectSourceMedia(rawVideoPath);
 
           const videoDoc = new Video({
             filename: outputFilename,
@@ -217,11 +286,13 @@ router.post(
             resolution: resolutionValue,
             bitrate: bitrateKbps,
             framerate: frameRate,
+            ...sourceMetadata,
 
             sizeOriginal: inputStats ? inputStats.size : null,
             sizeCompressed: null,
             sizePreview: null,
             sizeThumbnail: null,
+            duration: sourceMetadata.sourceDuration,
 
             rawRetentionDays: rawRetentionInfo.rawRetentionDays,
             rawExpiresAt: rawRetentionInfo.rawExpiresAt,
@@ -232,8 +303,14 @@ router.post(
           });
 
           await videoDoc.save();
-          const job = await enqueueOrMarkFailed(videoDoc);
+          const enqueueResult = await enqueueOrMarkFailed(videoDoc);
           videosProcessed.push(videoDoc);
+          if (enqueueResult.error) {
+            queueFailures.push({
+              originalFilename: file.originalname,
+              error: enqueueResult.error,
+            });
+          }
 
           auditDetails.push({
             originalFilename: file.originalname,
@@ -244,9 +321,14 @@ router.post(
             resolution: resolutionValue,
             bitrateKbps,
             frameRate,
+            sourceFormat: sourceMetadata.sourceFormat,
+            sourceCodec: sourceMetadata.sourceCodec,
+            sourceResolution: sourceMetadata.sourceResolution,
+            sourceFramerate: sourceMetadata.sourceFramerate,
             rawRetentionDays: rawRetentionInfo.rawRetentionDays,
             rawExpiresAt: rawRetentionInfo.rawExpiresAt,
-            processingJobId: job.id.toString(),
+            processingJobId: enqueueResult.job?.id?.toString() || null,
+            processingError: enqueueResult.error || null,
           });
         }
 
@@ -263,7 +345,7 @@ router.post(
             files: auditDetails,
           },
         });
-      } else if (req.user.role === 'Editor') {
+      } else if (['Editor', 'VideoEditor'].includes(req.user.role)) {
         let rawVideoIds = req.body.rawVideoIds;
 
         if (rawVideoIds && typeof rawVideoIds === 'string') {
@@ -305,7 +387,23 @@ router.post(
             const resolutionValue = mapResolution(req.body.resolution);
             const bitrateKbps = getBitrateKbps(req.body.bitrate);
             const frameRate = getFrameRate(req.body.framerate);
+
+            await writeRawUploadManifest(rawVideoPath, {
+              uploadKind: 'edited-from-raw',
+              originalFilename: file.originalname,
+              uploaderId: req.user.id,
+              uploaderUsername: req.user.username,
+              uploaderRole: req.user.role,
+              event: rawVideo.event,
+              location: rawVideo.location,
+              tagDate: rawVideo.tagDate,
+              rawVideoId,
+              status: 'edited',
+              processingMode: 'transcode',
+            });
+
             const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+            const sourceMetadata = await inspectSourceMedia(rawVideoPath);
 
             const videoDoc = new Video({
               filename: outputFilename,
@@ -318,6 +416,8 @@ router.post(
               thumbnailPath,
 
               uploader: req.user.id,
+              reporter: rawVideo.reporter || rawVideo.uploader || null,
+              editor: req.user.id,
               event: rawVideo.event,
               location: rawVideo.location,
               tagDate: rawVideo.tagDate,
@@ -331,11 +431,13 @@ router.post(
               resolution: resolutionValue,
               bitrate: bitrateKbps,
               framerate: frameRate,
+              ...sourceMetadata,
 
               sizeOriginal: inputStats ? inputStats.size : null,
               sizeCompressed: null,
               sizePreview: null,
               sizeThumbnail: null,
+              duration: sourceMetadata.sourceDuration,
 
               rawRetentionDays: rawRetentionInfo.rawRetentionDays,
               rawExpiresAt: rawRetentionInfo.rawExpiresAt,
@@ -346,8 +448,14 @@ router.post(
             });
 
             await videoDoc.save();
-            const job = await enqueueOrMarkFailed(videoDoc);
+            const enqueueResult = await enqueueOrMarkFailed(videoDoc);
             videosProcessed.push(videoDoc);
+            if (enqueueResult.error) {
+              queueFailures.push({
+                originalFilename: file.originalname,
+                error: enqueueResult.error,
+              });
+            }
 
             auditDetails.push({
               originalFilename: file.originalname,
@@ -355,8 +463,13 @@ router.post(
               storedFilename: outputFilename,
               previewFilename,
               thumbnailFilename,
+              sourceFormat: sourceMetadata.sourceFormat,
+              sourceCodec: sourceMetadata.sourceCodec,
+              sourceResolution: sourceMetadata.sourceResolution,
+              sourceFramerate: sourceMetadata.sourceFramerate,
               rawRetentionDays: rawRetentionInfo.rawRetentionDays,
-              processingJobId: job.id.toString(),
+              processingJobId: enqueueResult.job?.id?.toString() || null,
+              processingError: enqueueResult.error || null,
             });
           }
 
@@ -371,12 +484,12 @@ router.post(
           });
         } else {
           const tagEvent = req.body.event;
-          const tagLocation = req.body.location;
+          const tagLocation = req.body.location || '';
           const tagDate = req.body.date;
 
-          if (!tagEvent || !tagLocation || !tagDate) {
+          if (!tagEvent || !tagDate) {
             return res.status(400).json({
-              message: 'Missing required tags: event, location, or date.',
+              message: 'Missing required tags: event or date.',
             });
           }
 
@@ -399,7 +512,23 @@ router.post(
             const thumbnailFilename = createJpgFilename('thumb', file.originalname);
             const thumbnailPath = path.join(paths.thumbnails, thumbnailFilename);
 
+            await writeRawUploadManifest(rawVideoPath, {
+              uploadKind: 'final-upload',
+              originalFilename: file.originalname,
+              uploaderId: req.user.id,
+              uploaderUsername: req.user.username,
+              uploaderRole: req.user.role,
+              event: tagEvent,
+              location: tagLocation,
+              tagDate,
+              finalCategory,
+              keywords,
+              status: 'edited',
+              processingMode: 'finalize',
+            });
+
             const inputStats = fs.existsSync(rawVideoPath) ? fs.statSync(rawVideoPath) : null;
+            const sourceMetadata = await inspectSourceMedia(rawVideoPath);
 
             const videoDoc = new Video({
               filename: outputFilename,
@@ -412,6 +541,8 @@ router.post(
               thumbnailPath,
 
               uploader: req.user.id,
+              reporter: null,
+              editor: req.user.id,
               event: tagEvent,
               location: tagLocation,
               tagDate: new Date(tagDate),
@@ -420,14 +551,27 @@ router.post(
               processingStatus: 'queued',
               processingMode: 'finalize',
               processingProgress: 0,
+              qcStatus: 'passed',
+              qcNotes: 'Direct editor QA upload.',
+              qcCheckedBy: req.user.id,
+              qcCheckedAt: new Date(),
+              broadcastStatus: 'qc_pending',
 
               finalCategory,
+              finalApprovalStatus: 'approved',
+              finalApprovedBy: req.user.id,
+              finalApprovedAt: new Date(),
+              finalApprovalRole: req.user.role,
+              qaResponsible: req.user.id,
+              qaResponsibilityType: 'direct_editor',
               keywords,
+              ...sourceMetadata,
 
               sizeOriginal: inputStats ? inputStats.size : null,
               sizeCompressed: null,
               sizePreview: null,
               sizeThumbnail: null,
+              duration: sourceMetadata.sourceDuration,
 
               rawRetentionDays: 0,
               rawExpiresAt: null,
@@ -438,8 +582,14 @@ router.post(
             });
 
             await videoDoc.save();
-            const job = await enqueueOrMarkFailed(videoDoc);
+            const enqueueResult = await enqueueOrMarkFailed(videoDoc);
             videosProcessed.push(videoDoc);
+            if (enqueueResult.error) {
+              queueFailures.push({
+                originalFilename: file.originalname,
+                error: enqueueResult.error,
+              });
+            }
 
             auditDetails.push({
               originalFilename: file.originalname,
@@ -447,7 +597,12 @@ router.post(
               previewFilename,
               thumbnailFilename,
               finalCategory,
-              processingJobId: job.id.toString(),
+              sourceFormat: sourceMetadata.sourceFormat,
+              sourceCodec: sourceMetadata.sourceCodec,
+              sourceResolution: sourceMetadata.sourceResolution,
+              sourceFramerate: sourceMetadata.sourceFramerate,
+              processingJobId: enqueueResult.job?.id?.toString() || null,
+              processingError: enqueueResult.error || null,
             });
           }
 
@@ -468,21 +623,24 @@ router.post(
         }
       }
 
-      return res.status(202).json({
-        message: 'Upload accepted. Video processing has been queued.',
+      return res.status(queueFailures.length > 0 ? 207 : 202).json({
+        message: queueFailures.length > 0
+          ? `Upload saved ${videosProcessed.length} file(s), but ${queueFailures.length} processing job(s) could not be queued. Use Retry Processing after the queue is available.`
+          : 'Upload accepted. Video processing has been queued.',
         videos: videosProcessed,
+        queueFailures,
       });
     } catch (error) {
       console.error('Upload error:', error);
 
       if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
-          message: 'File is too large. Maximum allowed file size is 5 GB.',
+          message: `File is too large. Maximum allowed file size is ${MAX_UPLOAD_SIZE_GB} GB.`,
         });
       }
 
-      return res.status(500).json({
-        message: 'Server error during file upload.',
+      return res.status(error.statusCode || 500).json({
+        message: error.statusCode ? error.message : 'Server error during file upload.',
         error: error.message,
       });
     }

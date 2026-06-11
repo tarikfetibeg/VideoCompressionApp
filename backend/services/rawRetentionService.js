@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const Video = require('../models/Video');
+const { createRawManifestPath } = require('../utils/storagePaths');
 
 function deleteFileIfExists(filePath) {
   if (!filePath) return false;
@@ -25,9 +26,11 @@ async function cleanupExpiredRawFiles() {
   });
 
   let deletedCount = 0;
+  let deletedManifestCount = 0;
 
   for (const video of expiredVideos) {
     const deleted = deleteFileIfExists(video.rawPath);
+    const manifestDeleted = deleteFileIfExists(createRawManifestPath(video.rawPath));
 
     video.rawDeleted = true;
     video.rawDeletedAt = new Date();
@@ -38,11 +41,16 @@ async function cleanupExpiredRawFiles() {
     if (deleted) {
       deletedCount += 1;
     }
+
+    if (manifestDeleted) {
+      deletedManifestCount += 1;
+    }
   }
 
   return {
     checked: expiredVideos.length,
     deleted: deletedCount,
+    deletedManifests: deletedManifestCount,
   };
 }
 

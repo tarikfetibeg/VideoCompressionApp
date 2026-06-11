@@ -10,8 +10,35 @@ const express = require('express');
 const app = express();
 const cors = require('cors');
 const mongoose = require('mongoose');
+const Video = require('./models/Video');
 const { ensureStorageFolders } = require('./utils/storagePaths');
 const { cleanupExpiredRawFiles } = require('./services/rawRetentionService');
+const {
+  enqueueVideoProcessing,
+  isLocalVideoQueue,
+  queueMode,
+  videoQueue,
+} = require('./queues/videoQueue');
+const { processVideoJob } = require('./services/videoProcessingService');
+
+async function requeueLocalPendingVideos() {
+  const pendingVideos = await Video.find({
+    processingStatus: { $in: ['queued', 'processing'] },
+  }).select('_id rawPath filepath');
+
+  let requeuedCount = 0;
+
+  for (const video of pendingVideos) {
+    if (!video.rawPath && !video.filepath) continue;
+
+    await enqueueVideoProcessing(video._id);
+    requeuedCount += 1;
+  }
+
+  if (requeuedCount > 0) {
+    console.log(`Local queue recovered ${requeuedCount} pending video job(s).`);
+  }
+}
 
 // Define allowedOrigins only once
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -31,7 +58,7 @@ app.use(
       }
     },
     credentials: true,
-    exposedHeaders: ['Content-Length', 'Content-Range'],
+    exposedHeaders: ['Content-Length', 'Content-Range', 'Content-Disposition'],
   })
 );
 
@@ -55,6 +82,19 @@ mongoose
   .connect(mongoURI)
   .then(async () => {
     console.log('MongoDB connected successfully');
+    console.log(`Video queue mode: ${queueMode}`);
+
+    if (isLocalVideoQueue) {
+      videoQueue.process(1, async (job) => processVideoJob(job.data, job));
+      videoQueue.on('completed', (job) => {
+        console.log(`Local video job completed: ${job.id}`);
+      });
+      videoQueue.on('failed', (job, error) => {
+        console.error(`Local video job failed: ${job.id}`, error);
+      });
+      console.warn('Local video processing is running inside the web process. Use Redis for production.');
+      await requeueLocalPendingVideos();
+    }
 
     try {
       const cleanupResult = await cleanupExpiredRawFiles();
@@ -77,11 +117,15 @@ mongoose
 // Register API routes
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
+const broadcastRoutes = require('./routes/broadcast');
+const editJobRoutes = require('./routes/editJobs');
 const uploadRoutes = require('./routes/upload');
 const videoRoutes = require('./routes/videos');
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/broadcast', broadcastRoutes);
+app.use('/api/edit-jobs', editJobRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 

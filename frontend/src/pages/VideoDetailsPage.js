@@ -1,13 +1,14 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import VideoPlayer from '../components/VideoPlayer';
-import AddTimecode from '../components/AddTimecode';
-import { useParams } from 'react-router-dom';
+import EditJobComposer from '../components/jobs/EditJobComposer';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
   Box,
   FormControl,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Select,
   Stack,
@@ -16,11 +17,17 @@ import {
 } from '@mui/material';
 import axios from '../axiosConfig';
 import { UserContext } from '../contexts/UserContext';
+import {
+  ACTIVE_PROCESSING_REFRESH_MS,
+  isVideoProcessingActive,
+} from '../utils/videoProcessing';
 
 const VideoDetailsPage = () => {
   const { videoId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useContext(UserContext);
   const [videoData, setVideoData] = useState(null);
+  const [timecodes, setTimecodes] = useState([]);
   const [qcStatus, setQcStatus] = useState('pending');
   const [qcNotes, setQcNotes] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -41,6 +48,13 @@ const VideoDetailsPage = () => {
   useEffect(() => {
     fetchVideoData();
   }, [fetchVideoData]);
+
+  useEffect(() => {
+    if (!isVideoProcessingActive(videoData)) return undefined;
+
+    const intervalId = window.setInterval(fetchVideoData, ACTIVE_PROCESSING_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, [fetchVideoData, videoData]);
 
   const handleDownload = () => {
     axios
@@ -63,6 +77,16 @@ const VideoDetailsPage = () => {
 
   const canUpdateQc = ['Editor', 'VideoEditor', 'Producer', 'Admin'].includes(user?.role);
   const canUpdateBroadcastStatus = ['Producer', 'Admin'].includes(user?.role);
+  const ownerId = videoData?.uploader?._id || videoData?.uploader;
+  const isOwner = ownerId && user?.id && String(ownerId) === String(user.id);
+  const canManageVideo =
+    user?.role === 'Admin'
+    || ['Editor', 'VideoEditor', 'Producer'].includes(user?.role)
+    || (user?.role === 'Reporter' && isOwner);
+  const canDownloadVideo =
+    user?.role === 'Admin'
+    || ['Editor', 'VideoEditor', 'Producer'].includes(user?.role)
+    || (user?.role === 'Reporter' && isOwner);
 
   const handleSaveQc = () => {
     setActionMessage('');
@@ -101,6 +125,30 @@ const VideoDetailsPage = () => {
       });
   };
 
+  const handleRetryProcessing = () => {
+    setActionMessage('');
+    setActionError('');
+
+    axios
+      .post(`/videos/${videoId}/requeue-processing`)
+      .then((response) => {
+        setVideoData(response.data.video);
+        setActionMessage(response.data?.message || 'Video processing has been queued again.');
+      })
+      .catch((error) => {
+        console.error('Error retrying video processing:', error);
+        setActionError(error.response?.data?.message || 'Video processing could not be retried.');
+      });
+  };
+
+  const sourceSummary = videoData && [
+    videoData.sourceFormat,
+    videoData.sourceCodec,
+    videoData.sourceResolution,
+    videoData.sourceFramerate ? `${videoData.sourceFramerate} fps` : null,
+    videoData.sourceAudioChannels ? `${videoData.sourceAudioChannels} audio ch` : null,
+  ].filter(Boolean).join(' / ');
+
   return (
     <Box sx={{ mt: 4 }}>
       {actionMessage && <Alert severity="success" sx={{ mb: 2 }}>{actionMessage}</Alert>}
@@ -117,8 +165,36 @@ const VideoDetailsPage = () => {
           </Typography>
           <Typography>Status: {videoData.status}</Typography>
           <Typography>Processing: {videoData.processingStatus}</Typography>
+          <Typography>Reporter: {videoData.reporter?.username || 'N/A'}</Typography>
+          <Typography>Editor: {videoData.editor?.username || 'N/A'}</Typography>
+          <Typography>
+            QA responsible: {videoData.qaResponsible?.username || 'N/A'}
+            {videoData.qaResponsibilityType ? ` / ${videoData.qaResponsibilityType.replace(/_/g, ' ')}` : ''}
+          </Typography>
+          <Typography>Program: {videoData.program?.name || 'N/A'}</Typography>
+          <Typography>Content type: {videoData.contentType?.name || videoData.finalCategory || 'N/A'}</Typography>
+          {isVideoProcessingActive(videoData) && (
+            <Box sx={{ mt: 1, mb: 1, maxWidth: 420 }}>
+              <LinearProgress
+                variant="determinate"
+                value={Number(videoData.processingProgress) || 0}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Compression progress: {Number(videoData.processingProgress) || 0}%
+              </Typography>
+            </Box>
+          )}
+          {videoData.processingStatus === 'failed' && videoData.processingError && (
+            <Typography color="error">Processing error: {videoData.processingError}</Typography>
+          )}
+          {sourceSummary && <Typography>Source: {sourceSummary}</Typography>}
           <Typography>QC: {videoData.qcStatus || 'pending'}</Typography>
           <Typography>Broadcast: {videoData.broadcastStatus || 'not_ready'}</Typography>
+          {canManageVideo && videoData.processingStatus === 'failed' && (
+            <Button variant="outlined" sx={{ mt: 1 }} onClick={handleRetryProcessing}>
+              Retry Processing
+            </Button>
+          )}
         </Box>
       )}
 
@@ -182,11 +258,22 @@ const VideoDetailsPage = () => {
         </Box>
       )}
 
-      <VideoPlayer videoId={videoId} />
-      <Button variant="contained" color="primary" sx={{ mt: 2 }} onClick={handleDownload}>
-        Download Video
-      </Button>
-      <AddTimecode videoId={videoId} />
+      <VideoPlayer
+        videoId={videoId}
+        initialStart={Number(searchParams.get('start')) || 0}
+        onTimecodesChange={setTimecodes}
+        readOnly={!canManageVideo}
+      />
+
+      {videoData && canManageVideo && (
+        <EditJobComposer video={videoData} timecodes={timecodes} />
+      )}
+
+      {canDownloadVideo && (
+        <Button variant="contained" color="primary" sx={{ mt: 2 }} onClick={handleDownload}>
+          Download Video
+        </Button>
+      )}
     </Box>
   );
 };

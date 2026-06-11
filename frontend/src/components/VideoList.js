@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import axiosInstance from '../axiosConfig';
 import { Link } from 'react-router-dom';
 import {
@@ -28,7 +28,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { UserContext } from '../contexts/UserContext';
+import {
+  ACTIVE_PROCESSING_REFRESH_MS,
+  hasActiveVideoProcessing,
+} from '../utils/videoProcessing';
 
 const formatBytes = (bytes) => {
   if (!bytes || Number.isNaN(Number(bytes))) return 'N/A';
@@ -107,7 +112,13 @@ const VideoThumbnail = ({ videoId, title }) => {
   );
 };
 
-const VideoList = () => {
+const VideoList = ({
+  scope = 'mine',
+  library = 'all',
+  title = 'Videos',
+  description = 'Pregled, preview, skidanje i brisanje dostupnih video materijala.',
+  readOnly = false,
+}) => {
   const [videos, setVideos] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -117,25 +128,46 @@ const VideoList = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const { user } = useContext(UserContext);
 
-  useEffect(() => {
-    fetchVideos();
-  }, []);
+  const fetchVideos = useCallback(({ silent = false } = {}) => {
+    if (!silent) {
+      setMessage('');
+      setErrorMessage('');
+    }
 
-  const fetchVideos = () => {
-    setMessage('');
-    setErrorMessage('');
+    const params = new URLSearchParams();
+    if (scope === 'station') params.set('scope', 'station');
+    if (library === 'archive') params.set('library', 'archive');
+    const query = params.toString() ? `?${params.toString()}` : '';
 
     axiosInstance
-      .get('/videos', { headers: { Accept: 'application/json' } })
+      .get(`/videos${query}`, { headers: { Accept: 'application/json' } })
       .then((response) => {
         const data = Array.isArray(response.data) ? response.data : [];
         setVideos(data);
       })
       .catch((error) => {
         console.error('Error fetching videos:', error);
-        setErrorMessage('Greška pri učitavanju videa.');
+        if (!silent) {
+          setErrorMessage('Greška pri učitavanju videa.');
+        }
       });
-  };
+  }, [scope, library]);
+
+  useEffect(() => {
+    fetchVideos();
+  }, [fetchVideos]);
+
+  const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
+
+  useEffect(() => {
+    if (!hasActiveProcessing) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      fetchVideos({ silent: true });
+    }, ACTIVE_PROCESSING_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchVideos, hasActiveProcessing]);
 
   const eventOptions = useMemo(() => {
     const events = videos.map((video) => video.event || 'No event');
@@ -169,6 +201,8 @@ const VideoList = () => {
   }, [videos, searchTerm, eventFilter]);
 
   const handleSelectVideo = (videoId) => {
+    if (readOnly) return;
+
     setSelectedVideos((prevSelected) =>
       prevSelected.includes(videoId)
         ? prevSelected.filter((id) => id !== videoId)
@@ -177,6 +211,8 @@ const VideoList = () => {
   };
 
   const handleSelectAllFiltered = () => {
+    if (readOnly) return;
+
     const filteredIds = filteredVideos.map((video) => video._id);
     const allSelected = filteredIds.every((id) => selectedVideos.includes(id));
 
@@ -229,6 +265,22 @@ const VideoList = () => {
       });
   };
 
+  const handleRetryProcessing = (video) => {
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .post(`/videos/${video._id}/requeue-processing`)
+      .then((response) => {
+        setMessage(response.data?.message || 'Video processing has been queued again.');
+        fetchVideos();
+      })
+      .catch((error) => {
+        console.error('Error retrying video processing:', error);
+        setErrorMessage(error.response?.data?.message || 'Greska pri ponovnom pokretanju obrade.');
+      });
+  };
+
   const handleBulkDelete = (videoIds) => {
     const endpoint = user.role === 'Admin' ? '/admin/videos' : '/videos';
 
@@ -272,10 +324,10 @@ const VideoList = () => {
       >
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Videos
+            {title}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Pregled, preview, skidanje i brisanje dostupnih video materijala.
+            {description}
           </Typography>
         </Box>
 
@@ -295,7 +347,7 @@ const VideoList = () => {
               fullWidth
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Filename, event, location..."
+              placeholder="Filename, event..."
             />
           </Grid>
 
@@ -317,15 +369,17 @@ const VideoList = () => {
             </FormControl>
           </Grid>
 
-          <Grid item xs={12} md={2}>
-            <Button fullWidth variant="outlined" onClick={handleSelectAllFiltered}>
-              Select
-            </Button>
-          </Grid>
+          {!readOnly && (
+            <Grid item xs={12} md={2}>
+              <Button fullWidth variant="outlined" onClick={handleSelectAllFiltered}>
+                Select
+              </Button>
+            </Grid>
+          )}
         </Grid>
       </Paper>
 
-      {selectedVideos.length > 0 && (
+      {!readOnly && selectedVideos.length > 0 && (
         <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
             <Typography sx={{ fontWeight: 700 }}>
@@ -374,17 +428,19 @@ const VideoList = () => {
                       videoId={video._id}
                       title={video.originalFilename || video.filename}
                     />
-                    <Checkbox
-                      checked={selected}
-                      onChange={() => handleSelectVideo(video._id)}
-                      sx={{
-                        position: 'absolute',
-                        top: 8,
-                        left: 8,
-                        bgcolor: 'background.paper',
-                        borderRadius: 1,
-                      }}
-                    />
+                    {!readOnly && (
+                      <Checkbox
+                        checked={selected}
+                        onChange={() => handleSelectVideo(video._id)}
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          left: 8,
+                          bgcolor: 'background.paper',
+                          borderRadius: 1,
+                        }}
+                      />
+                    )}
                   </Box>
 
                   <CardContent>
@@ -393,7 +449,7 @@ const VideoList = () => {
                     </Typography>
 
                     <Typography variant="body2" color="text.secondary" noWrap>
-                      {video.event || 'No event'} • {video.location || 'No location'}
+                      {[video.event || 'No event', video.location].filter(Boolean).join(' / ')}
                     </Typography>
 
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
@@ -469,12 +525,26 @@ const VideoList = () => {
                     >
                       Preview
                     </Button>
-                    <Button size="small" variant="outlined" onClick={() => handleDownloadSingle(video)}>
-                      Download
-                    </Button>
-                    <Button size="small" color="error" onClick={() => handleDeleteSingle(video._id)}>
-                      Delete
-                    </Button>
+                    {!readOnly && (
+                      <Button size="small" variant="outlined" onClick={() => handleDownloadSingle(video)}>
+                        Download
+                      </Button>
+                    )}
+                    {!readOnly && video.processingStatus === 'failed' && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ReplayIcon />}
+                        onClick={() => handleRetryProcessing(video)}
+                      >
+                        Retry
+                      </Button>
+                    )}
+                    {!readOnly && (
+                      <Button size="small" color="error" onClick={() => handleDeleteSingle(video._id)}>
+                        Delete
+                      </Button>
+                    )}
                   </CardActions>
                 </Card>
               </Grid>

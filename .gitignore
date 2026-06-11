@@ -15,6 +15,10 @@ build/
 frontend/build/
 backend/frontend/build/
 
+# Local README docs requested outside version tracking
+docs/README.md
+docs/frontend_README.md
+
 # Uploads / generated media
 uploads/
 backend/uploads/

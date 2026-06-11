@@ -1,5 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -26,7 +29,16 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import DeselectIcon from '@mui/icons-material/Deselect';
+import EventIcon from '@mui/icons-material/Event';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ReplayIcon from '@mui/icons-material/Replay';
+import SelectAllIcon from '@mui/icons-material/SelectAll';
 import axiosInstance from '../../axiosConfig';
+import {
+  ACTIVE_PROCESSING_REFRESH_MS,
+  hasActiveVideoProcessing,
+} from '../../utils/videoProcessing';
 
 const formatBytes = (bytes) => {
   if (!bytes || Number.isNaN(Number(bytes))) return 'N/A';
@@ -59,6 +71,63 @@ const getUploaderName = (video) => video.uploader?.username || 'Unknown uploader
 const shouldShowProcessingProgress = (video) =>
   ['queued', 'processing'].includes(video.processingStatus);
 
+const getEventName = (video) => video.event || 'No event';
+
+const getVideoTimestamp = (video) => {
+  const value = video.tagDate || video.uploadDate || video.processingStartedAt || video.processingCompletedAt;
+  const timestamp = value ? new Date(value).getTime() : 0;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const sortVideosForAdmin = (a, b) => {
+  const eventCompare = getEventName(a).localeCompare(getEventName(b));
+  if (eventCompare !== 0) return eventCompare;
+
+  const dateCompare = getVideoTimestamp(b) - getVideoTimestamp(a);
+  if (dateCompare !== 0) return dateCompare;
+
+  return String(a.originalFilename || a.filename || '').localeCompare(
+    String(b.originalFilename || b.filename || '')
+  );
+};
+
+const buildEventGroups = (videos) => {
+  const groups = new Map();
+
+  [...videos].sort(sortVideosForAdmin).forEach((video) => {
+    const eventName = getEventName(video);
+
+    if (!groups.has(eventName)) {
+      groups.set(eventName, {
+        event: eventName,
+        videos: [],
+        latestTimestamp: 0,
+        completed: 0,
+        processing: 0,
+        failed: 0,
+        raw: 0,
+        edited: 0,
+      });
+    }
+
+    const group = groups.get(eventName);
+    group.videos.push(video);
+    group.latestTimestamp = Math.max(group.latestTimestamp, getVideoTimestamp(video));
+
+    if (video.processingStatus === 'completed') group.completed += 1;
+    if (shouldShowProcessingProgress(video)) group.processing += 1;
+    if (video.processingStatus === 'failed') group.failed += 1;
+    if (video.status === 'raw') group.raw += 1;
+    if (video.status === 'edited') group.edited += 1;
+  });
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.event === 'No event') return 1;
+    if (b.event === 'No event') return -1;
+    return b.latestTimestamp - a.latestTimestamp || a.event.localeCompare(b.event);
+  });
+};
+
 const VideoThumbnail = ({ videoId, title }) => {
   const [src, setSrc] = useState('');
 
@@ -86,7 +155,7 @@ const VideoThumbnail = ({ videoId, title }) => {
     return (
       <Box
         sx={{
-          height: 160,
+          height: 130,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -102,7 +171,7 @@ const VideoThumbnail = ({ videoId, title }) => {
   return (
     <CardMedia
       component="img"
-      height="160"
+      height="130"
       image={src}
       alt={title}
       sx={{ objectFit: 'cover' }}
@@ -112,21 +181,24 @@ const VideoThumbnail = ({ videoId, title }) => {
 
 const VideoManagement = () => {
   const [videos, setVideos] = useState([]);
+  const [users, setUsers] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
+  const [rawOrphanCount, setRawOrphanCount] = useState(0);
+  const [recoveryOwnerId, setRecoveryOwnerId] = useState('');
+  const [recoveringRaw, setRecoveringRaw] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [uploaderFilter, setUploaderFilter] = useState('all');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [expandedEvents, setExpandedEvents] = useState({});
 
-  useEffect(() => {
-    fetchVideos();
-  }, []);
-
-  const fetchVideos = () => {
-    setMessage('');
-    setErrorMessage('');
+  const fetchVideos = useCallback(({ silent = false } = {}) => {
+    if (!silent) {
+      setMessage('');
+      setErrorMessage('');
+    }
 
     axiosInstance
       .get('/videos', { headers: { Accept: 'application/json' } })
@@ -135,9 +207,29 @@ const VideoManagement = () => {
       })
       .catch((err) => {
         console.error('Error fetching videos:', err);
-        setErrorMessage('Greška pri učitavanju videa.');
+        if (!silent) {
+          setErrorMessage('Greška pri učitavanju videa.');
+        }
       });
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchVideos();
+    fetchRawOrphans();
+    fetchUsers();
+  }, [fetchVideos]);
+
+  const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
+
+  useEffect(() => {
+    if (!hasActiveProcessing) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      fetchVideos({ silent: true });
+    }, ACTIVE_PROCESSING_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchVideos, hasActiveProcessing]);
 
   const uploaderOptions = useMemo(() => {
     const uploaders = videos.map(getUploaderName);
@@ -174,6 +266,30 @@ const VideoManagement = () => {
     });
   }, [videos, searchTerm, statusFilter, uploaderFilter]);
 
+  const eventGroups = useMemo(() => buildEventGroups(filteredVideos), [filteredVideos]);
+
+  useEffect(() => {
+    setExpandedEvents((current) => {
+      const next = {};
+      let changed = false;
+
+      eventGroups.forEach((group, index) => {
+        const previousValue = current[group.event];
+        next[group.event] = previousValue ?? index === 0;
+
+        if (current[group.event] !== next[group.event]) {
+          changed = true;
+        }
+      });
+
+      if (Object.keys(current).length !== Object.keys(next).length) {
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [eventGroups]);
+
   const stats = useMemo(() => {
     const total = videos.length;
     const completed = videos.filter((video) => video.processingStatus === 'completed').length;
@@ -207,6 +323,46 @@ const VideoManagement = () => {
     } else {
       setSelectedVideos((prev) => Array.from(new Set([...prev, ...filteredIds])));
     }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedVideos([]);
+  };
+
+  const handleToggleEvent = (eventName) => (event, isExpanded) => {
+    setExpandedEvents((current) => ({
+      ...current,
+      [eventName]: isExpanded,
+    }));
+  };
+
+  const getGroupVideoIds = (group) => group.videos.map((video) => video._id);
+
+  const isGroupFullySelected = (group) => {
+    const groupIds = getGroupVideoIds(group);
+    return groupIds.length > 0 && groupIds.every((id) => selectedVideos.includes(id));
+  };
+
+  const isGroupPartiallySelected = (group) => {
+    const groupIds = getGroupVideoIds(group);
+    return (
+      groupIds.some((id) => selectedVideos.includes(id)) &&
+      !groupIds.every((id) => selectedVideos.includes(id))
+    );
+  };
+
+  const handleToggleEventSelection = (group) => {
+    const groupIds = getGroupVideoIds(group);
+    if (groupIds.length === 0) return;
+
+    const allSelected = groupIds.every((id) => selectedVideos.includes(id));
+
+    if (allSelected) {
+      setSelectedVideos((prev) => prev.filter((id) => !groupIds.includes(id)));
+      return;
+    }
+
+    setSelectedVideos((prev) => Array.from(new Set([...prev, ...groupIds])));
   };
 
   const handleDelete = (videoId) => {
@@ -281,6 +437,256 @@ const VideoManagement = () => {
       });
   };
 
+  const fetchRawOrphans = () => {
+    axiosInstance
+      .get('/admin/raw-orphans')
+      .then((response) => {
+        setRawOrphanCount(Number(response.data?.count) || 0);
+      })
+      .catch((err) => {
+        console.error('Error scanning raw orphan files:', err);
+      });
+  };
+
+  const fetchUsers = () => {
+    axiosInstance
+      .get('/admin/users')
+      .then((response) => {
+        const data = Array.isArray(response.data) ? response.data : [];
+        setUsers(data);
+      })
+      .catch((err) => {
+        console.error('Error fetching users:', err);
+      });
+  };
+
+  const handleRetryProcessing = (video) => {
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .post(`/videos/${video._id}/requeue-processing`)
+      .then((response) => {
+        setMessage(response.data?.message || 'Video processing has been queued again.');
+        fetchVideos();
+      })
+      .catch((error) => {
+        console.error('Error retrying video processing:', error);
+        setErrorMessage(error.response?.data?.message || 'Greska pri ponovnom pokretanju obrade.');
+      });
+  };
+
+  const handleRecoverRawOrphans = () => {
+    setRecoveringRaw(true);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .post('/admin/raw-orphans/import', recoveryOwnerId ? { uploaderId: recoveryOwnerId } : {})
+      .then((response) => {
+        const result = response.data?.result || {};
+        const importedCount = result.imported?.length || 0;
+        const skippedCount = result.skipped?.length || 0;
+
+        setMessage(
+          skippedCount > 0
+            ? `Recovered ${importedCount} raw file(s). ${skippedCount} file(s) were skipped.`
+            : `Recovered ${importedCount} raw file(s).`
+        );
+        fetchVideos();
+        fetchRawOrphans();
+      })
+      .catch((error) => {
+        console.error('Error recovering raw orphan files:', error);
+        setErrorMessage(error.response?.data?.message || 'Raw file recovery failed.');
+      })
+      .finally(() => setRecoveringRaw(false));
+  };
+
+  const handleUpdateOwner = (videoId, uploaderId) => {
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .patch(`/admin/videos/${videoId}/owner`, { uploaderId })
+      .then((response) => {
+        setVideos((prev) =>
+          prev.map((video) => (video._id === videoId ? response.data.video : video))
+        );
+        setMessage('Video owner updated.');
+      })
+      .catch((error) => {
+        console.error('Error updating video owner:', error);
+        setErrorMessage(error.response?.data?.message || 'Video owner could not be updated.');
+      });
+  };
+
+  const renderVideoCard = (video) => {
+    const selected = selectedVideos.includes(video._id);
+
+    return (
+      <Grid item xs={12} md={6} xl={4} key={video._id}>
+        <Card
+          variant="outlined"
+          sx={{
+            borderRadius: 2,
+            overflow: 'hidden',
+            height: '100%',
+            borderColor: selected ? 'primary.main' : 'divider',
+            boxShadow: selected ? 2 : 0,
+          }}
+        >
+          <Box sx={{ position: 'relative' }}>
+            <VideoThumbnail
+              videoId={video._id}
+              title={video.originalFilename || video.filename}
+            />
+            <Checkbox
+              checked={selected}
+              onChange={() => handleSelectVideo(video._id)}
+              sx={{
+                position: 'absolute',
+                top: 8,
+                left: 8,
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+              }}
+            />
+          </Box>
+
+          <CardContent>
+            <Typography variant="h6" sx={{ fontWeight: 800 }} noWrap>
+              {video.originalFilename || video.filename}
+            </Typography>
+
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {[video.location, formatDate(video.tagDate || video.uploadDate)].filter(Boolean).join(' / ')}
+            </Typography>
+
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+              <Chip label={video.status || 'N/A'} size="small" />
+              <Chip
+                label={video.processingStatus || 'N/A'}
+                size="small"
+                color={
+                  video.processingStatus === 'completed'
+                    ? 'success'
+                    : video.processingStatus === 'failed'
+                      ? 'error'
+                      : shouldShowProcessingProgress(video)
+                        ? 'warning'
+                        : 'default'
+                }
+              />
+              {video.previewPath && <Chip label="Preview" size="small" color="primary" />}
+              {video.thumbnailPath && <Chip label="Thumb" size="small" />}
+            </Stack>
+
+            {shouldShowProcessingProgress(video) && (
+              <Box sx={{ mt: 1.5 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={Number(video.processingProgress) || 0}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Processing: {Number(video.processingProgress) || 0}%
+                </Typography>
+              </Box>
+            )}
+
+            {video.processingStatus === 'failed' && video.processingError && (
+              <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                {video.processingError}
+              </Typography>
+            )}
+
+            <Divider sx={{ my: 2 }} />
+
+            <Grid container spacing={1}>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Uploader</Typography>
+                <Typography variant="body2" noWrap>{getUploaderName(video)}</Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Owner</InputLabel>
+                  <Select
+                    value={video.uploader?._id || ''}
+                    label="Owner"
+                    onChange={(event) => handleUpdateOwner(video._id, event.target.value)}
+                  >
+                    {users.map((appUser) => (
+                      <MenuItem key={appUser._id} value={appUser._id}>
+                        {appUser.username} / {appUser.role}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Master</Typography>
+                <Typography variant="body2">{formatBytes(video.sizeCompressed)}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Preview</Typography>
+                <Typography variant="body2">{formatBytes(video.sizePreview)}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Codec</Typography>
+                <Typography variant="body2" noWrap>{video.codec || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Resolution</Typography>
+                <Typography variant="body2">{video.resolution || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="caption" color="text.secondary">Raw retention</Typography>
+                <Typography variant="body2">
+                  {video.rawRetentionDays || 0} days / Raw deleted: {video.rawDeleted ? 'Yes' : 'No'}
+                </Typography>
+                {video.rawExpiresAt && (
+                  <Typography variant="caption" color="text.secondary">
+                    Expires: {formatDateTime(video.rawExpiresAt)}
+                  </Typography>
+                )}
+              </Grid>
+            </Grid>
+          </CardContent>
+
+          <CardActions sx={{ px: 2, pb: 2 }}>
+            <Button
+              size="small"
+              variant="contained"
+              href={`/video-details/${video._id}`}
+            >
+              Preview
+            </Button>
+            <Button size="small" variant="outlined" onClick={() => handleDownloadSingle(video)}>
+              Download
+            </Button>
+            {video.processingStatus === 'failed' && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ReplayIcon />}
+                onClick={() => handleRetryProcessing(video)}
+              >
+                Retry
+              </Button>
+            )}
+            <Button size="small" color="error" onClick={() => handleDelete(video._id)}>
+              Delete
+            </Button>
+          </CardActions>
+        </Card>
+      </Grid>
+    );
+  };
+
+  const allFilteredSelected =
+    filteredVideos.length > 0 &&
+    filteredVideos.every((video) => selectedVideos.includes(video._id));
+
   return (
     <Box>
       <Stack
@@ -299,9 +705,37 @@ const VideoManagement = () => {
           </Typography>
         </Box>
 
-        <Button variant="outlined" onClick={fetchVideos}>
-          Refresh
-        </Button>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel>Recovery owner</InputLabel>
+            <Select
+              value={recoveryOwnerId}
+              label="Recovery owner"
+              onChange={(event) => setRecoveryOwnerId(event.target.value)}
+            >
+              <MenuItem value="">Auto / current admin</MenuItem>
+              {users.map((appUser) => (
+                <MenuItem key={appUser._id} value={appUser._id}>
+                  {appUser.username} / {appUser.role}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Button variant="outlined" onClick={fetchRawOrphans}>
+            Scan Raw
+          </Button>
+          <Button
+            variant="contained"
+            color={rawOrphanCount > 0 ? 'warning' : 'primary'}
+            onClick={handleRecoverRawOrphans}
+            disabled={recoveringRaw || rawOrphanCount === 0}
+          >
+            {recoveringRaw ? 'Recovering...' : `Recover Raw (${rawOrphanCount})`}
+          </Button>
+          <Button variant="outlined" onClick={fetchVideos}>
+            Refresh
+          </Button>
+        </Stack>
       </Stack>
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
@@ -387,8 +821,14 @@ const VideoManagement = () => {
           </Grid>
 
           <Grid item xs={12} md={1}>
-            <Button fullWidth variant="outlined" onClick={handleSelectAllFiltered}>
-              Select
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={allFilteredSelected ? <DeselectIcon /> : <SelectAllIcon />}
+              onClick={handleSelectAllFiltered}
+              disabled={filteredVideos.length === 0}
+            >
+              {allFilteredSelected ? 'Clear' : 'Select'}
             </Button>
           </Grid>
         </Grid>
@@ -402,6 +842,13 @@ const VideoManagement = () => {
             </Typography>
             <Button variant="contained" onClick={handleDownloadSelected}>
               Download Selected
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<DeselectIcon />}
+              onClick={handleClearSelection}
+            >
+              Clear selection
             </Button>
             <Button variant="outlined" color="error" onClick={() => setConfirmOpen(true)}>
               Delete Selected
@@ -418,145 +865,86 @@ const VideoManagement = () => {
           </Typography>
         </Paper>
       ) : (
-        <Grid container spacing={3}>
-          {filteredVideos.map((video) => {
-            const selected = selectedVideos.includes(video._id);
-
-            return (
-              <Grid item xs={12} md={6} lg={4} key={video._id}>
-                <Card
-                  variant="outlined"
-                  sx={{
-                    borderRadius: 3,
-                    overflow: 'hidden',
-                    height: '100%',
-                    borderColor: selected ? 'primary.main' : 'divider',
-                    boxShadow: selected ? 3 : 0,
-                  }}
+        <Stack spacing={1.5}>
+          {eventGroups.map((group) => (
+            <Accordion
+              key={group.event}
+              expanded={Boolean(expandedEvents[group.event])}
+              onChange={handleToggleEvent(group.event)}
+              disableGutters
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                overflow: 'hidden',
+                '&:before': { display: 'none' },
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon />}
+                sx={{
+                  minHeight: 68,
+                  bgcolor: 'background.paper',
+                  '& .MuiAccordionSummary-content': {
+                    my: 1,
+                    minWidth: 0,
+                  },
+                }}
+              >
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1.5}
+                  justifyContent="space-between"
+                  alignItems={{ xs: 'flex-start', md: 'center' }}
+                  sx={{ width: '100%', minWidth: 0, pr: 1 }}
                 >
-                  <Box sx={{ position: 'relative' }}>
-                    <VideoThumbnail
-                      videoId={video._id}
-                      title={video.originalFilename || video.filename}
-                    />
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                     <Checkbox
-                      checked={selected}
-                      onChange={() => handleSelectVideo(video._id)}
+                      checked={isGroupFullySelected(group)}
+                      indeterminate={isGroupPartiallySelected(group)}
+                      onClick={(event) => event.stopPropagation()}
+                      onFocus={(event) => event.stopPropagation()}
+                      onChange={() => handleToggleEventSelection(group)}
+                      inputProps={{ 'aria-label': `Select ${group.event}` }}
                       sx={{
-                        position: 'absolute',
-                        top: 8,
-                        left: 8,
                         bgcolor: 'background.paper',
                         borderRadius: 1,
+                        p: 0.75,
                       }}
                     />
-                  </Box>
-
-                  <CardContent>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }} noWrap>
-                      {video.originalFilename || video.filename}
-                    </Typography>
-
-                    <Typography variant="body2" color="text.secondary" noWrap>
-                      {video.event || 'No event'} • {video.location || 'No location'}
-                    </Typography>
-
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                      <Chip label={video.status || 'N/A'} size="small" />
-                      <Chip
-                        label={video.processingStatus || 'N/A'}
-                        size="small"
-                        color={
-                          video.processingStatus === 'completed'
-                            ? 'success'
-                            : video.processingStatus === 'failed'
-                              ? 'error'
-                              : 'default'
-                        }
-                      />
-                      {video.previewPath && <Chip label="Preview" size="small" color="primary" />}
-                      {video.thumbnailPath && <Chip label="Thumb" size="small" />}
-                    </Stack>
-
-                    {shouldShowProcessingProgress(video) && (
-                      <Box sx={{ mt: 1.5 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={Number(video.processingProgress) || 0}
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                          Processing: {Number(video.processingProgress) || 0}%
-                        </Typography>
-                      </Box>
-                    )}
-
-                    {video.processingStatus === 'failed' && video.processingError && (
-                      <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
-                        {video.processingError}
+                    <EventIcon color="action" />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 800 }} noWrap>
+                        {group.event}
                       </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Latest: {group.latestTimestamp ? formatDate(group.latestTimestamp) : 'N/A'}
+                      </Typography>
+                    </Box>
+                  </Stack>
+
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Chip label={`${group.videos.length} clips`} size="small" />
+                    <Chip label={`${group.completed} completed`} size="small" color="success" variant="outlined" />
+                    {group.processing > 0 && (
+                      <Chip label={`${group.processing} processing`} size="small" color="warning" variant="outlined" />
                     )}
+                    {group.failed > 0 && (
+                      <Chip label={`${group.failed} failed`} size="small" color="error" variant="outlined" />
+                    )}
+                    <Chip label={`${group.raw} raw`} size="small" variant="outlined" />
+                    <Chip label={`${group.edited} edited`} size="small" variant="outlined" />
+                  </Stack>
+                </Stack>
+              </AccordionSummary>
 
-                    <Divider sx={{ my: 2 }} />
-
-                    <Grid container spacing={1}>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Uploader</Typography>
-                        <Typography variant="body2" noWrap>{getUploaderName(video)}</Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Date</Typography>
-                        <Typography variant="body2">{formatDate(video.tagDate || video.uploadDate)}</Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Master</Typography>
-                        <Typography variant="body2">{formatBytes(video.sizeCompressed)}</Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Preview</Typography>
-                        <Typography variant="body2">{formatBytes(video.sizePreview)}</Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Codec</Typography>
-                        <Typography variant="body2" noWrap>{video.codec || 'N/A'}</Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" color="text.secondary">Resolution</Typography>
-                        <Typography variant="body2">{video.resolution || 'N/A'}</Typography>
-                      </Grid>
-                      <Grid item xs={12}>
-                        <Typography variant="caption" color="text.secondary">Raw retention</Typography>
-                        <Typography variant="body2">
-                          {video.rawRetentionDays || 0} days • Raw deleted: {video.rawDeleted ? 'Yes' : 'No'}
-                        </Typography>
-                        {video.rawExpiresAt && (
-                          <Typography variant="caption" color="text.secondary">
-                            Expires: {formatDateTime(video.rawExpiresAt)}
-                          </Typography>
-                        )}
-                      </Grid>
-                    </Grid>
-                  </CardContent>
-
-                  <CardActions sx={{ px: 2, pb: 2 }}>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      href={`/video-details/${video._id}`}
-                    >
-                      Preview
-                    </Button>
-                    <Button size="small" variant="outlined" onClick={() => handleDownloadSingle(video)}>
-                      Download
-                    </Button>
-                    <Button size="small" color="error" onClick={() => handleDelete(video._id)}>
-                      Delete
-                    </Button>
-                  </CardActions>
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
+              <AccordionDetails sx={{ p: 2, pt: 0 }}>
+                <Grid container spacing={2.5}>
+                  {group.videos.map(renderVideoCard)}
+                </Grid>
+              </AccordionDetails>
+            </Accordion>
+          ))}
+        </Stack>
       )}
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>

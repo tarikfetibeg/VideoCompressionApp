@@ -1,7 +1,9 @@
 // src/pages/AdminDashboard.js
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
+  Button,
   Drawer,
   List,
   ListItemButton,
@@ -15,17 +17,22 @@ import {
   Paper,
   useMediaQuery,
 } from '@mui/material';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import NewspaperIcon from '@mui/icons-material/Newspaper';
 import { useTheme } from '@mui/material/styles';
 
 import UserManagement from '../components/admin/UserManagement';
 import VideoManagement from '../components/admin/VideoManagement';
 import FfmpegSettings from '../components/admin/FfmpegSettings';
 import AuditLogs from '../components/admin/AuditLogs';
+import BroadcastProgramManagement from '../components/admin/BroadcastProgramManagement';
 
 const drawerWidth = 280;
 
 const AdminDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
+  const navigate = useNavigate();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -50,6 +57,11 @@ const AdminDashboard = () => {
         id: 'ffmpeg',
         label: 'FFmpeg & Storage',
         description: 'Codec, bitrate, raw retention',
+      },
+      {
+        id: 'broadcast',
+        label: 'Programs',
+        description: 'Shows and content types',
       },
       {
         id: 'logs',
@@ -122,6 +134,8 @@ const AdminDashboard = () => {
         return <VideoManagement />;
       case 'ffmpeg':
         return <FfmpegSettings />;
+      case 'broadcast':
+        return <BroadcastProgramManagement />;
       case 'logs':
         return <AuditLogs />;
       default:
@@ -220,6 +234,32 @@ const AdminDashboard = () => {
                 {currentSection?.description || 'System management'}
               </Typography>
             </Box>
+            <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', sm: 'flex' } }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<NewspaperIcon />}
+                onClick={() => navigate('/reporter-dashboard')}
+              >
+                Reporter
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AssignmentTurnedInIcon />}
+                onClick={() => navigate('/editor-dashboard')}
+              >
+                Production
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<AdminPanelSettingsIcon />}
+                onClick={() => navigate('/admin-dashboard')}
+              >
+                Admin
+              </Button>
+            </Stack>
           </Toolbar>
         </AppBar>
 

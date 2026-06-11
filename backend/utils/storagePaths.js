@@ -9,6 +9,8 @@ const STORAGE_ROOT = path.join(PROJECT_ROOT, 'storage');
 const paths = {
   root: STORAGE_ROOT,
   raw: path.join(STORAGE_ROOT, 'raw'),
+  rawManifests: path.join(STORAGE_ROOT, 'raw-manifests'),
+  offAudio: path.join(STORAGE_ROOT, 'off-audio'),
   compressed: path.join(STORAGE_ROOT, 'compressed'),
   previews: path.join(STORAGE_ROOT, 'previews'),
   thumbnails: path.join(STORAGE_ROOT, 'thumbnails'),
@@ -75,6 +77,10 @@ function getStoragePath(storageType, filename) {
   return path.join(paths[storageType], filename);
 }
 
+function createRawManifestPath(rawFilePath) {
+  return path.join(paths.rawManifests, `${path.basename(rawFilePath)}.json`);
+}
+
 module.exports = {
   PROJECT_ROOT,
   STORAGE_ROOT,
@@ -85,5 +91,6 @@ module.exports = {
   createStoredFilename,
   createMp4Filename,
   createJpgFilename,
+  createRawManifestPath,
   getStoragePath,
 };

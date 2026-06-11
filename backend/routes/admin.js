@@ -9,11 +9,38 @@ const User = require('../models/User');
 const Video = require('../models/Video');
 const FfmpegSettings = require('../models/FfmpegSettings');
 const AuditLog = require('../models/AuditLog');
+const BroadcastProgram = require('../models/BroadcastProgram');
+const BroadcastContentType = require('../models/BroadcastContentType');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
+const { defaultContentTypes } = require('../config/broadcastDefaults');
 const { cleanupExpiredRawFiles } = require('../services/rawRetentionService');
+const { findRawOrphans, importRawOrphans } = require('../services/rawOrphanService');
 
-const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
+const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Admin'];
+
+function createSlug(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'content';
+}
+
+function normalizeDaysOfWeek(value) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
+  )).sort((a, b) => a - b);
+}
+
+async function ensureDefaultContentTypes() {
+  const count = await BroadcastContentType.countDocuments();
+  if (count > 0) return;
+  await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
+}
 
 function deleteFileIfExists(filePath) {
   if (!filePath) return;
@@ -111,6 +138,63 @@ router.post('/cleanup-raw', async (req, res) => {
   } catch (err) {
     console.error('Manual raw cleanup error:', err);
     res.status(500).json({ message: 'Error running raw cleanup' });
+  }
+});
+
+router.get('/raw-orphans', async (req, res) => {
+  try {
+    const orphans = await findRawOrphans();
+
+    res.json({
+      count: orphans.length,
+      files: orphans,
+    });
+  } catch (err) {
+    console.error('Raw orphan scan error:', err);
+    res.status(500).json({ message: 'Error scanning raw orphan files' });
+  }
+});
+
+router.post('/raw-orphans/import', async (req, res) => {
+  const body = req.body || {};
+  const { uploaderId } = body;
+
+  try {
+    if (uploaderId) {
+      const uploader = await User.findById(uploaderId).select('_id');
+      if (!uploader) {
+        return res.status(404).json({ message: 'Recovery owner not found.' });
+      }
+    }
+
+    const importOptions = {
+      userId: uploaderId || undefined,
+      fallbackUserId: req.user.id,
+    };
+
+    if (Object.prototype.hasOwnProperty.call(body, 'event')) {
+      importOptions.event = body.event;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'date')) {
+      importOptions.date = body.date;
+    }
+
+    const result = await importRawOrphans(importOptions);
+
+    await AuditLog.create({
+      action: 'Import Raw Orphan Files',
+      performedBy: req.user.id,
+      details: result,
+    });
+
+    res.status(201).json({
+      message: `Imported ${result.imported.length} orphan raw file(s).`,
+      result,
+    });
+  } catch (err) {
+    console.error('Raw orphan import error:', err);
+    res.status(500).json({ message: 'Error importing raw orphan files' });
   }
 });
 
@@ -268,6 +352,196 @@ router.delete('/videos/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting video:', err);
     res.status(500).json({ message: 'Error deleting video' });
+  }
+});
+
+router.patch('/videos/:id/owner', async (req, res) => {
+  const { uploaderId } = req.body;
+
+  if (!uploaderId) {
+    return res.status(400).json({ message: 'uploaderId is required.' });
+  }
+
+  try {
+    const uploader = await User.findById(uploaderId).select('_id username role');
+    if (!uploader) {
+      return res.status(404).json({ message: 'Uploader not found.' });
+    }
+
+    const video = await Video.findByIdAndUpdate(
+      req.params.id,
+      { uploader: uploader._id },
+      { new: true }
+    ).populate('uploader', 'username role');
+
+    if (!video) {
+      return res.status(404).json({ message: 'Video not found' });
+    }
+
+    await AuditLog.create({
+      action: 'Update Video Owner',
+      performedBy: req.user.id,
+      details: {
+        videoId: video._id,
+        filename: video.filename,
+        uploaderId: uploader._id,
+        uploaderUsername: uploader.username,
+      },
+    });
+
+    res.json({ message: 'Video owner updated successfully', video });
+  } catch (err) {
+    console.error('Error updating video owner:', err);
+    res.status(500).json({ message: 'Error updating video owner' });
+  }
+});
+
+/* ----- Broadcast Programs & Content Types ----- */
+
+router.get('/broadcast-programs', async (req, res) => {
+  try {
+    const programs = await BroadcastProgram.find({}).sort({ active: -1, name: 1 });
+    res.json(programs);
+  } catch (err) {
+    console.error('Error retrieving broadcast programs:', err);
+    res.status(500).json({ message: 'Error retrieving broadcast programs' });
+  }
+});
+
+router.post('/broadcast-programs', async (req, res) => {
+  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: 'Program name is required.' });
+  }
+
+  try {
+    const program = await BroadcastProgram.create({
+      name: name.trim(),
+      description,
+      defaultTime,
+      daysOfWeek: normalizeDaysOfWeek(daysOfWeek),
+      active: active !== false,
+    });
+
+    await AuditLog.create({
+      action: 'Create Broadcast Program',
+      performedBy: req.user.id,
+      details: { programId: program._id, name: program.name },
+    });
+
+    res.status(201).json({ message: 'Broadcast program created.', program });
+  } catch (err) {
+    console.error('Error creating broadcast program:', err);
+    res.status(400).json({ message: err.code === 11000 ? 'Program name already exists.' : 'Error creating broadcast program' });
+  }
+});
+
+router.put('/broadcast-programs/:id', async (req, res) => {
+  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: 'Program name is required.' });
+  }
+
+  try {
+    const program = await BroadcastProgram.findByIdAndUpdate(
+      req.params.id,
+      {
+        name: name.trim(),
+        description,
+        defaultTime,
+        daysOfWeek: normalizeDaysOfWeek(daysOfWeek),
+        active: active !== false,
+      },
+      { new: true }
+    );
+
+    if (!program) return res.status(404).json({ message: 'Broadcast program not found.' });
+
+    await AuditLog.create({
+      action: 'Update Broadcast Program',
+      performedBy: req.user.id,
+      details: { programId: program._id, name: program.name },
+    });
+
+    res.json({ message: 'Broadcast program updated.', program });
+  } catch (err) {
+    console.error('Error updating broadcast program:', err);
+    res.status(400).json({ message: err.code === 11000 ? 'Program name already exists.' : 'Error updating broadcast program' });
+  }
+});
+
+router.get('/broadcast-content-types', async (req, res) => {
+  try {
+    await ensureDefaultContentTypes();
+    const types = await BroadcastContentType.find({}).sort({ active: -1, name: 1 });
+    res.json(types);
+  } catch (err) {
+    console.error('Error retrieving broadcast content types:', err);
+    res.status(500).json({ message: 'Error retrieving content types' });
+  }
+});
+
+router.post('/broadcast-content-types', async (req, res) => {
+  const { name, slug, description = '', active = true } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: 'Content type name is required.' });
+  }
+
+  try {
+    const type = await BroadcastContentType.create({
+      name: name.trim(),
+      slug: createSlug(slug || name),
+      description,
+      active: active !== false,
+    });
+
+    await AuditLog.create({
+      action: 'Create Broadcast Content Type',
+      performedBy: req.user.id,
+      details: { typeId: type._id, name: type.name },
+    });
+
+    res.status(201).json({ message: 'Content type created.', type });
+  } catch (err) {
+    console.error('Error creating broadcast content type:', err);
+    res.status(400).json({ message: err.code === 11000 ? 'Content type already exists.' : 'Error creating content type' });
+  }
+});
+
+router.put('/broadcast-content-types/:id', async (req, res) => {
+  const { name, slug, description = '', active = true } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: 'Content type name is required.' });
+  }
+
+  try {
+    const type = await BroadcastContentType.findByIdAndUpdate(
+      req.params.id,
+      {
+        name: name.trim(),
+        slug: createSlug(slug || name),
+        description,
+        active: active !== false,
+      },
+      { new: true }
+    );
+
+    if (!type) return res.status(404).json({ message: 'Content type not found.' });
+
+    await AuditLog.create({
+      action: 'Update Broadcast Content Type',
+      performedBy: req.user.id,
+      details: { typeId: type._id, name: type.name },
+    });
+
+    res.json({ message: 'Content type updated.', type });
+  } catch (err) {
+    console.error('Error updating broadcast content type:', err);
+    res.status(400).json({ message: err.code === 11000 ? 'Content type already exists.' : 'Error updating content type' });
   }
 });
 

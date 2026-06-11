@@ -5,6 +5,8 @@ const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const path = require('path');
 const fs = require('fs');
+const { enqueueVideoProcessing } = require('../queues/videoQueue');
+const { getQueueErrorMessage } = require('../utils/queueErrors');
 
 const router = express.Router();
 
@@ -13,6 +15,8 @@ const allowedQcRoles = ['Editor', 'VideoEditor', 'Producer', 'Admin'];
 const allowedApprovalRoles = ['Producer', 'Admin'];
 const allowedQcStatuses = ['pending', 'passed', 'failed'];
 const allowedBroadcastStatusUpdates = ['approved_for_air', 'aired', 'archived'];
+const allowedTimecodeRoles = ['Editor', 'VideoEditor', 'Producer', 'Reporter', 'Admin'];
+const allowedTimecodeTypes = ['marker', 'cut', 'in', 'out', 'note'];
 
 function getUploaderId(video) {
   if (!video || !video.uploader) return null;
@@ -24,7 +28,23 @@ function getUploaderId(video) {
   return video.uploader.toString();
 }
 
-function userCanAccessVideo(user, video) {
+function userCanReadVideo(user, video) {
+  if (!user || !video) return false;
+  return allowedVideoRoles.includes(user.role);
+}
+
+function userCanManageVideo(user, video) {
+  if (!user || !video) return false;
+  if (user.role === 'Admin') return true;
+
+  if (user.role === 'Reporter') {
+    return getUploaderId(video) === user.id;
+  }
+
+  return ['Editor', 'VideoEditor', 'Producer'].includes(user.role);
+}
+
+function userCanDownloadVideo(user, video) {
   if (!user || !video) return false;
   if (user.role === 'Admin') return true;
 
@@ -103,19 +123,43 @@ router.get(
   authenticateToken,
   authorize(allowedVideoRoles),
   async (req, res) => {
-    const { event } = req.query;
+    const { event, date, scope, library } = req.query;
     const filter = {};
 
     if (event) {
       filter.event = event;
     }
 
-    if (req.user.role === 'Reporter') {
+    if (library === 'archive') {
+      filter.status = 'edited';
+      filter.broadcastStatus = { $in: ['aired', 'archived'] };
+    }
+
+    if (date) {
+      const startOfDay = new Date(`${date}T00:00:00.000Z`);
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
+
+      if (!Number.isNaN(startOfDay.getTime())) {
+        filter.tagDate = {
+          $gte: startOfDay,
+          $lt: endOfDay,
+        };
+      }
+    }
+
+    if (req.user.role === 'Reporter' && scope !== 'station') {
       filter.uploader = req.user.id;
     }
 
     try {
-      const videos = await Video.find(filter).populate('uploader', 'username');
+      const videos = await Video.find(filter)
+        .populate('uploader', 'username role')
+        .populate('reporter', 'username role')
+        .populate('editor', 'username role')
+        .populate('qaResponsible', 'username role')
+        .populate('program')
+        .populate('contentType');
       res.json(videos);
     } catch (err) {
       console.error('Error retrieving videos:', err);
@@ -158,6 +202,68 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
   }
 });
 
+router.post(
+  '/:videoId/requeue-processing',
+  authenticateToken,
+  authorize(allowedVideoRoles),
+  async (req, res) => {
+    const { videoId } = req.params;
+
+    try {
+      const video = await Video.findById(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+
+      if (!userCanManageVideo(req.user, video)) {
+        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+      }
+
+      if (['queued', 'processing'].includes(video.processingStatus)) {
+        return res.status(409).json({ message: 'Video processing is already queued or running.' });
+      }
+
+      const inputPath = resolveExistingPath(video.rawPath, video.filepath);
+      if (!inputPath) {
+        return res.status(400).json({
+          message: 'Cannot retry processing because the source file is missing from local storage.',
+        });
+      }
+
+      try {
+        const job = await enqueueVideoProcessing(video._id);
+
+        const updatedVideo = await Video.findById(video._id).populate('uploader', 'username');
+
+        await AuditLog.create({
+          action: 'Retry Video Processing',
+          performedBy: req.user.id,
+          details: {
+            videoId: video._id,
+            filename: video.filename,
+            processingJobId: job.id.toString(),
+          },
+        });
+
+        return res.status(202).json({
+          message: 'Video processing has been queued again.',
+          video: updatedVideo,
+        });
+      } catch (queueError) {
+        const queueMessage = getQueueErrorMessage(queueError);
+
+        video.processingStatus = 'failed';
+        video.processingError = queueMessage;
+        video.processingCompletedAt = new Date();
+        await video.save();
+
+        return res.status(503).json({ message: queueMessage });
+      }
+    } catch (error) {
+      console.error('Failed to retry video processing:', error);
+      return res.status(500).json({ message: 'Failed to retry video processing.' });
+    }
+  }
+);
+
 router.get('/preview/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
@@ -170,7 +276,7 @@ router.get('/preview/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanAccessVideo(user, video)) {
+    if (!userCanReadVideo(user, video)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -199,7 +305,7 @@ router.get('/thumbnail/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanAccessVideo(user, video)) {
+    if (!userCanReadVideo(user, video)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -233,7 +339,7 @@ router.get('/stream/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanAccessVideo(user, video)) {
+    if (!userCanReadVideo(user, video)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -253,26 +359,78 @@ router.get('/stream/:videoId', authenticateToken, async (req, res) => {
 router.post(
   '/:videoId/timecodes',
   authenticateToken,
-  authorize(['Editor', 'Producer', 'Reporter', 'Admin']),
+  authorize(allowedTimecodeRoles),
   async (req, res) => {
     const { videoId } = req.params;
-    const { description, timestamp } = req.body;
+    const { description, timestamp, type = 'marker' } = req.body;
+    const parsedTimestamp = Number(timestamp);
+
+    if (!Number.isFinite(parsedTimestamp) || parsedTimestamp < 0) {
+      return res.status(400).json({ message: 'A valid timestamp is required.' });
+    }
+
+    if (!allowedTimecodeTypes.includes(type)) {
+      return res.status(400).json({ message: 'Invalid marker type.' });
+    }
 
     try {
       const video = await Video.findById(videoId);
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanManageVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
-      video.timecodes.push({ description, timestamp });
+      video.timecodes.push({
+        description,
+        timestamp: parsedTimestamp,
+        type,
+        createdBy: req.user.id,
+        createdAt: new Date(),
+      });
       await video.save();
 
-      res.status(200).json({ message: 'Timecode added successfully' });
+      res.status(200).json({
+        message: 'Marker added successfully',
+        timecodes: video.timecodes,
+      });
     } catch (error) {
       console.error('Failed to add timecode:', error);
       res.status(500).json({ error: 'Failed to add timecode' });
+    }
+  }
+);
+
+router.delete(
+  '/:videoId/timecodes/:timecodeId',
+  authenticateToken,
+  authorize(allowedTimecodeRoles),
+  async (req, res) => {
+    const { videoId, timecodeId } = req.params;
+
+    try {
+      const video = await Video.findById(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+
+      if (!userCanManageVideo(req.user, video)) {
+        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+      }
+
+      const timecode = video.timecodes.id(timecodeId);
+      if (!timecode) {
+        return res.status(404).json({ message: 'Marker not found' });
+      }
+
+      timecode.deleteOne();
+      await video.save();
+
+      res.json({
+        message: 'Marker deleted successfully',
+        timecodes: video.timecodes,
+      });
+    } catch (error) {
+      console.error('Failed to delete timecode:', error);
+      res.status(500).json({ message: 'Failed to delete marker' });
     }
   }
 );
@@ -293,7 +451,7 @@ router.patch(
       const video = await Video.findById(videoId);
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanManageVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
@@ -356,7 +514,7 @@ router.patch(
       const video = await Video.findById(videoId);
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanManageVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
@@ -417,7 +575,7 @@ router.get(
       const video = await Video.findById(videoId);
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanDownloadVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
@@ -453,7 +611,7 @@ router.get(
       const video = await Video.findById(videoId).select('timecodes uploader');
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanReadVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
@@ -495,7 +653,7 @@ router.post(
 
     for (const videoId of videoIds) {
       const video = await Video.findById(videoId);
-      if (!video || !userCanAccessVideo(req.user, video)) continue;
+      if (!video || !userCanDownloadVideo(req.user, video)) continue;
 
       const videoPath = resolveExistingPath(video.compressedPath, video.filepath);
       if (videoPath) {
@@ -513,12 +671,19 @@ router.get(
   authorize(allowedVideoRoles),
   async (req, res) => {
     try {
-      const video = await Video.findById(req.params.videoId).populate('uploader', 'username');
+      const video = await Video.findById(req.params.videoId)
+        .populate('uploader', 'username role')
+        .populate('reporter', 'username role')
+        .populate('editor', 'username role')
+        .populate('qaResponsible', 'username role')
+        .populate('program')
+        .populate('contentType')
+        .populate('finalApprovedBy', 'username role');
       if (!video) {
         return res.status(404).json({ message: 'Video not found' });
       }
 
-      if (!userCanAccessVideo(req.user, video)) {
+      if (!userCanReadVideo(req.user, video)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 

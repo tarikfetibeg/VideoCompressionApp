@@ -37,19 +37,37 @@ function probeMedia(filePath) {
       }
 
       const videoStream = metadata.streams.find((stream) => stream.codec_type === 'video') || {};
+      const audioStream = metadata.streams.find((stream) => stream.codec_type === 'audio') || {};
       const format = metadata.format || {};
       const width = videoStream.width;
       const height = videoStream.height;
 
       return resolve({
+        container: format.format_name || null,
         duration: Number(format.duration) || null,
         codec: videoStream.codec_name || null,
         resolution: width && height ? `${width}x${height}` : null,
         bitrate: Number(format.bit_rate) ? Math.round(Number(format.bit_rate) / 1000) : null,
         framerate: parseFrameRate(videoStream.avg_frame_rate || videoStream.r_frame_rate),
+        audioCodec: audioStream.codec_name || null,
+        audioChannels: audioStream.channels || null,
+        audioSampleRate: Number(audioStream.sample_rate) || null,
       });
     });
   });
+}
+
+function applySourceMetadata(video, mediaProbe = {}) {
+  video.sourceFormat = video.sourceFormat || mediaProbe.container || null;
+  video.sourceCodec = video.sourceCodec || mediaProbe.codec || null;
+  video.sourceResolution = video.sourceResolution || mediaProbe.resolution || null;
+  video.sourceBitrate = video.sourceBitrate || mediaProbe.bitrate || null;
+  video.sourceFramerate = video.sourceFramerate || mediaProbe.framerate || null;
+  video.sourceDuration = video.sourceDuration || mediaProbe.duration || null;
+  video.sourceAudioCodec = video.sourceAudioCodec || mediaProbe.audioCodec || null;
+  video.sourceAudioChannels = video.sourceAudioChannels || mediaProbe.audioChannels || null;
+  video.sourceAudioSampleRate = video.sourceAudioSampleRate || mediaProbe.audioSampleRate || null;
+  video.duration = video.duration || mediaProbe.duration || null;
 }
 
 function convertVideo({
@@ -59,11 +77,13 @@ function convertVideo({
   resolution,
   bitrateKbps,
   frameRate,
+  onProgress,
 }) {
   return new Promise((resolve, reject) => {
     ensureFolderExists(path.dirname(outputPath));
 
     ffmpeg(inputPath)
+      .inputOptions(['-fflags +genpts'])
       .videoCodec(codec)
       .audioCodec('aac')
       .size(resolution)
@@ -71,20 +91,32 @@ function convertVideo({
       .audioBitrate('128k')
       .fps(frameRate)
       .outputOptions([
+        '-map 0:v:0',
+        '-map 0:a?',
+        '-dn',
+        '-sn',
         '-pix_fmt yuv420p',
         '-movflags +faststart',
+        '-max_muxing_queue_size 2048',
       ])
+      .on('progress', (progress) => {
+        const percent = getFfmpegProgressPercent(progress);
+        if (percent !== null && onProgress) {
+          onProgress(percent);
+        }
+      })
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
   });
 }
 
-function convertPreviewVideo({ inputPath, outputPath }) {
+function convertPreviewVideo({ inputPath, outputPath, onProgress }) {
   return new Promise((resolve, reject) => {
     ensureFolderExists(path.dirname(outputPath));
 
     ffmpeg(inputPath)
+      .inputOptions(['-fflags +genpts'])
       .videoCodec('libx264')
       .audioCodec('aac')
       .size('1280x720')
@@ -92,10 +124,21 @@ function convertPreviewVideo({ inputPath, outputPath }) {
       .audioBitrate('128k')
       .fps(30)
       .outputOptions([
+        '-map 0:v:0',
+        '-map 0:a?',
+        '-dn',
+        '-sn',
         '-pix_fmt yuv420p',
         '-movflags +faststart',
+        '-max_muxing_queue_size 2048',
         '-preset veryfast',
       ])
+      .on('progress', (progress) => {
+        const percent = getFfmpegProgressPercent(progress);
+        if (percent !== null && onProgress) {
+          onProgress(percent);
+        }
+      })
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
@@ -107,10 +150,14 @@ function createThumbnail({ inputPath, outputPath }) {
     ensureFolderExists(path.dirname(outputPath));
 
     ffmpeg(inputPath)
+      .inputOptions(['-fflags +genpts'])
       .seekInput('00:00:01')
       .frames(1)
       .size('640x360')
-      .outputOptions(['-q:v 3'])
+      .outputOptions([
+        '-map 0:v:0',
+        '-q:v 3',
+      ])
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
@@ -124,6 +171,63 @@ async function updateProgress(video, job, processingProgress) {
   if (job && typeof job.progress === 'function') {
     await job.progress(processingProgress);
   }
+}
+
+function getFfmpegProgressPercent(progress) {
+  const percent = Number(progress?.percent);
+  if (!Number.isFinite(percent)) return null;
+  return Math.min(100, Math.max(0, percent));
+}
+
+function mapPhaseProgress(percent, start, end) {
+  if (!Number.isFinite(percent)) return start;
+  return start + ((end - start) * Math.min(100, Math.max(0, percent)) / 100);
+}
+
+function createProgressReporter(video, job) {
+  let lastProgress = Number(video.processingProgress) || 0;
+  let lastSaveAt = 0;
+  let pendingSave = Promise.resolve();
+
+  const report = (progressValue, { force = false } = {}) => {
+    const nextProgress = Math.min(100, Math.max(0, Math.round(Number(progressValue) || 0)));
+    const now = Date.now();
+    const meaningfulChange = nextProgress > lastProgress && nextProgress - lastProgress >= 2;
+    const staleEnough = now - lastSaveAt >= 2000;
+
+    if (!force && (!meaningfulChange || !staleEnough)) {
+      return pendingSave;
+    }
+
+    if (!force && nextProgress <= lastProgress) {
+      return pendingSave;
+    }
+
+    lastProgress = nextProgress;
+    lastSaveAt = now;
+    video.processingProgress = nextProgress;
+
+    pendingSave = pendingSave
+      .then(async () => {
+        await Video.updateOne(
+          { _id: video._id },
+          { $set: { processingProgress: nextProgress } }
+        );
+
+        if (job && typeof job.progress === 'function') {
+          await job.progress(nextProgress);
+        }
+      })
+      .catch((error) => {
+        console.warn('Processing progress update failed:', error.message);
+      });
+
+    return pendingSave;
+  };
+
+  report.flush = () => pendingSave;
+
+  return report;
 }
 
 async function processVideoJob({ videoId }, job) {
@@ -140,27 +244,34 @@ async function processVideoJob({ videoId }, job) {
       throw new Error('Input video file is missing.');
     }
 
+    video.processingProgress = 0;
     video.processingStatus = 'processing';
     video.processingError = null;
     video.processingStartedAt = new Date();
     video.processingCompletedAt = null;
-    await updateProgress(video, job, 5);
+    applySourceMetadata(video, await probeMedia(inputPath));
+    await video.save();
+
+    const reportProgress = createProgressReporter(video, job);
+    await reportProgress(5, { force: true });
 
     if (video.processingMode === 'finalize') {
       await convertPreviewVideo({
         inputPath,
         outputPath: video.previewPath,
+        onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 5, 45)),
       });
-      await updateProgress(video, job, 45);
+      await reportProgress(45, { force: true });
 
       await createThumbnail({
         inputPath,
         outputPath: video.thumbnailPath,
       });
-      await updateProgress(video, job, 70);
+      await reportProgress(70, { force: true });
 
       ensureFolderExists(path.dirname(video.compressedPath));
       fs.renameSync(inputPath, video.compressedPath);
+      await reportProgress(90, { force: true });
 
       video.filepath = video.compressedPath;
       video.rawPath = video.compressedPath;
@@ -174,20 +285,22 @@ async function processVideoJob({ videoId }, job) {
         resolution: video.resolution || '1920x1080',
         bitrateKbps: video.bitrate || 1500,
         frameRate: video.framerate || 30,
+        onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 5, 45)),
       });
-      await updateProgress(video, job, 45);
+      await reportProgress(45, { force: true });
 
       await convertPreviewVideo({
         inputPath,
         outputPath: video.previewPath,
+        onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 45, 70)),
       });
-      await updateProgress(video, job, 70);
+      await reportProgress(70, { force: true });
 
       await createThumbnail({
         inputPath,
         outputPath: video.thumbnailPath,
       });
-      await updateProgress(video, job, 90);
+      await reportProgress(90, { force: true });
 
       if (!video.rawRetentionDays || video.rawRetentionDays <= 0) {
         removeFileIfExists(inputPath);
@@ -197,6 +310,7 @@ async function processVideoJob({ videoId }, job) {
       }
     }
 
+    await reportProgress.flush();
     const mediaProbe = await probeMedia(video.compressedPath || video.filepath);
 
     video.filepath = video.compressedPath || video.filepath;
@@ -212,7 +326,11 @@ async function processVideoJob({ videoId }, job) {
     video.processingProgress = 100;
     video.processingCompletedAt = new Date();
     video.processingError = null;
-    video.broadcastStatus = video.qcStatus === 'passed' ? 'ready_for_approval' : 'qc_pending';
+    if (video.finalApprovalStatus === 'approved') {
+      video.broadcastStatus = 'approved_for_air';
+    } else {
+      video.broadcastStatus = video.qcStatus === 'passed' ? 'ready_for_approval' : 'qc_pending';
+    }
 
     await video.save();
 
@@ -256,5 +374,6 @@ async function processVideoJob({ videoId }, job) {
 }
 
 module.exports = {
+  probeMedia,
   processVideoJob,
 };

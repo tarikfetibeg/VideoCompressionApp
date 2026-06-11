@@ -3,6 +3,13 @@ const mongoose = require('mongoose');
 const TimecodeSchema = new mongoose.Schema({
   description: String,
   timestamp: Number, // Time in seconds
+  type: {
+    type: String,
+    enum: ['marker', 'cut', 'in', 'out', 'note'],
+    default: 'marker',
+  },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdAt: { type: Date, default: Date.now },
 });
 
 const VideoSchema = new mongoose.Schema({
@@ -11,6 +18,8 @@ const VideoSchema = new mongoose.Schema({
   originalFilename: String,
 
   uploader: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reporter: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  editor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
   event: { type: String },
   location: { type: String },
@@ -63,6 +72,12 @@ const VideoSchema = new mongoose.Schema({
   },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approvedAt: { type: Date },
+  approvalNotes: { type: String },
+  qaResponsible: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  qaResponsibilityType: {
+    type: String,
+    enum: ['job_reporter', 'direct_editor', 'producer_override', 'admin_override'],
+  },
   airedAt: { type: Date },
   archivedAt: { type: Date },
 
@@ -75,6 +90,16 @@ const VideoSchema = new mongoose.Schema({
   resolution: { type: String },
   bitrate: { type: Number },
   framerate: { type: Number },
+
+  sourceFormat: { type: String },
+  sourceCodec: { type: String },
+  sourceResolution: { type: String },
+  sourceBitrate: { type: Number },
+  sourceFramerate: { type: Number },
+  sourceDuration: { type: Number },
+  sourceAudioCodec: { type: String },
+  sourceAudioChannels: { type: Number },
+  sourceAudioSampleRate: { type: Number },
 
   sizeOriginal: { type: Number },
   sizeCompressed: { type: Number },
@@ -93,6 +118,20 @@ const VideoSchema = new mongoose.Schema({
   timecodes: [TimecodeSchema],
 
   finalCategory: { type: String },
+  sourceJob: { type: mongoose.Schema.Types.ObjectId, ref: 'EditJob' },
+  program: { type: mongoose.Schema.Types.ObjectId, ref: 'BroadcastProgram' },
+  contentType: { type: mongoose.Schema.Types.ObjectId, ref: 'BroadcastContentType' },
+  airDate: { type: Date },
+  finalTitle: { type: String },
+  finalApprovalStatus: {
+    type: String,
+    enum: ['not_required', 'pending', 'approved', 'rejected'],
+    default: 'not_required',
+  },
+  finalApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  finalApprovedAt: { type: Date },
+  finalApprovalRole: { type: String },
+  finalApprovalNotes: { type: String },
 
   uploadDate: { type: Date, default: Date.now },
 });

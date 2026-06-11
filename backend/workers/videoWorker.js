@@ -6,8 +6,13 @@ dotenvFlow.config({
 });
 
 const mongoose = require('mongoose');
-const { videoQueue } = require('../queues/videoQueue');
+const { isLocalVideoQueue, videoQueue } = require('../queues/videoQueue');
 const { processVideoJob } = require('../services/videoProcessingService');
+
+if (isLocalVideoQueue) {
+  console.log('PROCESSING_QUEUE=local: video processing runs inside the web process. Worker is not needed.');
+  process.exit(0);
+}
 
 const mongoURI = process.env.MONGODB_URI;
 

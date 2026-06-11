@@ -1,70 +1,128 @@
 import React, { useState } from 'react';
-import { Box, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
+import CloseIcon from '@mui/icons-material/Close';
 import axiosInstance from '../../axiosConfig';
 
-const BulkActionsComponent = ({ selectedVideos, clearSelection, refreshVideos }) => {
+const BulkActionsComponent = ({
+  selectedVideos,
+  selectedVideoObjects,
+  clearSelection,
+  refreshVideos,
+}) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  if (selectedVideos.length === 0) {
+    return null;
+  }
 
   const handleDownloadSelected = () => {
+    setErrorMessage('');
+
     axiosInstance
       .post('/videos/download', { videoIds: selectedVideos }, { responseType: 'blob' })
       .then((response) => {
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `videos_${Date.now()}.zip`);
+        link.setAttribute('download', `production_selection_${Date.now()}.zip`);
         document.body.appendChild(link);
         link.click();
-        link.parentNode.removeChild(link);
+        link.remove();
+        window.URL.revokeObjectURL(url);
       })
       .catch((error) => {
         console.error('Error downloading videos:', error);
+        setErrorMessage('Selected videos could not be downloaded.');
       });
   };
 
   const handleDeleteConfirmed = () => {
-    Promise.all(selectedVideos.map(id => axiosInstance.delete(`/videos/${id}`)))
+    setErrorMessage('');
+
+    Promise.all(selectedVideos.map((id) => axiosInstance.delete(`/videos/${id}`)))
       .then(() => {
         clearSelection();
         refreshVideos();
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Error deleting videos:', err);
-      });
-    setConfirmOpen(false);
+        setErrorMessage('Selected videos could not be deleted.');
+      })
+      .finally(() => setConfirmOpen(false));
   };
 
+  const previewNames = selectedVideoObjects
+    .slice(0, 4)
+    .map((video) => video.originalFilename || video.filename)
+    .filter(Boolean);
+
   return (
-    <Box sx={{ mb: 2 }}>
-      <Button variant="contained" color="primary" onClick={handleDownloadSelected}>
-        Bulk Download ({selectedVideos.length})
-      </Button>
-      <Button variant="contained" color="error" sx={{ ml: 2 }} onClick={() => setConfirmOpen(true)}>
-        Bulk Delete ({selectedVideos.length})
-      </Button>
+    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+      {errorMessage && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {errorMessage}
+        </Alert>
+      )}
+
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        spacing={2}
+        alignItems={{ xs: 'flex-start', md: 'center' }}
+        justifyContent="space-between"
+      >
+        <Box>
+          <Typography sx={{ fontWeight: 800 }}>
+            {selectedVideos.length} selected
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {previewNames.join(', ')}
+            {selectedVideoObjects.length > previewNames.length ? '...' : ''}
+          </Typography>
+        </Box>
+
+        <Stack direction="row" spacing={1}>
+          <Button startIcon={<DownloadIcon />} variant="contained" onClick={handleDownloadSelected}>
+            Download
+          </Button>
+          <Button startIcon={<DeleteIcon />} variant="outlined" color="error" onClick={() => setConfirmOpen(true)}>
+            Delete
+          </Button>
+          <Button startIcon={<CloseIcon />} variant="text" onClick={clearSelection}>
+            Clear
+          </Button>
+        </Stack>
+      </Stack>
+
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Confirm Bulk Deletion</DialogTitle>
+        <DialogTitle>Delete selected material</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete the following videos?
+            This will delete {selectedVideos.length} selected video record(s) and their stored files.
           </DialogContentText>
-          <ul>
-            {selectedVideos.map(id => (
-              <li key={id}>
-                {id}
-                {/* In practice, replace id with a friendly filename if available */}
-              </li>
-            ))}
-          </ul>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteConfirmed} color="error">
-            Confirm Delete
+          <Button onClick={handleDeleteConfirmed} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Paper>
   );
 };
 

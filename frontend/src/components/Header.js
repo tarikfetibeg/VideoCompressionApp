@@ -21,14 +21,24 @@ const Header = () => {
         </Typography>
         {user ? (
           <>
-            {user?.role === 'Reporter' && (
+            {['Reporter', 'Admin'].includes(user?.role) && (
               <Button color="inherit" component={Link} to="/reporter-dashboard">
-                Reporter Dashboard
+                Reporter Desk
               </Button>
             )}
-            {['Editor', 'VideoEditor', 'Producer'].includes(user?.role) && (
+            {['Editor', 'VideoEditor', 'Producer', 'Admin'].includes(user?.role) && (
               <Button color="inherit" component={Link} to="/editor-dashboard">
-                Production Dashboard
+                Production Desk
+              </Button>
+            )}
+            {['Producer', 'Admin'].includes(user?.role) && (
+              <Button color="inherit" component={Link} to="/producer-dashboard">
+                Producer Desk
+              </Button>
+            )}
+            {['Realizator', 'Producer', 'Admin'].includes(user?.role) && (
+              <Button color="inherit" component={Link} to="/realizator-dashboard">
+                Realizator Desk
               </Button>
             )}
             {user?.role === 'Admin' && (

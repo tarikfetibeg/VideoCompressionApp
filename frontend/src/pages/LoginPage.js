@@ -38,9 +38,9 @@ const LoginPage = () => {
       })
       .catch((error) => {
         setErrorMessage(
-          error.response && error.response.data
-            ? error.response.data.message
-            : 'Login failed.'
+          error.response?.data?.message
+            || error.message
+            || 'Login failed.'
         );
       });
   };

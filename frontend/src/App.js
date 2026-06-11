@@ -13,6 +13,9 @@ import Header from './components/Header';
 import LoginPage from './pages/LoginPage';
 import ReporterDashboard from './pages/ReporterDashboard';
 import EditorDashboard from './pages/EditorDashboard';
+import EditJobDetailsPage from './pages/EditJobDetailsPage';
+import ProducerDashboard from './pages/ProducerDashboard';
+import RealizatorDashboard from './pages/RealizatorDashboard';
 import VideoDetailsPage from './pages/VideoDetailsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AdminDashboard from './pages/AdminDashboard';
@@ -42,7 +45,11 @@ function App() {
             user ? (
               user.role === 'Reporter' || user.role === 'Admin' ? (
                 <Navigate to="/reporter-dashboard" />
-              ) : ['Editor', 'VideoEditor', 'Producer'].includes(user.role) ? (
+              ) : user.role === 'Producer' ? (
+                <Navigate to="/producer-dashboard" />
+              ) : user.role === 'Realizator' ? (
+                <Navigate to="/realizator-dashboard" />
+              ) : ['Editor', 'VideoEditor'].includes(user.role) ? (
                 <Navigate to="/editor-dashboard" />
               ) : (
                 <Navigate to="/login" />
@@ -73,8 +80,32 @@ function App() {
         <Route
           path="/editor-dashboard"
           element={
-            <PrivateRoute roles={['Editor', 'VideoEditor', 'Producer']}>
+            <PrivateRoute roles={['Editor', 'VideoEditor', 'Producer', 'Admin']}>
               <EditorDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/producer-dashboard"
+          element={
+            <PrivateRoute roles={['Producer', 'Admin']}>
+              <ProducerDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/realizator-dashboard"
+          element={
+            <PrivateRoute roles={['Realizator', 'Producer', 'Admin']}>
+              <RealizatorDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/edit-jobs/:jobId"
+          element={
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin']}>
+              <EditJobDetailsPage />
             </PrivateRoute>
           }
         />

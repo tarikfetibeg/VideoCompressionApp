@@ -21,7 +21,7 @@ import {
 } from '@mui/material';
 import axiosInstance from '../../axiosConfig';
 
-const roles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
+const roles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Admin'];
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
