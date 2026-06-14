@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from '../../axiosConfig';
 import {
   Alert,
@@ -8,7 +8,6 @@ import {
   FormControl,
   Grid,
   InputLabel,
-  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -18,6 +17,9 @@ import {
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { ACCEPTED_VIDEO_FILE_TYPES } from '../../constants/videoFormats';
+import { useBackgroundUploads } from '../../contexts/BackgroundUploadContext';
+
+const INGEST_PROGRAM_VALUE = 'ingest';
 
 const getTodayInputValue = () => {
   const today = new Date();
@@ -30,16 +32,23 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
   const [programs, setPrograms] = useState([]);
   const [contentTypes, setContentTypes] = useState([]);
   const [reporters, setReporters] = useState([]);
-  const [programId, setProgramId] = useState('');
+  const [programId, setProgramId] = useState(INGEST_PROGRAM_VALUE);
   const [contentTypeId, setContentTypeId] = useState('');
   const [airDate, setAirDate] = useState(getTodayInputValue);
   const [finalTitle, setFinalTitle] = useState('');
   const [reporterId, setReporterId] = useState('');
   const [keywords, setKeywords] = useState('');
   const [notes, setNotes] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const { enqueueDirectFinalUploads } = useBackgroundUploads();
+
+  const selectedContentType = useMemo(
+    () => contentTypes.find((type) => type._id === contentTypeId),
+    [contentTypes, contentTypeId]
+  );
+  const visibleFiles = files.slice(0, 30);
+  const hiddenFileCount = Math.max(files.length - visibleFiles.length, 0);
 
   useEffect(() => {
     Promise.all([
@@ -55,7 +64,7 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
         setPrograms(nextPrograms);
         setContentTypes(nextTypes);
         setReporters(nextReporters);
-        setProgramId((current) => current || nextPrograms[0]?._id || '');
+        setProgramId((current) => current || INGEST_PROGRAM_VALUE);
         setContentTypeId((current) => current || nextTypes[0]?._id || '');
       })
       .catch((error) => {
@@ -76,7 +85,6 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
     setKeywords('');
     setNotes('');
     setAirDate(getTodayInputValue());
-    setUploadProgress(0);
   };
 
   const handleUpload = () => {
@@ -84,49 +92,35 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
       setErrorMessage('Select at least one final video file.');
       return;
     }
-    if (!programId || !contentTypeId || !airDate) {
-      setErrorMessage('Program, content type and air date are required.');
+    const ingestOnly = programId === INGEST_PROGRAM_VALUE;
+    if (!contentTypeId) {
+      setErrorMessage('Content type is required.');
+      return;
+    }
+    if (!ingestOnly && !airDate) {
+      setErrorMessage('Air date is required when material is assigned to a show.');
       return;
     }
 
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append('finalVideos', file, file.name);
-    });
-    formData.append('programId', programId);
-    formData.append('contentTypeId', contentTypeId);
-    formData.append('airDate', airDate);
-    formData.append('finalTitle', finalTitle);
-    formData.append('reporterId', reporterId);
-    formData.append('keywords', keywords);
-    formData.append('notes', notes);
-
     setMessage('');
     setErrorMessage('');
-    setUploadProgress(0);
+    const queuedCount = enqueueDirectFinalUploads(files, {
+      programId: ingestOnly ? INGEST_PROGRAM_VALUE : programId,
+      contentTypeId,
+      airDate,
+      finalTitle,
+      reporterId,
+      keywords,
+      notes,
+      useFilenameMetadata: true,
+      bulkUpload: files.length > 1,
+    });
 
-    axios
-      .post('/broadcast/direct-final-upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const total = progressEvent.total || 0;
-          if (total > 0) {
-            setUploadProgress(Math.round((progressEvent.loaded * 100) / total));
-          }
-        },
-      })
-      .then((response) => {
-        setMessage(response.data?.message || 'Direct final upload saved.');
-        setErrorMessage('');
-        resetForm();
-        if (onUploadComplete) {
-          onUploadComplete();
-        }
-      })
-      .catch((error) => {
-        console.error('Error uploading direct final material:', error);
-        setErrorMessage(error.response?.data?.message || 'Direct final upload failed.');
-      });
+    setMessage(`${queuedCount} file(s) added to background upload queue.`);
+    resetForm();
+    if (onUploadComplete) {
+      onUploadComplete();
+    }
   };
 
   return (
@@ -160,16 +154,27 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+      {files.length > 1 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Bulk upload uses each filename as the title, extracts date/keywords from filenames, and uploads files one by one in the background.
+        </Alert>
+      )}
+      {selectedContentType?.slug === 'marketing' && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Marketing bulk is uploaded in natural filename order, so names like Marketing Blok 1, Marketing Blok 2, Marketing Blok 10 keep their airing order.
+        </Alert>
+      )}
 
       <Grid container spacing={2}>
         <Grid item xs={12} md={3}>
-          <FormControl fullWidth required>
-            <InputLabel>Program</InputLabel>
+          <FormControl fullWidth>
+            <InputLabel>Program / ingest</InputLabel>
             <Select
               value={programId}
-              label="Program"
+              label="Program / ingest"
               onChange={(event) => setProgramId(event.target.value)}
             >
+              <MenuItem value={INGEST_PROGRAM_VALUE}>Nema emisije / ingest</MenuItem>
               {programs.map((program) => (
                 <MenuItem key={program._id} value={program._id}>
                   {program.name}
@@ -196,21 +201,23 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
         </Grid>
         <Grid item xs={12} md={2}>
           <TextField
-            label="Air date"
+            label="Air / reference date"
             type="date"
             value={airDate}
             onChange={(event) => setAirDate(event.target.value)}
             fullWidth
             InputLabelProps={{ shrink: true }}
-            required
+            required={programId !== INGEST_PROGRAM_VALUE}
           />
         </Grid>
         <Grid item xs={12} md={4}>
           <TextField
-            label="Final title"
+            label={files.length > 1 ? 'Final title (single file only)' : 'Final title'}
             value={finalTitle}
             onChange={(event) => setFinalTitle(event.target.value)}
             fullWidth
+            disabled={files.length > 1}
+            helperText={files.length > 1 ? 'Bulk upload titles are generated from each filename.' : 'Leave empty to use the filename.'}
           />
         </Grid>
         <Grid item xs={12} md={4}>
@@ -250,23 +257,15 @@ const VideoUploadComponent = ({ onUploadComplete }) => {
 
       {files.length > 0 && (
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
-          {files.map((file) => (
+          {visibleFiles.map((file) => (
             <Chip key={`${file.name}-${file.lastModified}`} label={file.name} size="small" />
           ))}
+          {hiddenFileCount > 0 && <Chip label={`+${hiddenFileCount} more`} size="small" />}
         </Stack>
       )}
 
-      {uploadProgress > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <LinearProgress variant="determinate" value={uploadProgress} />
-          <Typography variant="caption" color="text.secondary">
-            Upload {uploadProgress}%
-          </Typography>
-        </Box>
-      )}
-
       <Button variant="contained" onClick={handleUpload} sx={{ mt: 2 }}>
-        Upload final
+        Add to background upload
       </Button>
     </Paper>
   );

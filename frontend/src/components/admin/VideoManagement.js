@@ -67,6 +67,45 @@ const formatDateTime = (value) => {
 };
 
 const getUploaderName = (video) => video.uploader?.username || 'Unknown uploader';
+const getPersonName = (person) => person?.username || 'N/A';
+const getContentTypeId = (video) => video.contentType?._id || '';
+const getContentTypeName = (video) => video.contentType?.name || video.finalCategory || 'Uncategorized';
+const getContentTypeSlug = (video) => video.contentType?.slug || video.finalCategory || '';
+
+const isArchiveVideo = (video) => ['aired', 'archived'].includes(video.broadcastStatus);
+const isFinalVideo = (video) =>
+  video.status === 'edited' && (
+    video.processingMode === 'finalize' ||
+    video.finalApprovalStatus === 'approved' ||
+    Boolean(video.contentType) ||
+    isArchiveVideo(video)
+  );
+
+const getWorkflowStage = (video) => {
+  if (isArchiveVideo(video)) {
+    return { label: 'Arhiva / aired', color: 'info', priority: 3 };
+  }
+
+  if (isFinalVideo(video)) {
+    return { label: 'Smontiran final', color: 'success', priority: 2 };
+  }
+
+  if (video.status === 'edited') {
+    return { label: 'Smontiran materijal', color: 'primary', priority: 1 };
+  }
+
+  return { label: 'Sirovina / ingest', color: 'warning', priority: 0 };
+};
+
+const matchesWorkflowFilter = (video, workflowFilter) => {
+  if (workflowFilter === 'all') return true;
+  if (workflowFilter === 'raw') return video.status === 'raw';
+  if (workflowFilter === 'edited') return video.status === 'edited' && !isFinalVideo(video);
+  if (workflowFilter === 'final') return isFinalVideo(video) && !isArchiveVideo(video);
+  if (workflowFilter === 'archive') return isArchiveVideo(video);
+  if (workflowFilter === 'uncategorized') return !getContentTypeId(video) && !video.finalCategory;
+  return true;
+};
 
 const shouldShowProcessingProgress = (video) =>
   ['queued', 'processing'].includes(video.processingStatus);
@@ -107,6 +146,9 @@ const buildEventGroups = (videos) => {
         failed: 0,
         raw: 0,
         edited: 0,
+        final: 0,
+        archive: 0,
+        uncategorized: 0,
       });
     }
 
@@ -119,6 +161,9 @@ const buildEventGroups = (videos) => {
     if (video.processingStatus === 'failed') group.failed += 1;
     if (video.status === 'raw') group.raw += 1;
     if (video.status === 'edited') group.edited += 1;
+    if (isFinalVideo(video)) group.final += 1;
+    if (isArchiveVideo(video)) group.archive += 1;
+    if (!getContentTypeId(video) && !video.finalCategory) group.uncategorized += 1;
   });
 
   return Array.from(groups.values()).sort((a, b) => {
@@ -182,6 +227,7 @@ const VideoThumbnail = ({ videoId, title }) => {
 const VideoManagement = () => {
   const [videos, setVideos] = useState([]);
   const [users, setUsers] = useState([]);
+  const [contentTypes, setContentTypes] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [rawOrphanCount, setRawOrphanCount] = useState(0);
   const [recoveryOwnerId, setRecoveryOwnerId] = useState('');
@@ -190,6 +236,8 @@ const VideoManagement = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [workflowFilter, setWorkflowFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [uploaderFilter, setUploaderFilter] = useState('all');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [expandedEvents, setExpandedEvents] = useState({});
@@ -217,6 +265,7 @@ const VideoManagement = () => {
     fetchVideos();
     fetchRawOrphans();
     fetchUsers();
+    fetchContentTypes();
   }, [fetchVideos]);
 
   const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
@@ -236,6 +285,16 @@ const VideoManagement = () => {
     return Array.from(new Set(uploaders)).sort();
   }, [videos]);
 
+  const contentTypeById = useMemo(() => {
+    const entries = contentTypes.map((type) => [type._id, type]);
+    return new Map(entries);
+  }, [contentTypes]);
+
+  const activeContentTypes = useMemo(
+    () => contentTypes.filter((type) => type.active !== false),
+    [contentTypes]
+  );
+
   const filteredVideos = useMemo(() => {
     const search = searchTerm.toLowerCase().trim();
 
@@ -249,22 +308,41 @@ const VideoManagement = () => {
           video.location,
           video.status,
           video.processingStatus,
+          video.broadcastStatus,
+          video.finalApprovalStatus,
+          video.processingMode,
+          video.correctionStatus,
+          video.correctionNote,
+          video.correctionReportedBy?.username,
+          getContentTypeName(video),
+          getContentTypeSlug(video),
           getUploaderName(video),
+          getPersonName(video.reporter),
+          getPersonName(video.editor),
+          getPersonName(video.qaResponsible),
         ]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(search));
 
       const matchesStatus =
         statusFilter === 'all' ||
-        video.processingStatus === statusFilter ||
-        video.status === statusFilter;
+        video.processingStatus === statusFilter;
+
+      const matchesWorkflow = matchesWorkflowFilter(video, workflowFilter);
+
+      const selectedContentType = contentTypeById.get(categoryFilter);
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        (categoryFilter === 'uncategorized' && !getContentTypeId(video) && !video.finalCategory) ||
+        getContentTypeId(video) === categoryFilter ||
+        (selectedContentType?.slug && selectedContentType.slug === getContentTypeSlug(video));
 
       const matchesUploader =
         uploaderFilter === 'all' || getUploaderName(video) === uploaderFilter;
 
-      return matchesSearch && matchesStatus && matchesUploader;
+      return matchesSearch && matchesStatus && matchesWorkflow && matchesCategory && matchesUploader;
     });
-  }, [videos, searchTerm, statusFilter, uploaderFilter]);
+  }, [videos, searchTerm, statusFilter, workflowFilter, categoryFilter, uploaderFilter, contentTypeById]);
 
   const eventGroups = useMemo(() => buildEventGroups(filteredVideos), [filteredVideos]);
 
@@ -292,17 +370,21 @@ const VideoManagement = () => {
 
   const stats = useMemo(() => {
     const total = videos.length;
-    const completed = videos.filter((video) => video.processingStatus === 'completed').length;
+    const raw = videos.filter((video) => video.status === 'raw').length;
+    const edited = videos.filter((video) => video.status === 'edited').length;
+    const archive = videos.filter(isArchiveVideo).length;
+    const uncategorized = videos.filter((video) => !getContentTypeId(video) && !video.finalCategory).length;
+    const processing = videos.filter(shouldShowProcessingProgress).length;
     const failed = videos.filter((video) => video.processingStatus === 'failed').length;
-    const previewReady = videos.filter((video) => Boolean(video.previewPath)).length;
-    const thumbnails = videos.filter((video) => Boolean(video.thumbnailPath)).length;
 
     return {
       total,
-      completed,
+      raw,
+      edited,
+      archive,
+      uncategorized,
+      processing,
       failed,
-      previewReady,
-      thumbnails,
     };
   }, [videos]);
 
@@ -460,6 +542,17 @@ const VideoManagement = () => {
       });
   };
 
+  const fetchContentTypes = () => {
+    axiosInstance
+      .get('/admin/broadcast-content-types')
+      .then((response) => {
+        setContentTypes(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((err) => {
+        console.error('Error fetching content types:', err);
+      });
+  };
+
   const handleRetryProcessing = (video) => {
     setMessage('');
     setErrorMessage('');
@@ -521,8 +614,32 @@ const VideoManagement = () => {
       });
   };
 
+  const handleUpdateContentType = (videoId, contentTypeId) => {
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .patch(`/admin/videos/${videoId}/content-type`, { contentTypeId })
+      .then((response) => {
+        setVideos((prev) =>
+          prev.map((video) => (video._id === videoId ? response.data.video : video))
+        );
+        setMessage('Video category updated.');
+      })
+      .catch((error) => {
+        console.error('Error updating video category:', error);
+        setErrorMessage(error.response?.data?.message || 'Video category could not be updated.');
+      });
+  };
+
   const renderVideoCard = (video) => {
     const selected = selectedVideos.includes(video._id);
+    const workflowStage = getWorkflowStage(video);
+    const currentContentTypeId = getContentTypeId(video);
+    const currentContentType = contentTypeById.get(currentContentTypeId);
+    const categoryOptions = activeContentTypes.some((type) => type._id === currentContentTypeId) || !currentContentType
+      ? activeContentTypes
+      : [currentContentType, ...activeContentTypes];
 
     return (
       <Grid item xs={12} md={6} xl={4} key={video._id}>
@@ -564,7 +681,14 @@ const VideoManagement = () => {
             </Typography>
 
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-              <Chip label={video.status || 'N/A'} size="small" />
+              <Chip label={workflowStage.label} size="small" color={workflowStage.color} />
+              <Chip label={`Category: ${getContentTypeName(video)}`} size="small" variant="outlined" />
+              {video.correctionStatus === 'needs_correction' && (
+                <Chip label="Potrebna ispravka" size="small" color="error" />
+              )}
+              {video.broadcastStatus && (
+                <Chip label={`Broadcast: ${video.broadcastStatus}`} size="small" variant="outlined" />
+              )}
               <Chip
                 label={video.processingStatus || 'N/A'}
                 size="small"
@@ -607,6 +731,12 @@ const VideoManagement = () => {
                 <Typography variant="caption" color="text.secondary">Uploader</Typography>
                 <Typography variant="body2" noWrap>{getUploaderName(video)}</Typography>
               </Grid>
+              <Grid item xs={6}>
+                <Typography variant="caption" color="text.secondary">Reporter / Editor</Typography>
+                <Typography variant="body2" noWrap>
+                  {getPersonName(video.reporter)} / {getPersonName(video.editor)}
+                </Typography>
+              </Grid>
               <Grid item xs={12}>
                 <FormControl fullWidth size="small">
                   <InputLabel>Owner</InputLabel>
@@ -618,6 +748,25 @@ const VideoManagement = () => {
                     {users.map((appUser) => (
                       <MenuItem key={appUser._id} value={appUser._id}>
                         {appUser.username} / {appUser.role}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Video category</InputLabel>
+                  <Select
+                    value={currentContentTypeId}
+                    label="Video category"
+                    onChange={(event) => handleUpdateContentType(video._id, event.target.value)}
+                  >
+                    <MenuItem value="" disabled>
+                      Uncategorized
+                    </MenuItem>
+                    {categoryOptions.map((type) => (
+                      <MenuItem key={type._id} value={type._id} disabled={type.active === false}>
+                        {type.name}{type.active === false ? ' (inactive)' : ''}
                       </MenuItem>
                     ))}
                   </Select>
@@ -701,7 +850,7 @@ const VideoManagement = () => {
             Video Management
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Pregled, filtriranje, skidanje i brisanje video materijala.
+            Pregled sirovine, smontiranog materijala, arhive, kategorija i storage stanja.
           </Typography>
         </Box>
 
@@ -742,41 +891,49 @@ const VideoManagement = () => {
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} md={2.4}>
+        <Grid item xs={6} md={2}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
             <Typography variant="overline" color="text.secondary">Total</Typography>
             <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total}</Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={2.4}>
+        <Grid item xs={6} md={2}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-            <Typography variant="overline" color="text.secondary">Completed</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.completed}</Typography>
+            <Typography variant="overline" color="text.secondary">Sirovina</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.raw}</Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={2.4}>
+        <Grid item xs={6} md={2}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-            <Typography variant="overline" color="text.secondary">Failed</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.failed}</Typography>
+            <Typography variant="overline" color="text.secondary">Smontirano</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.edited}</Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={2.4}>
+        <Grid item xs={6} md={2}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-            <Typography variant="overline" color="text.secondary">Preview</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.previewReady}</Typography>
+            <Typography variant="overline" color="text.secondary">Arhiva</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.archive}</Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={2.4}>
+        <Grid item xs={6} md={2}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-            <Typography variant="overline" color="text.secondary">Thumbnails</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.thumbnails}</Typography>
+            <Typography variant="overline" color="text.secondary">Bez kategorije</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.uncategorized}</Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={6} md={2}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Typography variant="overline" color="text.secondary">Processing / failed</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>
+              {stats.processing} / {stats.failed}
+            </Typography>
           </Paper>
         </Grid>
       </Grid>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={5}>
+          <Grid item xs={12} md={3}>
             <TextField
               label="Search videos"
               fullWidth
@@ -786,25 +943,62 @@ const VideoManagement = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
             <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
+              <InputLabel>Workflow</InputLabel>
               <Select
-                value={statusFilter}
-                label="Status"
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={workflowFilter}
+                label="Workflow"
+                onChange={(e) => setWorkflowFilter(e.target.value)}
               >
-                <MenuItem value="all">All statuses</MenuItem>
-                <MenuItem value="completed">Completed</MenuItem>
-                <MenuItem value="processing">Processing</MenuItem>
-                <MenuItem value="failed">Failed</MenuItem>
-                <MenuItem value="raw">Raw</MenuItem>
-                <MenuItem value="edited">Edited</MenuItem>
+                <MenuItem value="all">All workflow</MenuItem>
+                <MenuItem value="raw">Sirovina / ingest</MenuItem>
+                <MenuItem value="edited">Smontiran materijal</MenuItem>
+                <MenuItem value="final">Smontiran final</MenuItem>
+                <MenuItem value="archive">Arhiva / aired</MenuItem>
+                <MenuItem value="uncategorized">Bez kategorije</MenuItem>
               </Select>
             </FormControl>
           </Grid>
 
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
+            <FormControl fullWidth>
+              <InputLabel>Processing</InputLabel>
+              <Select
+                value={statusFilter}
+                label="Processing"
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <MenuItem value="all">All processing</MenuItem>
+                <MenuItem value="uploaded">Uploaded</MenuItem>
+                <MenuItem value="queued">Queued</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+                <MenuItem value="processing">Processing</MenuItem>
+                <MenuItem value="failed">Failed</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={12} md={2}>
+            <FormControl fullWidth>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={categoryFilter}
+                label="Category"
+                onChange={(e) => setCategoryFilter(e.target.value)}
+              >
+                <MenuItem value="all">All categories</MenuItem>
+                <MenuItem value="uncategorized">Uncategorized</MenuItem>
+                {contentTypes.map((type) => (
+                  <MenuItem key={type._id} value={type._id}>
+                    {type.name}{type.active === false ? ' (inactive)' : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={12} md={2}>
             <FormControl fullWidth>
               <InputLabel>Uploader</InputLabel>
               <Select
@@ -931,8 +1125,13 @@ const VideoManagement = () => {
                     {group.failed > 0 && (
                       <Chip label={`${group.failed} failed`} size="small" color="error" variant="outlined" />
                     )}
-                    <Chip label={`${group.raw} raw`} size="small" variant="outlined" />
-                    <Chip label={`${group.edited} edited`} size="small" variant="outlined" />
+                    <Chip label={`${group.raw} sirovina`} size="small" color="warning" variant="outlined" />
+                    <Chip label={`${group.edited} smontirano`} size="small" color="primary" variant="outlined" />
+                    <Chip label={`${group.final} final`} size="small" color="success" variant="outlined" />
+                    <Chip label={`${group.archive} archive`} size="small" color="info" variant="outlined" />
+                    {group.uncategorized > 0 && (
+                      <Chip label={`${group.uncategorized} bez kategorije`} size="small" color="default" variant="outlined" />
+                    )}
                   </Stack>
                 </Stack>
               </AccordionSummary>

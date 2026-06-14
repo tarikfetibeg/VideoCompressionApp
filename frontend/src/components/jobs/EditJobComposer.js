@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -136,6 +136,7 @@ const EditJobComposer = ({ video, timecodes }) => {
   const [description, setDescription] = useState('');
   const [scriptText, setScriptText] = useState('');
   const [offFiles, setOffFiles] = useState([]);
+  const [programOptions, setProgramOptions] = useState([]);
   const [program, setProgram] = useState('');
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState('normal');
@@ -150,6 +151,17 @@ const EditJobComposer = ({ video, timecodes }) => {
     () => (video ? buildSegmentCandidates(video, timecodes) : []),
     [video, timecodes]
   );
+
+  useEffect(() => {
+    axiosInstance
+      .get('/broadcast/programs')
+      .then((response) => {
+        setProgramOptions(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error fetching broadcast programs:', error);
+      });
+  }, []);
 
   const updateSegmentOverride = (segmentId, field, value) => {
     setSegmentOverrides((prev) => ({
@@ -274,7 +286,17 @@ const EditJobComposer = ({ video, timecodes }) => {
           <TextField label="Job title" value={title} onChange={(e) => setTitle(e.target.value)} fullWidth required />
         </Grid>
         <Grid item xs={12} md={3}>
-          <TextField label="Program" value={program} onChange={(e) => setProgram(e.target.value)} fullWidth />
+          <FormControl fullWidth>
+            <InputLabel>Program</InputLabel>
+            <Select value={program} label="Program" onChange={(e) => setProgram(e.target.value)}>
+              <MenuItem value="">Select program</MenuItem>
+              {programOptions.map((programOption) => (
+                <MenuItem key={programOption._id} value={programOption.name}>
+                  {programOption.name}{programOption.defaultTime ? ` / ${programOption.defaultTime}` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Grid>
         <Grid item xs={12} md={3}>
           <TextField

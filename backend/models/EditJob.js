@@ -49,6 +49,8 @@ const JobChangeSchema = new mongoose.Schema({
       'job_created',
       'brief_updated',
       'segments_added',
+      'segment_removed',
+      'segment_replaced',
       'off_added',
       'reporter_note_added',
       'final_uploaded',
@@ -68,6 +70,14 @@ const JobChangeSchema = new mongoose.Schema({
 const JobViewerStateSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   lastViewedAt: { type: Date, default: Date.now },
+});
+
+const JobDownloadStateSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  downloadedSegmentIds: [{ type: mongoose.Schema.Types.ObjectId }],
+  downloadedOffFileIds: [{ type: mongoose.Schema.Types.ObjectId }],
+  lastDownloadedAt: { type: Date, default: Date.now },
+  downloadCount: { type: Number, default: 0 },
 });
 
 const EditJobSchema = new mongoose.Schema({
@@ -104,6 +114,7 @@ const EditJobSchema = new mongoose.Schema({
   changeLog: [JobChangeSchema],
   lastReporterChangeAt: { type: Date },
   viewerStates: [JobViewerStateSchema],
+  downloadStates: [JobDownloadStateSchema],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

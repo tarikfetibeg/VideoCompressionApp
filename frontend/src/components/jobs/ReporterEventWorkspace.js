@@ -141,6 +141,7 @@ const buildGroups = (videos) => {
 
 const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   const [videos, setVideos] = useState([]);
+  const [programOptions, setProgramOptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dateFilter, setDateFilter] = useState(getTodayInputValue);
   const [eventFilter, setEventFilter] = useState('all');
@@ -190,6 +191,17 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   useEffect(() => {
     fetchVideos();
   }, [fetchVideos, refreshToken]);
+
+  useEffect(() => {
+    axiosInstance
+      .get('/broadcast/programs')
+      .then((response) => {
+        setProgramOptions(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error fetching broadcast programs:', error);
+      });
+  }, []);
 
   const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
 
@@ -529,7 +541,21 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                     />
                   </Grid>
                   <Grid item xs={12} md={3}>
-                    <TextField label="Program" value={program} onChange={(event) => setProgram(event.target.value)} fullWidth />
+                    <FormControl fullWidth>
+                      <InputLabel>Program</InputLabel>
+                      <Select
+                        value={program}
+                        label="Program"
+                        onChange={(event) => setProgram(event.target.value)}
+                      >
+                        <MenuItem value="">Select program</MenuItem>
+                        {programOptions.map((programOption) => (
+                          <MenuItem key={programOption._id} value={programOption.name}>
+                            {programOption.name}{programOption.defaultTime ? ` / ${programOption.defaultTime}` : ''}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                   </Grid>
                   <Grid item xs={12} md={3}>
                     <FormControl fullWidth>

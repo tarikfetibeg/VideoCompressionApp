@@ -30,13 +30,18 @@ const { getQueueErrorMessage } = require('../utils/queueErrors');
 
 const router = express.Router();
 
-const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Admin'];
+const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'];
 const producerRoles = ['Producer', 'Admin'];
 const rundownReadRoles = ['Producer', 'Realizator', 'Admin'];
 const downloadRoles = ['Realizator', 'Producer', 'Admin'];
+const reorderRoles = ['Producer', 'Realizator', 'Admin'];
+const showAiringRoles = ['Realizator', 'Admin'];
+const correctionReportRoles = ['Realizator', 'Admin'];
 const approvalRoles = ['Reporter', 'Producer', 'Admin'];
 const directFinalUploadRoles = ['Editor', 'VideoEditor', 'Admin'];
-const MAX_DIRECT_FINAL_FILES = parseInt(process.env.MAX_DIRECT_FINAL_FILES || '20', 10) || 20;
+const NO_PROGRAM_VALUES = new Set(['', 'ingest', 'none', 'no_program', 'no-show']);
+const directIngestAutoArchiveSlugs = new Set(['prilog', 'insert']);
+const MAX_DIRECT_FINAL_FILES = parseInt(process.env.MAX_DIRECT_FINAL_FILES || '100', 10) || 100;
 const MAX_UPLOAD_SIZE_GB = Number(process.env.MAX_UPLOAD_SIZE_GB) > 0
   ? Number(process.env.MAX_UPLOAD_SIZE_GB)
   : 25;
@@ -96,6 +101,11 @@ function parseAirDate(value) {
   return date;
 }
 
+function parseOptionalAirDate(value) {
+  if (!String(value || '').trim()) return null;
+  return parseAirDate(value);
+}
+
 async function removeUploadedFiles(files = []) {
   await Promise.all((files || []).map(async (file) => {
     if (!file?.path) return;
@@ -129,6 +139,81 @@ function parseKeywords(value) {
     .filter(Boolean);
 }
 
+function buildUtcDate(year, month, day) {
+  const parsedYear = Number(year);
+  const parsedMonth = Number(month);
+  const parsedDay = Number(day);
+
+  if (
+    !Number.isInteger(parsedYear) ||
+    !Number.isInteger(parsedMonth) ||
+    !Number.isInteger(parsedDay) ||
+    parsedMonth < 1 ||
+    parsedMonth > 12 ||
+    parsedDay < 1 ||
+    parsedDay > 31
+  ) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(parsedYear, parsedMonth - 1, parsedDay));
+  if (
+    date.getUTCFullYear() !== parsedYear ||
+    date.getUTCMonth() !== parsedMonth - 1 ||
+    date.getUTCDate() !== parsedDay
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function extractDateFromFilename(baseName) {
+  const value = String(baseName || '');
+  const ymd = value.match(/\b((?:19|20)\d{2})[-_. ]?([01]\d)[-_. ]?([0-3]\d)\b/);
+  if (ymd) {
+    const date = buildUtcDate(ymd[1], ymd[2], ymd[3]);
+    if (date) return { date, matchedText: ymd[0] };
+  }
+
+  const dmy = value.match(/\b([0-3]?\d)[-_. ]([01]?\d)[-_. ]((?:19|20)\d{2})\b/);
+  if (dmy) {
+    const date = buildUtcDate(dmy[3], dmy[2], dmy[1]);
+    if (date) return { date, matchedText: dmy[0] };
+  }
+
+  return { date: null, matchedText: '' };
+}
+
+function getFilenameMetadata(originalName) {
+  const extension = path.extname(originalName || '');
+  const baseName = path.basename(originalName || 'video', extension) || originalName || 'video';
+  const cleanTitle = baseName
+    .replace(/[_]+/g, ' ')
+    .replace(/\s*;\s*/g, '; ')
+    .replace(/\s+/g, ' ')
+    .trim() || baseName;
+  const extractedDate = extractDateFromFilename(baseName);
+  const keywordSource = (extractedDate.matchedText
+    ? baseName.replace(extractedDate.matchedText, ' ')
+    : baseName
+  )
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ');
+  const keywords = Array.from(new Set(
+    keywordSource
+      .split(/\s+/)
+      .map((keyword) => keyword.trim())
+      .filter((keyword) => keyword.length > 1 || /^\d+$/.test(keyword))
+  ));
+
+  return {
+    title: cleanTitle,
+    date: extractedDate.date,
+    keywords,
+  };
+}
+
 function getQaResponsibilityType(role) {
   if (role === 'Producer') return 'producer_override';
   if (role === 'Admin') return 'admin_override';
@@ -141,14 +226,32 @@ async function ensureDefaultContentTypes() {
   await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
 }
 
+async function getArchivePrilogContentType() {
+  await ensureDefaultContentTypes();
+
+  let contentType = await BroadcastContentType.findOne({ slug: 'prilog', active: true });
+  if (!contentType) {
+    contentType = await BroadcastContentType.findOneAndUpdate(
+      { slug: 'prilog' },
+      { name: 'Prilog', slug: 'prilog', active: true },
+      { new: true, upsert: true }
+    );
+  }
+
+  return contentType;
+}
+
 async function populateShowDay(query) {
   return query
     .populate('program')
     .populate('producers', 'username role')
-    .populate('items.video', 'filename originalFilename finalTitle event tagDate airDate broadcastStatus finalApprovalStatus processingStatus previewPath thumbnailPath reporter editor qaResponsible qaResponsibilityType')
+    .populate('airedBy', 'username role')
+    .populate('archiveConfirmedBy', 'username role')
+    .populate('items.video', 'filename originalFilename finalTitle filepath rawPath compressedPath previewPath event tagDate airDate broadcastStatus finalApprovalStatus processingStatus thumbnailPath reporter editor qaResponsible qaResponsibilityType correctionStatus correctionNote correctionReportedAt correctionReportedBy')
     .populate('items.video.reporter', 'username role')
     .populate('items.video.editor', 'username role')
     .populate('items.video.qaResponsible', 'username role')
+    .populate('items.video.correctionReportedBy', 'username role')
     .populate('items.contentType')
     .populate('items.addedBy', 'username role')
     .populate('downloadStates.user', 'username role')
@@ -178,6 +281,13 @@ async function findOrCreateShowDay(programId, airDate, user) {
 function userIsAssignedProducer(showDay, user) {
   if (user.role === 'Admin') return true;
   return (showDay.producers || []).some((producerId) => getObjectIdString(producerId) === user.id);
+}
+
+function userCanReorderShowDay(showDay, user) {
+  if (!user || !showDay) return false;
+  if (['Admin', 'Realizator'].includes(user.role)) return true;
+  if (user.role === 'Producer') return userIsAssignedProducer(showDay, user);
+  return false;
 }
 
 function getUserDownloadState(showDay, user) {
@@ -359,6 +469,8 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
     reporterId,
     notes = '',
     keywords = '',
+    useFilenameMetadata = 'false',
+    bulkUpload = 'false',
   } = req.body;
   const retainedFilePaths = new Set();
 
@@ -367,10 +479,15 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
       return res.status(400).json({ message: 'At least one final video file is required.' });
     }
 
-    const program = await BroadcastProgram.findById(programId);
-    if (!program || !program.active) {
-      await removeUploadedFiles(req.files);
-      return res.status(400).json({ message: 'Active broadcast program is required.' });
+    const normalizedProgramId = String(programId || '').trim();
+    const ingestOnly = NO_PROGRAM_VALUES.has(normalizedProgramId);
+    let program = null;
+    if (!ingestOnly) {
+      program = await BroadcastProgram.findById(normalizedProgramId);
+      if (!program || !program.active) {
+        await removeUploadedFiles(req.files);
+        return res.status(400).json({ message: 'Active broadcast program is required, or choose no show / ingest.' });
+      }
     }
 
     const contentType = await BroadcastContentType.findById(contentTypeId);
@@ -378,11 +495,21 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
       await removeUploadedFiles(req.files);
       return res.status(400).json({ message: 'Active content type is required.' });
     }
+    const autoArchiveDirectIngest = ingestOnly && directIngestAutoArchiveSlugs.has(contentType.slug);
 
-    const parsedAirDate = parseAirDate(airDate);
-    if (!parsedAirDate) {
+    const fallbackAirDate = parseOptionalAirDate(airDate);
+    if (String(airDate || '').trim() && !fallbackAirDate) {
       await removeUploadedFiles(req.files);
       return res.status(400).json({ message: 'Valid air date is required.' });
+    }
+    const useFilenameMetadataEnabled = useFilenameMetadata === 'true' || bulkUpload === 'true';
+    const isBulkUpload = bulkUpload === 'true' || req.files.length > 1;
+    const fileMetadata = req.files.map((file) => getFilenameMetadata(file.originalname));
+    const missingAirDate = !ingestOnly && !fallbackAirDate && fileMetadata.some((metadata) => !metadata.date);
+
+    if (missingAirDate) {
+      await removeUploadedFiles(req.files);
+      return res.status(400).json({ message: 'Air date is required when a filename does not contain a valid date.' });
     }
 
     let reporter = null;
@@ -405,11 +532,15 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
     ensureFolderExists(paths.thumbnails);
 
     for (const [index, file] of req.files.entries()) {
-      const title = req.files.length === 1 && trimmedFinalTitle
+      const metadata = fileMetadata[index] || getFilenameMetadata(file.originalname);
+      const title = (useFilenameMetadataEnabled || isBulkUpload)
+        ? metadata.title
+        : req.files.length === 1 && trimmedFinalTitle
         ? trimmedFinalTitle
         : trimmedFinalTitle
           ? `${trimmedFinalTitle} ${index + 1}`
-          : file.originalname;
+          : metadata.title;
+      const fileDate = metadata.date || fallbackAirDate || parseAirDate();
       const finalFolder = path.join(paths.final, contentType.slug);
       ensureFolderExists(finalFolder);
       const finalFilename = createStoredFilename('final', file.originalname);
@@ -433,7 +564,7 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
         editor: req.user.id,
         event: title,
         location: '',
-        tagDate: parsedAirDate,
+        tagDate: fileDate,
         status: 'edited',
         processingStatus: 'queued',
         processingMode: 'finalize',
@@ -442,10 +573,10 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
         qcNotes: notes || 'Direct editor QA upload.',
         qcCheckedBy: req.user.id,
         qcCheckedAt: new Date(),
-        broadcastStatus: 'qc_pending',
-        program: program._id,
+        broadcastStatus: autoArchiveDirectIngest ? 'archived' : 'qc_pending',
+        program: program?._id || null,
         contentType: contentType._id,
-        airDate: parsedAirDate,
+        airDate: ingestOnly ? null : fileDate,
         finalTitle: title,
         finalCategory: contentType.slug,
         finalApprovalStatus: 'approved',
@@ -455,7 +586,15 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
         finalApprovalNotes: notes,
         qaResponsible: req.user.id,
         qaResponsibilityType: 'direct_editor',
-        keywords: Array.from(new Set([program.name, contentType.name, title, reporter?.username, ...customKeywords].filter(Boolean))),
+        archivedAt: autoArchiveDirectIngest ? new Date() : null,
+        keywords: Array.from(new Set([
+          program?.name || 'Nema emisije / ingest',
+          contentType.name,
+          title,
+          reporter?.username,
+          ...metadata.keywords,
+          ...customKeywords,
+        ].filter(Boolean))),
         sizeOriginal: inputStats ? inputStats.size : null,
         uploadDate: new Date(),
       });
@@ -484,8 +623,12 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
         videoId: videoDoc._id,
         originalFilename: file.originalname,
         finalTitle: title,
-        programId: program._id,
+        programId: program?._id || null,
+        ingestOnly,
+        autoArchiveDirectIngest,
         contentTypeId: contentType._id,
+        extractedDate: metadata.date || null,
+        extractedKeywords: metadata.keywords,
         reporterId: reporter?._id || null,
         editorId: req.user.id,
         qaResponsibleId: req.user.id,
@@ -499,9 +642,11 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
       performedBy: req.user.id,
       details: {
         count: uploadedVideos.length,
-        programId: program._id,
+        programId: program?._id || null,
+        ingestOnly,
+        autoArchiveDirectIngest,
         contentTypeId: contentType._id,
-        airDate: parsedAirDate,
+        airDateFallback: fallbackAirDate,
         reporterId: reporter?._id || null,
         qaResponsibleId: req.user.id,
         files: auditFiles,
@@ -559,6 +704,7 @@ router.get('/final-videos', authorize(['Producer', 'Admin']), async (req, res) =
       .populate('reporter', 'username role')
       .populate('editor', 'username role')
       .populate('qaResponsible', 'username role')
+      .populate('correctionReportedBy', 'username role')
       .populate('finalApprovedBy', 'username role')
       .sort({ finalApprovedAt: -1, uploadDate: -1 });
 
@@ -582,6 +728,7 @@ router.get('/library-videos', authorize(['Producer', 'Admin']), async (req, res)
       .populate('reporter', 'username role')
       .populate('editor', 'username role')
       .populate('qaResponsible', 'username role')
+      .populate('correctionReportedBy', 'username role')
       .populate('finalApprovedBy', 'username role')
       .sort({ airedAt: -1, archivedAt: -1, finalApprovedAt: -1, uploadDate: -1 })
       .limit(parsedLimit);
@@ -703,6 +850,56 @@ router.get('/show-day', authorize(rundownReadRoles), async (req, res) => {
   }
 });
 
+router.get('/my-show-days', authorize(producerRoles), async (req, res) => {
+  const parsedFromDate = parseAirDate(req.query.from);
+  const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 31);
+
+  if (!parsedFromDate) {
+    return res.status(400).json({ message: 'A valid from date is required.' });
+  }
+
+  try {
+    const toDate = new Date(parsedFromDate);
+    toDate.setUTCDate(toDate.getUTCDate() + days);
+
+    const filter = {
+      airDate: {
+        $gte: parsedFromDate,
+        $lt: toDate,
+      },
+    };
+
+    if (req.user.role !== 'Admin') {
+      filter.producers = req.user.id;
+    }
+
+    const showDays = await ShowDay.find(filter)
+      .populate('program')
+      .populate('producers', 'username role')
+      .sort({ airDate: 1, updatedAt: -1 });
+
+    res.json(showDays.map((showDay) => {
+      const activeItems = (showDay.items || []).filter((item) => item.status !== 'removed');
+      const readyItems = activeItems.filter((item) => ['ready', 'aired'].includes(item.status));
+
+      return {
+        _id: showDay._id,
+        program: showDay.program,
+        airDate: showDay.airDate,
+        producers: showDay.producers,
+        itemCount: activeItems.length,
+        readyCount: readyItems.length,
+        airedAt: showDay.airedAt,
+        archiveConfirmedAt: showDay.archiveConfirmedAt,
+        updatedAt: showDay.updatedAt,
+      };
+    }));
+  } catch (error) {
+    console.error('Error fetching producer show shortcuts:', error);
+    res.status(500).json({ message: 'Error fetching producer show shortcuts' });
+  }
+});
+
 router.post('/show-day/join', authorize(producerRoles), async (req, res) => {
   const { programId, airDate } = req.body;
   const parsedDate = parseAirDate(airDate);
@@ -757,7 +954,7 @@ router.get('/show-day/:showDayId/download-package', authorize(downloadRoles), as
 
     const packageEntries = activeItems.map((item, index) => {
       const video = item.video;
-      const sourcePath = resolveExistingPath(video?.compressedPath, video?.filepath);
+      const sourcePath = resolveExistingPath(video?.compressedPath, video?.filepath, video?.rawPath, video?.previewPath);
       const baseTitle = item.title || video?.finalTitle || video?.originalFilename || video?.filename || `item_${index + 1}`;
       const extension = path.extname(sourcePath || video?.filename || video?.originalFilename || '.mp4') || '.mp4';
       const fileName = `${String(index + 1).padStart(2, '0')}_${sanitizePackageName(baseTitle)}${extension}`;
@@ -867,6 +1064,132 @@ router.get('/show-day/:showDayId/download-package', authorize(downloadRoles), as
   }
 });
 
+router.post('/show-day/:showDayId/mark-aired', authorize(showAiringRoles), async (req, res) => {
+  try {
+    const showDay = await ShowDay.findById(req.params.showDayId);
+    if (!showDay) return res.status(404).json({ message: 'Show day not found.' });
+
+    const activeItems = (showDay.items || []).filter((item) => item.status !== 'removed');
+    if (activeItems.length === 0) {
+      return res.status(400).json({ message: 'No active material in this show.' });
+    }
+
+    const archiveContentType = await getArchivePrilogContentType();
+    const now = new Date();
+    const videoIds = activeItems
+      .map((item) => getObjectIdString(item.video))
+      .filter(Boolean);
+    const videos = await Video.find({ _id: { $in: videoIds } });
+    const referencedContentTypeIds = new Set();
+
+    activeItems.forEach((item) => {
+      const itemContentTypeId = getObjectIdString(item.contentType);
+      if (itemContentTypeId) referencedContentTypeIds.add(itemContentTypeId);
+    });
+    videos.forEach((video) => {
+      const videoContentTypeId = getObjectIdString(video.contentType);
+      if (videoContentTypeId) referencedContentTypeIds.add(videoContentTypeId);
+    });
+
+    const referencedContentTypes = referencedContentTypeIds.size > 0
+      ? await BroadcastContentType.find({ _id: { $in: Array.from(referencedContentTypeIds) } })
+      : [];
+    const contentTypeById = new Map(
+      referencedContentTypes.map((type) => [getObjectIdString(type._id), type])
+    );
+    const itemByVideoId = new Map(
+      activeItems.map((item) => [getObjectIdString(item.video), item])
+    );
+    const normalizeAsPrilogSlugs = new Set(['prilog', 'insert']);
+    const normalizeItemIds = new Set();
+    let archivedCount = 0;
+
+    for (const video of videos) {
+      if (video.broadcastStatus !== 'archived') archivedCount += 1;
+      const item = itemByVideoId.get(getObjectIdString(video._id));
+      const itemContentType = contentTypeById.get(getObjectIdString(item?.contentType));
+      const videoContentType = contentTypeById.get(getObjectIdString(video.contentType));
+      const currentContentType = itemContentType || videoContentType;
+      const normalizeAsPrilog = !currentContentType || normalizeAsPrilogSlugs.has(currentContentType.slug);
+      const targetContentType = normalizeAsPrilog ? archiveContentType : currentContentType;
+
+      video.broadcastStatus = 'archived';
+      video.airedAt = video.airedAt || now;
+      video.archivedAt = video.archivedAt || now;
+      if (targetContentType) {
+        video.contentType = targetContentType._id;
+        video.finalCategory = targetContentType.slug;
+      }
+
+      const currentKeywords = Array.isArray(video.keywords) ? video.keywords : [];
+      video.keywords = Array.from(new Set([
+        ...currentKeywords,
+        targetContentType?.name,
+        'TV arhiva',
+      ].filter(Boolean)));
+
+      if (normalizeAsPrilog && item?._id) {
+        normalizeItemIds.add(String(item._id));
+      }
+
+      await video.save();
+    }
+
+    activeItems.forEach((item) => {
+      item.status = 'aired';
+      const itemContentType = contentTypeById.get(getObjectIdString(item.contentType));
+      if (normalizeItemIds.has(String(item._id)) || !itemContentType || normalizeAsPrilogSlugs.has(itemContentType.slug)) {
+        item.contentType = archiveContentType._id;
+      }
+      item.updatedAt = now;
+    });
+
+    showDay.airedAt = showDay.airedAt || now;
+    showDay.airedBy = showDay.airedBy || req.user.id;
+    showDay.archiveConfirmedAt = now;
+    showDay.archiveConfirmedBy = req.user.id;
+    showDay.activityLog.push({
+      action: 'confirm_show_aired',
+      summary: `Show aired. Archived ${archivedCount} material(s); ${normalizeItemIds.size} tagged as Prilog.`,
+      performedBy: req.user.id,
+      createdAt: now,
+      details: {
+        activeItems: activeItems.length,
+        archivedVideos: archivedCount,
+        archivedAsPrilog: normalizeItemIds.size,
+        archiveContentTypeId: archiveContentType._id,
+      },
+    });
+
+    await showDay.save();
+
+    await AuditLog.create({
+      action: 'Confirm Show Aired',
+      performedBy: req.user.id,
+      details: {
+        showDayId: showDay._id,
+        programId: showDay.program,
+        airDate: showDay.airDate,
+        activeItems: activeItems.length,
+        archivedVideos: archivedCount,
+        archivedAsPrilog: normalizeItemIds.size,
+        archiveContentTypeId: archiveContentType._id,
+      },
+    });
+
+    const populatedShowDay = await populateShowDay(ShowDay.findById(showDay._id));
+    res.json({
+      message: archivedCount > 0
+        ? `Show marked as aired. ${archivedCount} material(s) archived; ${normalizeItemIds.size} tagged as Prilog.`
+        : 'Show marked as aired. Material was already in the archive.',
+      showDay: serializeShowDay(populatedShowDay, req.user),
+    });
+  } catch (error) {
+    console.error('Error marking show as aired:', error);
+    res.status(500).json({ message: 'Error marking show as aired' });
+  }
+});
+
 router.post('/show-day/:showDayId/items', authorize(producerRoles), async (req, res) => {
   const { videoId, contentTypeId, title = '' } = req.body;
 
@@ -934,6 +1257,177 @@ router.post('/show-day/:showDayId/items', authorize(producerRoles), async (req, 
   } catch (error) {
     console.error('Error adding material to show:', error);
     res.status(500).json({ message: 'Error adding material to show' });
+  }
+});
+
+router.patch('/show-day/:showDayId/items/reorder', authorize(reorderRoles), async (req, res) => {
+  const { itemIds } = req.body || {};
+
+  if (!Array.isArray(itemIds) || itemIds.length === 0) {
+    return res.status(400).json({ message: 'itemIds must be a non-empty array.' });
+  }
+
+  try {
+    const showDay = await ShowDay.findById(req.params.showDayId);
+    if (!showDay) return res.status(404).json({ message: 'Show day not found.' });
+
+    if (!userCanReorderShowDay(showDay, req.user)) {
+      return res.status(403).json({ message: 'You do not have permission to reorder this show.' });
+    }
+
+    const activeItems = (showDay.items || []).filter((item) => item.status !== 'removed');
+    const requestedIds = itemIds.map(String);
+    const uniqueRequestedIds = new Set(requestedIds);
+    const activeIds = activeItems.map((item) => String(item._id));
+    const activeIdSet = new Set(activeIds);
+
+    if (uniqueRequestedIds.size !== requestedIds.length || requestedIds.length !== activeIds.length) {
+      return res.status(400).json({ message: 'Reorder list must include every active show item exactly once.' });
+    }
+
+    const invalidIds = requestedIds.filter((itemId) => !activeIdSet.has(itemId));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({ message: 'Reorder list contains items that are not active in this show.' });
+    }
+
+    const previousOrder = activeItems
+      .slice()
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+      .map((item, index) => ({
+        order: index + 1,
+        itemId: String(item._id),
+        title: item.title || `Material ${item._id}`,
+      }));
+    const orderById = new Map(requestedIds.map((itemId, index) => [itemId, index]));
+    const now = new Date();
+
+    activeItems.forEach((item) => {
+      item.order = orderById.get(String(item._id));
+    });
+
+    const nextOrder = activeItems
+      .slice()
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+      .map((item, index) => ({
+        order: index + 1,
+        itemId: String(item._id),
+        title: item.title || `Material ${item._id}`,
+      }));
+
+    showDay.activityLog.push({
+      action: 'reorder_show_rundown',
+      summary: `Rundown order updated (${activeItems.length} item(s)).`,
+      performedBy: req.user.id,
+      createdAt: now,
+      details: {
+        itemCount: activeItems.length,
+        previousOrder,
+        nextOrder,
+      },
+    });
+
+    await showDay.save();
+
+    await AuditLog.create({
+      action: 'Reorder Show Rundown',
+      performedBy: req.user.id,
+      details: {
+        showDayId: showDay._id,
+        programId: showDay.program,
+        airDate: showDay.airDate,
+        itemCount: activeItems.length,
+        nextOrder,
+      },
+    });
+
+    const populatedShowDay = await populateShowDay(ShowDay.findById(showDay._id));
+    res.json({
+      message: 'Rundown order updated.',
+      showDay: serializeShowDay(populatedShowDay, req.user),
+    });
+  } catch (error) {
+    console.error('Error reordering show rundown:', error);
+    res.status(500).json({ message: 'Error reordering show rundown' });
+  }
+});
+
+router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correctionReportRoles), async (req, res) => {
+  const { note = '' } = req.body || {};
+
+  try {
+    const showDay = await ShowDay.findById(req.params.showDayId);
+    if (!showDay) return res.status(404).json({ message: 'Show day not found.' });
+
+    const item = showDay.items.id(req.params.itemId);
+    if (!item || item.status === 'removed') {
+      return res.status(404).json({ message: 'Active show item not found.' });
+    }
+
+    const video = await Video.findById(item.video);
+    if (!video) return res.status(404).json({ message: 'Video not found.' });
+
+    const now = new Date();
+    const materialTitle = item.title || video.finalTitle || video.originalFilename || video.filename || `Material ${req.params.itemId}`;
+    const trimmedNote = String(note || '').trim();
+    const correctionNote = trimmedNote || 'Realizator reported an issue. Correction needed.';
+
+    video.correctionStatus = 'needs_correction';
+    video.correctionNote = correctionNote;
+    video.correctionReportedBy = req.user.id;
+    video.correctionReportedAt = now;
+    video.correctionResolvedBy = null;
+    video.correctionResolvedAt = null;
+    video.correctionResolvedNote = '';
+    video.keywords = Array.from(new Set([
+      ...(Array.isArray(video.keywords) ? video.keywords : []),
+      'Potrebna ispravka',
+    ].filter(Boolean)));
+    video.correctionReports.push({
+      note: correctionNote,
+      reportedBy: req.user.id,
+      reportedAt: now,
+      showDay: showDay._id,
+      showDayItem: item._id,
+    });
+    await video.save();
+
+    item.updatedAt = now;
+    showDay.activityLog.push({
+      action: 'report_material_error',
+      summary: `"${materialTitle}" tagged as Potrebna ispravka.`,
+      performedBy: req.user.id,
+      createdAt: now,
+      details: {
+        itemId: item._id,
+        videoId: video._id,
+        title: materialTitle,
+        correctionStatus: 'needs_correction',
+        note: correctionNote,
+      },
+    });
+    await showDay.save();
+
+    await AuditLog.create({
+      action: 'Report Clip Correction Needed',
+      performedBy: req.user.id,
+      details: {
+        showDayId: showDay._id,
+        itemId: item._id,
+        videoId: video._id,
+        title: materialTitle,
+        correctionStatus: 'needs_correction',
+        note: correctionNote,
+      },
+    });
+
+    const populatedShowDay = await populateShowDay(ShowDay.findById(showDay._id));
+    res.json({
+      message: 'Clip tagged as Potrebna ispravka.',
+      showDay: serializeShowDay(populatedShowDay, req.user),
+    });
+  } catch (error) {
+    console.error('Error reporting material correction:', error);
+    res.status(500).json({ message: 'Error reporting material correction' });
   }
 });
 
@@ -1040,13 +1534,25 @@ router.patch('/show-day/:showDayId/items/:itemId', authorize(producerRoles), asy
     const item = showDay.items.id(req.params.itemId);
     if (!item) return res.status(404).json({ message: 'Show item not found.' });
 
+    if (item.status === status) {
+      return res.status(409).json({ message: `Material is already ${status}.` });
+    }
+
+    const previousStatus = item.status;
+    const materialTitle = item.title || `Material ${req.params.itemId}`;
     item.status = status;
     item.updatedAt = new Date();
     showDay.activityLog.push({
       action: 'update_material_status',
-      summary: `Material status changed to ${status}.`,
+      summary: `"${materialTitle}" changed from ${previousStatus} to ${status}.`,
       performedBy: req.user.id,
-      details: { itemId: req.params.itemId, status },
+      details: {
+        itemId: req.params.itemId,
+        videoId: item.video,
+        title: materialTitle,
+        previousStatus,
+        status,
+      },
     });
 
     if (status === 'aired') {
@@ -1062,7 +1568,14 @@ router.patch('/show-day/:showDayId/items/:itemId', authorize(producerRoles), asy
     await AuditLog.create({
       action: 'Update Show Material Status',
       performedBy: req.user.id,
-      details: { showDayId: showDay._id, itemId: req.params.itemId, status },
+      details: {
+        showDayId: showDay._id,
+        itemId: req.params.itemId,
+        videoId: item.video,
+        title: materialTitle,
+        previousStatus,
+        status,
+      },
     });
 
     const populatedShowDay = await populateShowDay(ShowDay.findById(showDay._id));

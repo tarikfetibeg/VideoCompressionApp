@@ -8,6 +8,7 @@ import {
   Grid,
   IconButton,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -25,6 +26,7 @@ import {
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -46,8 +48,42 @@ const formatDate = (value) => {
   return date.toLocaleDateString();
 };
 
+const getDateInputValue = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+};
+
 const formatLabel = (value) => String(value || 'N/A').replace(/_/g, ' ');
 const getPersonName = (person) => person?.username || 'N/A';
+const normalizeTypeKey = (contentType) =>
+  String(contentType?.slug || contentType?.name || 'ostalo')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'ostalo';
+
+const contentTypeTone = {
+  prilog: { bg: '#e8f2ff', color: '#174ea6', border: '#a8c7fa' },
+  insert: { bg: '#eaf6ef', color: '#176b3a', border: '#a8d8ba' },
+  marketing: { bg: '#fff5d6', color: '#835400', border: '#f6d77a' },
+  promo: { bg: '#f4ecff', color: '#5e35b1', border: '#c9b6f2' },
+  grafika: { bg: '#e7f6f4', color: '#00695c', border: '#9bd5ce' },
+  spica: { bg: '#eef0f4', color: '#45505f', border: '#c4cbd5' },
+  ostalo: { bg: '#f4f5f7', color: '#4b5563', border: '#d1d5db' },
+};
+
+const getContentTypeChipSx = (contentType) => {
+  const tone = contentTypeTone[normalizeTypeKey(contentType)] || contentTypeTone.ostalo;
+  return {
+    bgcolor: tone.bg,
+    color: tone.color,
+    borderColor: tone.border,
+    fontWeight: 800,
+  };
+};
 
 const ProducerDashboard = () => {
   const { user } = useContext(UserContext);
@@ -56,6 +92,9 @@ const ProducerDashboard = () => {
   const [selectedProgramId, setSelectedProgramId] = useState('');
   const [selectedDate, setSelectedDate] = useState(getTodayInputValue);
   const [showDay, setShowDay] = useState(null);
+  const [producerShortcuts, setProducerShortcuts] = useState([]);
+  const [shortcutsLoading, setShortcutsLoading] = useState(false);
+  const [shortcutAutoSelected, setShortcutAutoSelected] = useState(false);
   const [libraryVideos, setLibraryVideos] = useState([]);
   const [selectedContentTypeId, setSelectedContentTypeId] = useState('all');
   const [librarySearch, setLibrarySearch] = useState('');
@@ -63,6 +102,10 @@ const ProducerDashboard = () => {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reorderingItemId, setReorderingItemId] = useState('');
+  const [draggingItemId, setDraggingItemId] = useState('');
+  const [dragOverItemId, setDragOverItemId] = useState('');
+  const [rundownPreviewItems, setRundownPreviewItems] = useState([]);
 
   const isJoined = useMemo(() => {
     if (user?.role === 'Admin') return true;
@@ -73,6 +116,8 @@ const ProducerDashboard = () => {
     () => (showDay?.items || []).filter((item) => item.status !== 'removed').sort((a, b) => Number(a.order || 0) - Number(b.order || 0)),
     [showDay]
   );
+
+  const displayedRundownItems = rundownPreviewItems.length > 0 ? rundownPreviewItems : activeItems;
 
   const activeVideoIds = useMemo(
     () => new Set(activeItems.map((item) => item.video?._id).filter(Boolean)),
@@ -135,9 +180,46 @@ const ProducerDashboard = () => {
       });
   }, [selectedContentTypeId, librarySearch]);
 
+  const loadProducerShortcuts = useCallback(() => {
+    setShortcutsLoading(true);
+    axiosInstance
+      .get('/broadcast/my-show-days', {
+        params: {
+          from: getTodayInputValue(),
+          days: 14,
+        },
+      })
+      .then((response) => {
+        setProducerShortcuts(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error loading producer show shortcuts:', error);
+      })
+      .finally(() => setShortcutsLoading(false));
+  }, []);
+
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    loadProducerShortcuts();
+  }, [loadProducerShortcuts]);
+
+  useEffect(() => {
+    if (shortcutAutoSelected || producerShortcuts.length === 0) return;
+
+    const today = getTodayInputValue();
+    const shortcut = producerShortcuts.find((item) => getDateInputValue(item.airDate) === today) || producerShortcuts[0];
+    const programId = shortcut.program?._id || shortcut.program;
+    const airDate = getDateInputValue(shortcut.airDate);
+
+    if (programId && airDate) {
+      setSelectedProgramId(programId);
+      setSelectedDate(airDate);
+      setShortcutAutoSelected(true);
+    }
+  }, [producerShortcuts, shortcutAutoSelected]);
 
   useEffect(() => {
     loadShowDay();
@@ -150,6 +232,20 @@ const ProducerDashboard = () => {
     setReplaceTargetItem(null);
     loadShowDay();
     loadLibraryVideos();
+    loadProducerShortcuts();
+  };
+
+  const openShowShortcut = (shortcut) => {
+    const programId = shortcut.program?._id || shortcut.program;
+    const airDate = getDateInputValue(shortcut.airDate);
+    if (!programId || !airDate) return;
+
+    setSelectedProgramId(programId);
+    setSelectedDate(airDate);
+    setReplaceTargetItem(null);
+    setMessage('');
+    setErrorMessage('');
+    setShortcutAutoSelected(true);
   };
 
   const joinShow = () => {
@@ -162,6 +258,7 @@ const ProducerDashboard = () => {
         setShowDay(response.data.showDay);
         setMessage(response.data?.message || 'Joined show day.');
         setErrorMessage('');
+        loadProducerShortcuts();
       })
       .catch((error) => {
         console.error('Error joining show:', error);
@@ -192,6 +289,7 @@ const ProducerDashboard = () => {
         setMessage(replaceTargetItem ? 'Material replaced in show.' : 'Material added to show.');
         setReplaceTargetItem(null);
         setErrorMessage('');
+        loadProducerShortcuts();
       })
       .catch((error) => {
         console.error('Error adding material:', error);
@@ -207,11 +305,170 @@ const ProducerDashboard = () => {
         setMessage('Material status updated.');
         setErrorMessage('');
         loadLibraryVideos();
+        loadProducerShortcuts();
       })
       .catch((error) => {
         console.error('Error updating item:', error);
         setErrorMessage(error.response?.data?.message || 'Material status could not be updated.');
       });
+  };
+
+  const idsAreSameOrder = (firstItems, secondItems) =>
+    firstItems.length === secondItems.length &&
+    firstItems.every((item, index) => item._id === secondItems[index]?._id);
+
+  const moveItemInList = (items, sourceItemId, targetItemId, insertAfter = false) => {
+    if (!sourceItemId || !targetItemId || sourceItemId === targetItemId) return items;
+
+    const sourceIndex = items.findIndex((item) => item._id === sourceItemId);
+    const targetIndex = items.findIndex((item) => item._id === targetItemId);
+    if (sourceIndex < 0 || targetIndex < 0) return items;
+
+    const nextItems = [...items];
+    const [movedItem] = nextItems.splice(sourceIndex, 1);
+    const targetIndexAfterRemoval = nextItems.findIndex((item) => item._id === targetItemId);
+    const insertIndex = targetIndexAfterRemoval + (insertAfter ? 1 : 0);
+    nextItems.splice(insertIndex, 0, movedItem);
+    return nextItems;
+  };
+
+  const applyOptimisticRundownOrder = (nextItems) => {
+    setShowDay((currentShowDay) => {
+      if (!currentShowDay?.items) return currentShowDay;
+
+      const orderById = new Map(nextItems.map((item, index) => [item._id, index]));
+      return {
+        ...currentShowDay,
+        items: currentShowDay.items.map((item) =>
+          orderById.has(item._id)
+            ? { ...item, order: orderById.get(item._id) }
+            : item
+        ),
+      };
+    });
+  };
+
+  const reorderRundownItems = (nextItems, movedItemId) => {
+    if (!showDay?._id || nextItems.length !== activeItems.length) return;
+    if (idsAreSameOrder(nextItems, activeItems)) {
+      setDraggingItemId('');
+      setDragOverItemId('');
+      setRundownPreviewItems([]);
+      return;
+    }
+
+    setReorderingItemId(movedItemId || 'rundown');
+    applyOptimisticRundownOrder(nextItems);
+    setRundownPreviewItems([]);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .patch(`/broadcast/show-day/${showDay._id}/items/reorder`, {
+        itemIds: nextItems.map((nextItem) => nextItem._id),
+      })
+      .then((response) => {
+        setShowDay(response.data.showDay);
+        setMessage('Rundown order updated.');
+      })
+      .catch((error) => {
+        console.error('Error reordering rundown:', error);
+        setErrorMessage(error.response?.data?.message || 'Rundown order could not be updated.');
+        loadShowDay();
+      })
+      .finally(() => {
+        setReorderingItemId('');
+        setDraggingItemId('');
+        setDragOverItemId('');
+        setRundownPreviewItems([]);
+      });
+  };
+
+  const handleRundownDragStart = (event, item) => {
+    if (!isJoined || Boolean(reorderingItemId) || activeItems.length < 2) {
+      event.preventDefault();
+      return;
+    }
+
+    setDraggingItemId(item._id);
+    setDragOverItemId('');
+    setRundownPreviewItems(activeItems);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', item._id);
+  };
+
+  const handleRundownDragOver = (event, item) => {
+    if (!draggingItemId || Boolean(reorderingItemId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+
+    if (draggingItemId === item._id) {
+      setDragOverItemId('');
+      return;
+    }
+
+    setDragOverItemId(item._id);
+    const rowBounds = event.currentTarget.getBoundingClientRect();
+    const insertAfter = event.clientY > rowBounds.top + rowBounds.height / 2;
+
+    setRundownPreviewItems((currentItems) => {
+      const sourceItems = currentItems.length > 0 ? currentItems : activeItems;
+      const nextItems = moveItemInList(sourceItems, draggingItemId, item._id, insertAfter);
+      return idsAreSameOrder(nextItems, sourceItems) ? currentItems : nextItems;
+    });
+  };
+
+  const handleRundownDrop = (event, targetItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceItemId = event.dataTransfer.getData('text/plain') || draggingItemId;
+    setDragOverItemId('');
+
+    if (!sourceItemId) {
+      setDraggingItemId('');
+      setRundownPreviewItems([]);
+      return;
+    }
+
+    const nextItems = rundownPreviewItems.length > 0
+      ? rundownPreviewItems
+      : moveItemInList(activeItems, sourceItemId, targetItem._id);
+
+    if (idsAreSameOrder(nextItems, activeItems)) {
+      setDraggingItemId('');
+      setRundownPreviewItems([]);
+      return;
+    }
+
+    reorderRundownItems(nextItems, sourceItemId);
+  };
+
+  const handleRundownTableDragOver = (event) => {
+    if (!draggingItemId || Boolean(reorderingItemId)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleRundownTableDrop = (event) => {
+    if (!draggingItemId || Boolean(reorderingItemId)) return;
+    event.preventDefault();
+
+    if (rundownPreviewItems.length > 0) {
+      reorderRundownItems(rundownPreviewItems, draggingItemId);
+      return;
+    }
+
+    setDraggingItemId('');
+    setDragOverItemId('');
+  };
+
+  const handleRundownDragEnd = () => {
+    if (!reorderingItemId) {
+      setDraggingItemId('');
+      setDragOverItemId('');
+      setRundownPreviewItems([]);
+    }
   };
 
   return (
@@ -243,6 +500,57 @@ const ProducerDashboard = () => {
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+
+      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, mb: 2 }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.5}
+          justifyContent="space-between"
+          alignItems={{ xs: 'stretch', md: 'center' }}
+        >
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+              My shows
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {producerShortcuts.length > 0
+                ? `${producerShortcuts.length} assigned in the next 14 days`
+                : 'No assigned shows in the next 14 days'}
+            </Typography>
+          </Box>
+          <Button variant="outlined" size="small" onClick={loadProducerShortcuts} disabled={shortcutsLoading}>
+            Refresh
+          </Button>
+        </Stack>
+        {shortcutsLoading && <LinearProgress sx={{ mt: 1.25 }} />}
+        {producerShortcuts.length > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.25 }}>
+            {producerShortcuts.map((shortcut) => {
+              const activeShortcut = String(showDay?._id || '') === String(shortcut._id);
+              const readyLabel = shortcut.itemCount > 0
+                ? `${shortcut.readyCount}/${shortcut.itemCount} ready`
+                : 'empty';
+
+              return (
+                <Button
+                  key={shortcut._id}
+                  variant={activeShortcut ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => openShowShortcut(shortcut)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    textTransform: 'none',
+                    borderRadius: 1,
+                    minHeight: 36,
+                  }}
+                >
+                  {shortcut.program?.name || 'Show'} / {formatDate(shortcut.airDate)} / {readyLabel}
+                </Button>
+              );
+            })}
+          </Stack>
+        )}
+      </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
@@ -324,7 +632,7 @@ const ProducerDashboard = () => {
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
-                <TableBody>
+                <TableBody onDragOver={handleRundownTableDragOver} onDrop={handleRundownTableDrop}>
                   {activeItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6}>
@@ -334,36 +642,111 @@ const ProducerDashboard = () => {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    activeItems.map((item, index) => (
-                      <TableRow key={item._id} hover>
-                        <TableCell>{index + 1}</TableCell>
+                    displayedRundownItems.map((item, index) => (
+                      <TableRow
+                        key={item._id}
+                        hover
+                        onDragOver={(event) => handleRundownDragOver(event, item)}
+                        onDrop={(event) => handleRundownDrop(event, item)}
+                        sx={{
+                          ...(draggingItemId === item._id ? { opacity: 0.55 } : {}),
+                          ...(dragOverItemId === item._id
+                            ? {
+                              bgcolor: 'action.hover',
+                              outline: '2px solid',
+                              outlineColor: 'primary.main',
+                              outlineOffset: '-2px',
+                            }
+                            : {}),
+                        }}
+                      >
+                        <TableCell sx={{ width: 96 }}>
+                          <Stack direction="row" spacing={0.75} alignItems="center">
+                            <Tooltip title={isJoined ? 'Drag to reorder' : 'Join show to reorder'}>
+                              <Box
+                                component="span"
+                                draggable={isJoined && displayedRundownItems.length > 1 && !reorderingItemId}
+                                onDragStart={(event) => handleRundownDragStart(event, item)}
+                                onDragEnd={handleRundownDragEnd}
+                                sx={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 24,
+                                  height: 28,
+                                  borderRadius: 1,
+                                  color: isJoined ? 'text.secondary' : 'text.disabled',
+                                  cursor: isJoined && displayedRundownItems.length > 1 ? 'grab' : 'not-allowed',
+                                  '&:active': { cursor: 'grabbing' },
+                                  '&:hover': isJoined ? { bgcolor: 'action.hover', color: 'text.primary' } : {},
+                                }}
+                              >
+                                <DragIndicatorIcon fontSize="small" />
+                              </Box>
+                            </Tooltip>
+                            <Typography variant="body2" sx={{ fontWeight: 800, width: 20 }}>
+                              {index + 1}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
                         <TableCell>
-                          <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                            {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
-                          </Typography>
+                          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                            <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                              {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
+                            </Typography>
+                            {item.video?.correctionStatus === 'needs_correction' && (
+                              <Chip label="Potrebna ispravka" size="small" color="error" />
+                            )}
+                          </Stack>
                           <Typography variant="caption" color="text.secondary">
                             {formatDate(item.video?.airDate || showDay?.airDate)}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" display="block">
                             Reporter: {getPersonName(item.video?.reporter)} / Editor: {getPersonName(item.video?.editor)}
                           </Typography>
+                          {item.video?.correctionStatus === 'needs_correction' && (
+                            <Typography variant="caption" color="error" display="block">
+                              {item.video?.correctionNote || 'Clip is tagged for correction.'}
+                            </Typography>
+                          )}
                         </TableCell>
-                        <TableCell>{item.contentType?.name || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={item.contentType?.name || 'N/A'}
+                            size="small"
+                            variant="outlined"
+                            sx={getContentTypeChipSx(item.contentType)}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Chip label={formatLabel(item.status)} size="small" />
                         </TableCell>
                         <TableCell>{item.addedBy?.username || 'Unknown'}</TableCell>
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                            <Tooltip title="Mark ready">
-                              <IconButton size="small" color="success" onClick={() => updateItemStatus(item, 'ready')} disabled={!isJoined}>
+                            <Tooltip title={item.status === 'ready' ? 'Already ready' : item.status === 'aired' ? 'Already aired' : 'Mark ready'}>
+                              <span>
+                              <IconButton
+                                size="small"
+                                color="success"
+                                onClick={() => updateItemStatus(item, 'ready')}
+                                disabled={!isJoined || item.status === 'ready' || item.status === 'aired'}
+                              >
                                 <CheckCircleIcon fontSize="small" />
                               </IconButton>
+                              </span>
                             </Tooltip>
-                            <Tooltip title="Mark aired">
-                              <IconButton size="small" color="primary" onClick={() => updateItemStatus(item, 'aired')} disabled={!isJoined}>
+                            <Tooltip title={item.status === 'aired' ? 'Already aired' : 'Mark aired'}>
+                              <span>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => updateItemStatus(item, 'aired')}
+                                disabled={!isJoined || item.status === 'aired'}
+                              >
                                 <EventAvailableIcon fontSize="small" />
                               </IconButton>
+                              </span>
                             </Tooltip>
                             <Tooltip title="Remove from show">
                               <IconButton size="small" color="error" onClick={() => updateItemStatus(item, 'removed')} disabled={!isJoined}>
@@ -424,6 +807,9 @@ const ProducerDashboard = () => {
                           <Typography variant="caption" color="text.secondary">
                             {video.contentType?.name || 'N/A'} / Approved by {video.finalApprovedBy?.username || 'N/A'}
                           </Typography>
+                          {video.correctionStatus === 'needs_correction' && (
+                            <Chip label="Potrebna ispravka" size="small" color="error" sx={{ mt: 0.5 }} />
+                          )}
                           <Typography variant="caption" color="text.secondary" display="block">
                             Reporter: {getPersonName(video.reporter)} / Editor: {getPersonName(video.editor)} / QA: {getPersonName(video.qaResponsible)}
                           </Typography>
@@ -458,6 +844,19 @@ const ProducerDashboard = () => {
                   <Typography variant="body2" sx={{ fontWeight: 700 }}>
                     {activity.summary}
                   </Typography>
+                  {activity.details?.title && (
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                      <Chip label={activity.details.title} size="small" variant="outlined" />
+                      {activity.details.previousStatus && activity.details.status && (
+                        <Chip
+                          label={`${formatLabel(activity.details.previousStatus)} -> ${formatLabel(activity.details.status)}`}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      )}
+                    </Stack>
+                  )}
                   <Typography variant="caption" color="text.secondary">
                     {activity.performedBy?.username || 'Unknown'} / {formatDate(activity.createdAt)}
                   </Typography>

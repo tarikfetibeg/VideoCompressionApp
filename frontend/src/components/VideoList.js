@@ -57,6 +57,7 @@ const formatDate = (value) => {
 };
 
 const getUploaderName = (video) => video.uploader?.username || 'Unknown uploader';
+const getContentTypeName = (video) => video.contentType?.name || video.finalCategory || 'No category';
 
 const shouldShowProcessingProgress = (video) =>
   ['queued', 'processing'].includes(video.processingStatus);
@@ -121,12 +122,15 @@ const VideoList = ({
 }) => {
   const [videos, setVideos] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
+  const [contentTypes, setContentTypes] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [eventFilter, setEventFilter] = useState('all');
+  const [contentTypeFilter, setContentTypeFilter] = useState('all');
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const { user } = useContext(UserContext);
+  const showContentTypeFilter = library === 'archive';
 
   const fetchVideos = useCallback(({ silent = false } = {}) => {
     if (!silent) {
@@ -137,6 +141,9 @@ const VideoList = ({
     const params = new URLSearchParams();
     if (scope === 'station') params.set('scope', 'station');
     if (library === 'archive') params.set('library', 'archive');
+    if (showContentTypeFilter && contentTypeFilter !== 'all') {
+      params.set('contentTypeId', contentTypeFilter);
+    }
     const query = params.toString() ? `?${params.toString()}` : '';
 
     axiosInstance
@@ -151,7 +158,7 @@ const VideoList = ({
           setErrorMessage('Greška pri učitavanju videa.');
         }
       });
-  }, [scope, library]);
+  }, [scope, library, showContentTypeFilter, contentTypeFilter]);
 
   useEffect(() => {
     fetchVideos();
@@ -191,6 +198,11 @@ const VideoList = ({
           video.location,
           video.status,
           video.processingStatus,
+          video.correctionStatus,
+          video.correctionNote,
+          video.correctionReportedBy?.username,
+          video.finalCategory,
+          video.contentType?.name,
           getUploaderName(video),
         ]
           .filter(Boolean)
@@ -199,6 +211,19 @@ const VideoList = ({
       return matchesEvent && matchesSearch;
     });
   }, [videos, searchTerm, eventFilter]);
+
+  useEffect(() => {
+    if (!showContentTypeFilter) return;
+
+    axiosInstance
+      .get('/broadcast/content-types')
+      .then((response) => {
+        setContentTypes(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error loading content types:', error);
+      });
+  }, [showContentTypeFilter]);
 
   const handleSelectVideo = (videoId) => {
     if (readOnly) return;
@@ -341,7 +366,7 @@ const VideoList = ({
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={showContentTypeFilter ? 4 : 6}>
             <TextField
               label="Search"
               fullWidth
@@ -368,6 +393,29 @@ const VideoList = ({
               </Select>
             </FormControl>
           </Grid>
+
+          {showContentTypeFilter && (
+            <Grid item xs={12} md={readOnly ? 4 : 2}>
+              <FormControl fullWidth>
+                <InputLabel>Video category</InputLabel>
+                <Select
+                  value={contentTypeFilter}
+                  label="Video category"
+                  onChange={(event) => {
+                    setContentTypeFilter(event.target.value);
+                    setEventFilter('all');
+                  }}
+                >
+                  <MenuItem value="all">All categories</MenuItem>
+                  {contentTypes.map((type) => (
+                    <MenuItem key={type._id} value={type._id}>
+                      {type.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          )}
 
           {!readOnly && (
             <Grid item xs={12} md={2}>
@@ -454,6 +502,12 @@ const VideoList = ({
 
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
                       <Chip label={video.status || 'N/A'} size="small" />
+                      {showContentTypeFilter && (
+                        <Chip label={getContentTypeName(video)} size="small" color="secondary" variant="outlined" />
+                      )}
+                      {video.correctionStatus === 'needs_correction' && (
+                        <Chip label="Potrebna ispravka" size="small" color="error" />
+                      )}
                       <Chip
                         label={video.processingStatus || 'N/A'}
                         size="small"

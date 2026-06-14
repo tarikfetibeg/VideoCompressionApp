@@ -6,6 +6,7 @@ import {
   Navigate,
 } from 'react-router-dom';
 import { UserContext } from './contexts/UserContext';
+import { BackgroundUploadProvider } from './contexts/BackgroundUploadContext';
 import PrivateRoute from './components/PrivateRoute';
 import Header from './components/Header';
 
@@ -16,6 +17,8 @@ import EditorDashboard from './pages/EditorDashboard';
 import EditJobDetailsPage from './pages/EditJobDetailsPage';
 import ProducerDashboard from './pages/ProducerDashboard';
 import RealizatorDashboard from './pages/RealizatorDashboard';
+import ArchivistDashboard from './pages/ArchivistDashboard';
+import FeedbackPage from './pages/FeedbackPage';
 import VideoDetailsPage from './pages/VideoDetailsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AdminDashboard from './pages/AdminDashboard';
@@ -24,9 +27,10 @@ function App() {
   const { user } = useContext(UserContext);
 
   return (
-    <Router>
-      <Header />
-      <Routes>
+    <BackgroundUploadProvider>
+      <Router>
+        <Header />
+        <Routes>
         {/* Public Routes */}
         <Route
           path="/login"
@@ -49,6 +53,8 @@ function App() {
                 <Navigate to="/producer-dashboard" />
               ) : user.role === 'Realizator' ? (
                 <Navigate to="/realizator-dashboard" />
+              ) : user.role === 'Archivist' ? (
+                <Navigate to="/archivist-dashboard" />
               ) : ['Editor', 'VideoEditor'].includes(user.role) ? (
                 <Navigate to="/editor-dashboard" />
               ) : (
@@ -102,6 +108,22 @@ function App() {
           }
         />
         <Route
+          path="/archivist-dashboard"
+          element={
+            <PrivateRoute roles={['Archivist', 'Admin']}>
+              <ArchivistDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/feedback"
+          element={
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin']}>
+              <FeedbackPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/edit-jobs/:jobId"
           element={
             <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin']}>
@@ -114,7 +136,7 @@ function App() {
         <Route
           path="/video-details/:videoId"
           element={
-            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin']}>
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Archivist', 'Admin']}>
               <VideoDetailsPage />
             </PrivateRoute>
           }
@@ -122,8 +144,9 @@ function App() {
 
         {/* Not Found */}
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </BackgroundUploadProvider>
   );
 }
 

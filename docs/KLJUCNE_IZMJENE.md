@@ -134,3 +134,178 @@ Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje ut
 - Realizator vidi activity listu promjena od zadnjeg downloada, ukljucujuci posljednominutna dodavanja, zamjene i uklanjanja materijala.
 - Producer sada ima `Replace material` akciju u rundownu: odabere stavku koju mijenja, zatim iz TV biblioteke izabere novi materijal.
 - Svaka zamjena materijala upisuje activity log i audit log, pa realizator odmah vidi da air paket vise nije isti kao zadnji download.
+
+## 2026-06-13
+
+### Admin observability and feedback
+
+- Dodan je globalni `Feedback` ekran za sve uloge: korisnik moze poslati bug, sugestiju, workflow problem ili hitan produkcijski problem.
+- Feedback cuva tip, prioritet, dio aplikacije, status, korisnika, rolu, URL stranice i admin komentare.
+- Admin Dashboard dobija `Feedback Inbox` za triage prijava: promjena statusa, prioriteta, assignee korisnika, admin komentara i internih komentara.
+- Feedback triage sada ima eksplicitan `adminSeenAt` indikator: admin moze oznaciti prijavu kao pregledanu, a korisnik vidi da je prijava dosla do admina.
+- `adminComment` je interna admin biljeska, a `adminResponse` je javni odgovor koji vidi korisnik koji je poslao prijavu.
+- Slanje, azuriranje i komentarisanje feedbacka ulazi u audit log.
+- Admin `Audit Logs` tab sada ima filtere po akciji, korisniku, roli, severity oznaci, datumskom rasponu i tekstualnoj pretrazi.
+- Audit log UI dobija export u CSV i JSON radi lakseg slanja ili arhiviranja izvjestaja.
+- Audit log `Details` prikaz je kompaktiran: tabela prikazuje kratak sazetak, a puni JSON se otvara po potrebi za konkretan red.
+- Backend audit endpoint sada vraca i izvedeni `severity` i `entity` kontekst za brze razumijevanje osjetljivih akcija.
+- Admin Overview sada prikazuje operativne metrike: failed processing, open feedback, critical logs, raw orphans, raw manifest orphans, korisnike, jobove sa izmjenama i emisije sa download state promjenama.
+
+### Admin storage maintenance
+
+- Admin Dashboard dobija poseban `Maintenance` tab za servisne fajlove koji nisu sama TV arhiva.
+- Admin moze pregledati i brisati OFF audio fajlove vezane za edit jobove.
+- Admin moze pregledati raw recovery manifest fajlove i vidjeti da li je raw fajl prisutan i da li postoji DB zapis.
+- Admin moze obrisati pojedinacni raw manifest ili pokrenuti cleanup orphan manifesta.
+- Admin moze u Maintenance tabu pregledati i obrisati stare feedback/prijave zapise, uz filter po statusu i tipu.
+- Brisanje OFF audio fajla, brisanje raw manifesta i cleanup orphan manifesta se biljeze u audit log.
+- Brisanje feedback/prijave se takodjer biljezi u audit log, dok Feedback Inbox ostaje primarno mjesto za rad na aktivnim prijavama.
+
+### QA workflow refinements
+
+- Event Workspace i Video Details job composer sada koriste `Program` select iz admin/program liste, umjesto rucnog upisa programa.
+- Jobs tab dobija brisanje edit joba uz confirmation dialog; brisanje je dozvoljeno reporteru-vlasniku joba i adminu, dok se emitovani/arhivirani jobovi i jobovi sa finalnim videima ne brisu.
+- Edit package za montazera je pojednostavljen: video fajlovi idu direktno u `VIDEO/`, OFF fajlovi u `OFF/`, a reporterski brief se isporucuje kao `BRIEF_REPORTER.docx`.
+- Iz edit package-a su uklonjeni pomocni metadata fajlovi koji nisu potrebni montazeru: manifest, changelog, readme, CSV i segment notes.
+- Producer vise ne moze ponovo oznaciti materijal kao `ready` ako je vec ready/airan, a backend odbija ponavljanje istog statusa.
+- Activity log za promjenu statusa materijala sada navodi konkretan naslov materijala i prethodni/novi status.
+- Realizator air package download sada koristi kompletna video path polja (`compressedPath`, `filepath`, `rawPath`, `previewPath`) i frontend prikazuje stvarnu backend poruku greske kada ZIP ne moze biti napravljen.
+
+### Air confirmation and ingest-only final upload
+
+- Realizator Desk dobija akciju `Confirm aired` za potvrdu da je odabrana emisija emitovana.
+- Kada realizator potvrdi airanje emisije, sve aktivne stavke rundowna prelaze u status `aired`, a njihovi video zapisi se arhiviraju.
+- Materijal tipa `Prilog` i `Insert` se u arhivi normalizuje na content type `Prilog`, jer se prilozi i inserti u TV praksi cesto ponovo koriste kao arhivski prilog u drugim emisijama i danima.
+- Ostali tipovi emitovanog materijala, kao marketing, grafika, promo i spica, ostaju pod svojim content type tagom.
+- Potvrda airanja zapisuje `airedAt`, `airedBy`, `archiveConfirmedAt`, `archiveConfirmedBy`, activity log i audit log.
+- Realizator moze ponovo potvrditi airanje ako je materijal naknadno promijenjen, cime se novo/izmijenjeno stanje opet arhivira.
+- Direct Final Upload za montazera/editor sada moze biti bez emisije kroz opciju `Nema emisije / ingest`.
+- Kod direct upload-a bez emisije `Content type` ostaje obavezan, jer taj tag odredjuje kako ce materijal zivjeti u TV arhivi.
+- Direct upload bez emisije se koristi za arhivske inserte, marketing, grafiku, spice, prome i drugi finalizovani materijal koji se samo unosi u sistem.
+- TV Archive/My Archive prikaz sada ima `Video category` filter po content type-u, npr. `Prilog`, `Insert`, `Promo`, `Marketing`, `Grafika`, tako da se arhiva moze brzo suziti po vrsti materijala.
+
+### Admin video archive QA
+
+- Admin `Video Management` sada jasnije razdvaja workflow faze videa: `Sirovina / ingest`, `Smontiran materijal`, `Smontiran final` i `Arhiva / aired`.
+- Admin video pregled dobija operativne metrike za sirovinu, smontirani materijal, arhivu, nekategorisane videe i processing/failed stanje.
+- Filteri su razdvojeni na `Workflow`, `Processing`, `Category` i `Uploader`, tako da se problemi u arhivi lakse pronalaze.
+- Video kartice prikazuju workflow chip, broadcast status, kategoriju, reportera/editora, ownera, storage velicine, raw retention i processing progres.
+- Admin sada moze direktno iz `Video Management` promijeniti video kategoriju/content type (`Prilog`, `Insert`, `Promo`, `Marketing`, `Grafika`, itd.).
+- Promjena video kategorije azurira `contentType`, `finalCategory`, dodaje kategoriju u keyworde i ulazi u audit log kao `Update Video Content Type`.
+- Ove admin funkcije su pripremljene kao buduci temelj za rolu `Arhiver`, koja ce kasnije moci preuzeti QA arhive bez punih admin ovlasti.
+
+### Video details compact layout
+
+- `Video Details` stranica je prepakovana u kompaktniji radni layout: header sa status chipovima, player/markeri lijevo i metadata/QC panel desno.
+- Video preview sada koristi compact mod sa ogranicenom visinom, tako da ne zauzima skoro cijeli ekran.
+- Metadata su grupisana u jasne sekcije: osnovni opis, program/kategorija, reporter/editor/QA, source/output tehnicki podaci i storage velicine.
+- QC i broadcast kontrole su premjestene u desni panel, blize statusima koje mijenjaju.
+- `VideoPlayer` komponenta dobija `compact` opciju, pa se isti player moze koristiti i u velikom i u kompaktnom prikazu.
+
+### Direct ingest archive visibility
+
+- Razlog zasto direct-final `Prilog` i `Insert` uploadi nisu bili vidljivi u TV arhivi: nakon processinga su imali `broadcastStatus: approved_for_air`, dok TV Archive prikazuje samo arhivski/emitovani materijal.
+- TV Archive filter sada prikazuje i zavrsene direct-ingest materijale bez emisije kada su kategorije `Prilog` ili `Insert`, imaju `finalApprovalStatus: approved` i processing je zavrsen.
+- Novi direct-final upload bez emisije za kategorije `Prilog` i `Insert` automatski dobija arhivski status, jer nema realizatorski/airing korak koji bi ga kasnije poslao u arhivu.
+- Video worker vise ne prepisuje `aired` ili `archived` status nazad na `approved_for_air` nakon processinga.
+
+### Realizator correction reporting
+
+- Realizator Desk sada omogucava prijavu greske za pojedinacni klip iz rundowna emisije.
+- Prijava greske oznacava video zapis statusom `needs_correction` i u UI se prikazuje kao `Potrebna ispravka`.
+- Realizator moze dodati opis greske, npr. pogresna verzija, los ton, fali grafika ili krivi kadar.
+- Video pamti ko je prijavio gresku, kada, napomenu, emisiju/show-day i item iz kojeg je prijava nastala.
+- Prijava ulazi u show activity log i audit log kao `Report Clip Correction Needed`.
+- Oznaka `Potrebna ispravka` se prikazuje u Realizator Desku, Producer Desku, Video Details, TV Archive/My Archive listi i Admin Video Managementu.
+- Ova funkcija je pripremljena kao buduci workflow za rolu `Arhiver`, koja ce kasnije moci raditi QA arhive i rjesavati oznake ispravke.
+
+### Direct Final background bulk upload
+
+- Direct Final Upload za montazere sada koristi background upload queue: fajlovi se dodaju u red i uploaduju jedan po jedan, pa korisnik moze nastaviti koristiti aplikaciju dok upload traje.
+- Dok postoje aktivni ili pending uploadi, browser tab dobija `beforeunload` zastitu kako bi korisnik dobio upozorenje prije slucajnog zatvaranja/refresha taba.
+- Globalni upload panel prikazuje aktivne, zavrsene i failed uploade, progres trenutnog fajla i retry za failed upload.
+- Bulk upload vise ne salje sve fajlove u jednom velikom multipart requestu; time je smanjen rizik pucanja velikih dnevnih upload serija.
+- Default backend limit za Direct Final request je povecan sa 20 na 100 fajlova, ali novi UI koristi jedan fajl po requestu.
+
+### Filename metadata rules
+
+- Kod bulk Direct Final uploada svaki video automatski dobija `finalTitle` iz svog filename-a, bez ekstenzije.
+- Ako se uploaduje samo jedan fajl, rucno uneseni `Final title` ima prednost; ako je prazno, koristi se filename.
+- Aplikacija iz filename-a pokusava izvuci datum u formatima `YYYY-MM-DD`, `YYYYMMDD`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD_MM_YYYY` i slicnim varijantama sa razmakom, tackom, crticom ili donjom crtom.
+- Datum iz filename-a ima prednost nad rucno unesenim `Air / reference date`; ako datum nije pronadjen, koristi se rucni datum, a za `Nema emisije / ingest` fallback je danasnji datum kao referenca.
+- Keywords se automatski izvode iz filename-a tako sto se ukloni datum, a ostatak naziva se rastavi na rijeci/brojeve. Rucno uneseni keywordi se dodaju na taj automatski set.
+- Marketing bulk upload se uploaduje prirodnim redoslijedom filename-a, pa nazivi poput `Marketing Blok 1`, `Marketing Blok 2`, `Marketing Blok 10` ostaju u ocekivanom redoslijedu.
+
+### Dynamic edit jobs and partial editor downloads
+
+- Reporter moze naknadno dopuniti postojeci edit job novim insertima/klipovima kroz `Update job` dio na job details stranici.
+- Reporter moze obrisati pogresan klip iz joba ili ga zamijeniti drugim klipom bez kreiranja novog joba.
+- Brisanje i zamjena klipova ulaze u job change log i audit log, tako da produkcija vidi ko je i kada mijenjao materijal.
+- Edit job pamti po montazeru koje segmente i OFF fajlove je vec uspjesno preuzeo.
+- Montazer sada moze skinuti samo nove ili ranije propustene fajlove iz joba kroz `Download new / missed`.
+- Montazer i dalje moze, po potrebi, skinuti puni paket kroz `Download full package`.
+- Ako fajl nije bio dostupan na disku u trenutku downloada, ne oznacava se kao preuzet i ostaje u listi za naredni pokusaj.
+- Kod zamjene klipa aplikacija namjerno resetuje download oznaku za taj segment, pa montazer vidi zamjenu kao novi materijal za preuzimanje.
+- Parcijalni paket i dalje sadrzi aktuelni `BRIEF_REPORTER.docx`, tako da montazer uz nove inserte dobija i zadnju verziju reporterskog teksta.
+
+### Producer and Realizator rundown ordering
+
+- Producer Dashboard dobija `My shows` precice za emisije u kojima je producent vec prikljucen u narednih 14 dana.
+- Klik na producer show precicu automatski postavlja program i datum emisije, bez rucnog biranja oba polja.
+- Ako producent vec ima dodijeljenu emisiju, dashboard automatski bira danasnju/prvu dostupnu emisiju iz tih precica.
+- Producer i Realizator sada mogu mijenjati redoslijed aktivnih klipova u emisiji kroz drag-and-drop handle direktno u rundown tabeli.
+- Tokom dragovanja lista se preslaguje odmah u preview modu, pa korisnik vidi novi redoslijed prije nego sto pusti item.
+- Drag/drop zona u rundown tabeli je prosirena na cijeli table body, a drop ostaje validan i kada se item tokom live previewa nadje ispod kursora.
+- Nakon dropa UI optimisticki zadrzava novi redoslijed dok backend potvrdi promjenu; ako backend odbije izmjenu, rundown se ponovo ucitava.
+- Producer mora biti prikljucen emisiji da bi mijenjao redoslijed, dok Realizator moze mijenjati redoslijed kao dio kontrole pred eter.
+- Svaka promjena redoslijeda ulazi u activity log emisije i audit log kao `Reorder Show Rundown`.
+- Promjena redoslijeda je globalna rundown promjena i vise ne oznacava svaki pojedinacni item kao izmijenjen, tako da se cijela lista ne boji zuto samo zbog reorder-a.
+- Tip klipa u Producer i Realizator tabelama prikazuje se kao zaseban obojeni chip: `Prilog`, `Insert`, `Marketing`, `Promo`, `Grafika`, `Spica` i `Ostalo` imaju blage, neintruzivne tonove.
+- Realizator sada vidi modal/progress dok aplikacija priprema i salje air ZIP paket, kako interfejs ne bi izgledao zamrznuto tokom velikih emisija.
+
+### Archivist role / Archive Desk
+
+- Dodana je nova korisnicka rola `Archivist`, koju admin moze kreirati i dodijeliti kroz `User Management`.
+- `Archivist` ima poseban `Archive Desk` u header navigaciji i defaultno se preusmjerava na `/archivist-dashboard`.
+- Arhivist ima read-only pristup video detaljima i downloadu videa, ali ne dobija pune admin ovlasti nad sistemom.
+- Video model sada pamti arhivski review status: `unreviewed`, `reviewed`, `needs_metadata` i `duplicate`.
+- Video model sada pamti ko je i kada pregledao klip, napomenu arhivskog pregleda, ko je mijenjao arhivske tagove i ako je klip oznacen kao duplikat kojeg master klipa.
+- Dodane su `/api/archive` rute za arhivski summary, listu videa, duplicate candidates, tag update, category/content-type update, review status i sigurno brisanje duplikata.
+- `Archive Desk` ima tri glavna pogleda: `Review Queue`, `All Videos` i `Duplicates`.
+- `Review Queue` defaultno prikazuje materijal koji arhivist jos nije pregledao, sto rjesava dnevni pregled novog materijala.
+- `All Videos` omogucava pretragu, filtriranje po workflowu, filter po kategoriji i promjenu content type-a bez ulaska u admin video management.
+- Tag editor omogucava arhivisti da brzo zamijeni/doda/ukloni keywords/tagove na klipu.
+- `Duplicates` prikazuje potencijalne duplikate na osnovu uporedivog naslova, trajanja i storage velicine.
+- Brisanje duplikata trazi master/keeper klip i brise samo fajlove koji nisu referencirani od drugog video zapisa; sve preskocene i obrisane putanje ulaze u audit log.
+- Sve arhivske promjene ulaze u audit log kao `Archive Update Video Tags`, `Archive Update Video Content Type`, `Archive Review Video` ili `Archive Delete Duplicate Video`.
+- Admin `Audit Logs` filter sada poznaje rolu `Archivist`.
+
+### Archivist reference notes
+
+- Sve reference za arhivsku rolu su izdvojene u poseban dokument: `docs/ARCHIVIST_REFERENCE_DOKUMENTACIJA.md`.
+
+### Suggested next archive improvements
+
+- Dodati checksum/hash (`SHA-256` ili slicno) pri ingestu/final uploadu, pa duplikate nalaziti precizno po sadrzaju, ne samo po nazivu/trajanju/velicini.
+- Dodati kontrolisani vocabulary manager za tagove, gdje admin/arhivist odobrava standardne termine, sinonime i zabranjene duplikatne termine.
+- Dodati `rights/usage` polja za arhivu: interni materijal, agencijski materijal, ograniceno koristenje, embargo i slicno.
+- Dodati batch akcije za arhivistu: oznaci vise klipova kao reviewed, dodaj tag na vise klipova, promijeni kategoriju za vise klipova.
+- Dodati export arhivskog zapisa u CSV/PBCore-like format za Word prezentaciju, izvjestaje ili migraciju u pravi MAM sistem.
+
+### Archivist metadata editing in Video Details
+
+- `Video Details` sada za `Archivist` i `Admin` prikazuje dugme `Edit metadata` u metadata panelu.
+- Arhivist moze iz video detalja mijenjati opisne/arhivske metapodatke: archive title, event, datum, program, content type, reporter, editor, tags/keywords i archive note.
+- Tehnicki/system podaci kao codec, duration, bitrate, storage path, processing status i original filename ostaju read-only i ne mijenjaju se kroz arhivski metadata editor.
+- Dodan je endpoint `/api/archive/metadata-options` koji vraca dozvoljene opcije iz sistema: aktivne programe, content types, reportere, editore i postojece evente.
+- Dodan je endpoint `/api/archive/videos/:id/metadata` koji validira da program, content type, reporter i editor postoje u sistemu prije snimanja izmjena.
+- `Program / show`, `Reporter / author` i `Editor / montage` koriste autocomplete iz sistemskih podataka; `Event` koristi postojece evente kao prijedloge, ali dozvoljava novi unos.
+- Svaka promjena metadata ulazi u audit log kao `Archive Update Video Metadata` sa listom promijenjenih polja, starom vrijednoscu i novom vrijednoscu.
+
+### Archivist archive scope and sorting
+
+- `Archive Desk` vise ne prikazuje kompresovane sirovine/raw ingest materijal, jer taj prolazni materijal nije posao arhiviste i ionako se brise kroz retention workflow.
+- `/api/archive` listanje, summary metrika, event opcije i duplicate scan sada rade nad zavrsenim/smontiranim materijalom (`status: edited`, `processingStatus: completed`).
+- Workflow filter u `Archive Desk` vise nema `Raw ingest`; fokus je na finalnom materijalu, archive-ready materijalu, aired/archived materijalu i klipovima sa potrebnom ispravkom.
+- Dodano je sortiranje arhivskog materijala po upload datumu, imenu, kategoriji, tagovima, reporteru ili editoru, uz izbor smjera sortiranja.
+- Zbunjujuce `Metadata` dugme u Actions koloni je preimenovano u `Needs metadata`; njegova uloga je oznacavanje klipa kojem trebaju bolji metapodaci, dok se stvarno editovanje metapodataka radi kroz `Video Details -> Edit metadata`.

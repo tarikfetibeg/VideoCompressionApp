@@ -326,7 +326,11 @@ async function processVideoJob({ videoId }, job) {
     video.processingProgress = 100;
     video.processingCompletedAt = new Date();
     video.processingError = null;
-    if (video.finalApprovalStatus === 'approved') {
+    if (video.finalApprovalStatus === 'approved' && ['aired', 'archived'].includes(video.broadcastStatus)) {
+      if (video.broadcastStatus === 'archived') {
+        video.archivedAt = video.archivedAt || new Date();
+      }
+    } else if (video.finalApprovalStatus === 'approved') {
       video.broadcastStatus = 'approved_for_air';
     } else {
       video.broadcastStatus = video.qcStatus === 'passed' ? 'ready_for_approval' : 'qc_pending';

@@ -64,7 +64,7 @@ const getMarkerColor = (type) => {
 const sortByTimestamp = (timecodes) =>
   [...timecodes].sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
 
-const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = false }) => {
+const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = false, compact = false }) => {
   const [videoBlobUrl, setVideoBlobUrl] = useState('');
   const [timecodes, setTimecodes] = useState([]);
   const [loadingVideo, setLoadingVideo] = useState(false);
@@ -181,9 +181,9 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
   };
 
   return (
-    <Box sx={{ mt: 3 }}>
-      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3}>
+    <Box sx={{ mt: compact ? 0 : 3 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: compact ? 2 : 3 }, borderRadius: 2 }}>
+        <Stack direction={{ xs: 'column', lg: compact ? 'column' : 'row' }} spacing={compact ? 2 : 3}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
@@ -192,7 +192,7 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
               spacing={1}
               sx={{ mb: 2 }}
             >
-              <Typography variant="h5" sx={{ fontWeight: 800 }}>
+              <Typography variant={compact ? 'h6' : 'h5'} sx={{ fontWeight: 800 }}>
                 Preview
               </Typography>
               <Chip label={`Playhead ${formatTime(currentTime)}`} size="small" variant="outlined" />
@@ -201,7 +201,7 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
             {loadingVideo && (
               <Box
                 sx={{
-                  height: 300,
+                  height: compact ? 240 : 300,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -239,12 +239,17 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
                     console.error('Video playback error:', event);
                     setVideoError('Browser cannot play this preview.');
                   }}
-                  style={{ display: 'block' }}
+                  style={{
+                    display: 'block',
+                    maxHeight: compact ? 420 : 'none',
+                    objectFit: 'contain',
+                    backgroundColor: '#000',
+                  }}
                 />
               </Box>
             )}
 
-            <Paper variant="outlined" sx={{ mt: 2, p: 2, borderRadius: 2 }}>
+            <Paper variant="outlined" sx={{ mt: 2, p: compact ? 1.5 : 2, borderRadius: 2 }}>
               <Stack spacing={2}>
                 {!readOnly && (
                   <>
@@ -297,7 +302,7 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
             </Paper>
           </Box>
 
-          <Box sx={{ width: { xs: '100%', lg: 380 }, flexShrink: 0 }}>
+          <Box sx={{ width: { xs: '100%', lg: compact ? '100%' : 380 }, flexShrink: 0 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
               <Typography variant="h6" sx={{ fontWeight: 800 }}>
                 Markers

@@ -6,6 +6,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Grid,
   IconButton,
   Paper,
@@ -20,6 +25,7 @@ import {
   Typography,
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axiosInstance from '../../axiosConfig';
@@ -55,10 +61,14 @@ const formatDate = (value) => {
 const EditJobBoard = ({ refreshToken = 0 }) => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [jobToDelete, setJobToDelete] = useState(null);
+  const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
   const fetchJobs = useCallback(() => {
     setLoading(true);
+    setMessage('');
     setErrorMessage('');
 
     axiosInstance
@@ -77,6 +87,27 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
     fetchJobs();
   }, [fetchJobs, refreshToken]);
 
+  const handleDeleteJob = () => {
+    if (!jobToDelete) return;
+
+    setDeleteBusy(true);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .delete(`/edit-jobs/${jobToDelete._id}`)
+      .then(() => {
+        setJobs((current) => current.filter((job) => job._id !== jobToDelete._id));
+        setMessage(`Job "${jobToDelete.title}" je obrisan.`);
+        setJobToDelete(null);
+      })
+      .catch((error) => {
+        console.error('Error deleting edit job:', error);
+        setErrorMessage(error.response?.data?.message || 'Job could not be deleted.');
+      })
+      .finally(() => setDeleteBusy(false));
+  };
+
   const stats = useMemo(
     () => ({
       total: jobs.length,
@@ -85,6 +116,7 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
       needsInfo: jobs.filter((job) => job.status === 'needs_info').length,
       ready: jobs.filter((job) => ['ready_for_qc', 'approved'].includes(job.status)).length,
       updates: jobs.filter((job) => job.viewerMeta?.hasUnreadChanges).length,
+      newFiles: jobs.filter((job) => job.downloadMeta?.hasMissingFiles).length,
     }),
     [jobs]
   );
@@ -111,6 +143,7 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
         </Button>
       </Stack>
 
+      {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -130,7 +163,7 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
           <JobStat label="Ready" value={stats.ready} tone="success.main" />
         </Grid>
         <Grid item xs={6} md={2}>
-          <JobStat label="Updates" value={stats.updates} tone="warning.main" />
+          <JobStat label="Updates/files" value={`${stats.updates}/${stats.newFiles}`} tone="warning.main" />
         </Grid>
       </Grid>
 
@@ -161,7 +194,7 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
                 <TableCell>Editor</TableCell>
                 <TableCell>Segments</TableCell>
                 <TableCell>Deadline</TableCell>
-                <TableCell align="right">Open</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -180,6 +213,14 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
                           label={`${job.viewerMeta.unreadChangeCount} update(s)`}
                           size="small"
                           color="warning"
+                        />
+                      )}
+                      {job.downloadMeta?.hasMissingFiles && (
+                        <Chip
+                          label={`${job.downloadMeta.missingSegmentCount + job.downloadMeta.missingOffFileCount} new file(s)`}
+                          size="small"
+                          color="warning"
+                          variant="outlined"
                         />
                       )}
                       {job.scriptText && <Chip label="Brief text" size="small" variant="outlined" />}
@@ -204,11 +245,18 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
                   <TableCell>{job.segments?.length || 0}</TableCell>
                   <TableCell>{formatDate(job.deadline)}</TableCell>
                   <TableCell align="right">
-                    <Tooltip title="Open job">
-                      <IconButton component={Link} to={`/edit-jobs/${job._id}`} size="small">
-                        <OpenInNewIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                      <Tooltip title="Open job">
+                        <IconButton component={Link} to={`/edit-jobs/${job._id}`} size="small">
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete job">
+                        <IconButton size="small" color="error" onClick={() => setJobToDelete(job)}>
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </TableCell>
                 </TableRow>
               ))}
@@ -216,6 +264,22 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
           </Table>
         </TableContainer>
       )}
+
+      <Dialog open={Boolean(jobToDelete)} onClose={() => setJobToDelete(null)}>
+        <DialogTitle>Delete edit job</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Da li si siguran da zelis obrisati job "{jobToDelete?.title}"? Ova akcija brise job,
+            pripadajuce OFF fajlove i komunikaciju vezanu za taj job.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setJobToDelete(null)} disabled={deleteBusy}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleDeleteJob} disabled={deleteBusy}>
+            {deleteBusy ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

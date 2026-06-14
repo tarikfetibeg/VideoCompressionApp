@@ -10,13 +10,14 @@ const { getQueueErrorMessage } = require('../utils/queueErrors');
 
 const router = express.Router();
 
-const allowedVideoRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin'];
+const allowedVideoRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Archivist', 'Admin'];
 const allowedQcRoles = ['Editor', 'VideoEditor', 'Producer', 'Admin'];
 const allowedApprovalRoles = ['Producer', 'Admin'];
 const allowedQcStatuses = ['pending', 'passed', 'failed'];
 const allowedBroadcastStatusUpdates = ['approved_for_air', 'aired', 'archived'];
 const allowedTimecodeRoles = ['Editor', 'VideoEditor', 'Producer', 'Reporter', 'Admin'];
 const allowedTimecodeTypes = ['marker', 'cut', 'in', 'out', 'note'];
+const directIngestArchiveCategories = ['prilog', 'insert'];
 
 function getUploaderId(video) {
   if (!video || !video.uploader) return null;
@@ -52,7 +53,7 @@ function userCanDownloadVideo(user, video) {
     return getUploaderId(video) === user.id;
   }
 
-  return ['Editor', 'VideoEditor', 'Producer'].includes(user.role);
+  return ['Editor', 'VideoEditor', 'Producer', 'Archivist'].includes(user.role);
 }
 
 function resolveExistingPath(...candidatePaths) {
@@ -123,7 +124,7 @@ router.get(
   authenticateToken,
   authorize(allowedVideoRoles),
   async (req, res) => {
-    const { event, date, scope, library } = req.query;
+    const { event, date, scope, library, contentTypeId } = req.query;
     const filter = {};
 
     if (event) {
@@ -132,7 +133,20 @@ router.get(
 
     if (library === 'archive') {
       filter.status = 'edited';
-      filter.broadcastStatus = { $in: ['aired', 'archived'] };
+      filter.processingStatus = 'completed';
+      filter.$or = [
+        { broadcastStatus: { $in: ['aired', 'archived'] } },
+        {
+          broadcastStatus: 'approved_for_air',
+          finalApprovalStatus: 'approved',
+          program: null,
+          finalCategory: { $in: directIngestArchiveCategories },
+        },
+      ];
+    }
+
+    if (contentTypeId && contentTypeId !== 'all') {
+      filter.contentType = contentTypeId;
     }
 
     if (date) {
@@ -158,6 +172,9 @@ router.get(
         .populate('reporter', 'username role')
         .populate('editor', 'username role')
         .populate('qaResponsible', 'username role')
+        .populate('correctionReportedBy', 'username role')
+        .populate('archiveReviewedBy', 'username role')
+        .populate('archiveTagsUpdatedBy', 'username role')
         .populate('program')
         .populate('contentType');
       res.json(videos);
@@ -676,9 +693,13 @@ router.get(
         .populate('reporter', 'username role')
         .populate('editor', 'username role')
         .populate('qaResponsible', 'username role')
+        .populate('correctionReportedBy', 'username role')
         .populate('program')
         .populate('contentType')
-        .populate('finalApprovedBy', 'username role');
+        .populate('finalApprovedBy', 'username role')
+        .populate('archiveReviewedBy', 'username role')
+        .populate('archiveTagsUpdatedBy', 'username role')
+        .populate('duplicateOf', 'filename originalFilename finalTitle');
       if (!video) {
         return res.status(404).json({ message: 'Video not found' });
       }

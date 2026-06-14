@@ -12,6 +12,14 @@ const TimecodeSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+const CorrectionReportSchema = new mongoose.Schema({
+  note: { type: String },
+  reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reportedAt: { type: Date, default: Date.now },
+  showDay: { type: mongoose.Schema.Types.ObjectId, ref: 'ShowDay' },
+  showDayItem: { type: mongoose.Schema.Types.ObjectId },
+});
+
 const VideoSchema = new mongoose.Schema({
   filename: String,
   filepath: String,
@@ -78,8 +86,32 @@ const VideoSchema = new mongoose.Schema({
     type: String,
     enum: ['job_reporter', 'direct_editor', 'producer_override', 'admin_override'],
   },
+  correctionStatus: {
+    type: String,
+    enum: ['none', 'needs_correction', 'resolved'],
+    default: 'none',
+  },
+  correctionNote: { type: String },
+  correctionReportedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  correctionReportedAt: { type: Date },
+  correctionResolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  correctionResolvedAt: { type: Date },
+  correctionResolvedNote: { type: String },
+  correctionReports: [CorrectionReportSchema],
   airedAt: { type: Date },
   archivedAt: { type: Date },
+
+  archiveReviewStatus: {
+    type: String,
+    enum: ['unreviewed', 'reviewed', 'needs_metadata', 'duplicate'],
+    default: 'unreviewed',
+  },
+  archiveReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  archiveReviewedAt: { type: Date },
+  archiveReviewNotes: { type: String },
+  archiveTagsUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  archiveTagsUpdatedAt: { type: Date },
+  duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Video' },
 
   rawPath: { type: String },
   compressedPath: { type: String },

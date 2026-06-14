@@ -36,6 +36,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import axiosInstance from '../axiosConfig';
 import BriefImportButton from '../components/jobs/BriefImportButton';
 import { ACCEPTED_VIDEO_FILE_TYPES } from '../constants/videoFormats';
@@ -123,6 +124,22 @@ const downloadBlobResponse = (response, fallbackName) => {
 
 const getRequestErrorMessage = (error, fallback) => error.response?.data?.message || fallback;
 
+const getDownloadErrorMessage = async (error, fallback) => {
+  const data = error.response?.data;
+
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      return parsed.message || fallback;
+    } catch (parseError) {
+      return fallback;
+    }
+  }
+
+  return data?.message || fallback;
+};
+
 const OffAudioPlayer = ({ jobId, offFile }) => {
   const [src, setSrc] = useState('');
   const [error, setError] = useState('');
@@ -182,6 +199,8 @@ const EditJobDetailsPage = () => {
   const [materialSearch, setMaterialSearch] = useState('');
   const [materialLoading, setMaterialLoading] = useState(false);
   const [updateSaving, setUpdateSaving] = useState(false);
+  const [segmentActionLoading, setSegmentActionLoading] = useState('');
+  const [replacementSegmentId, setReplacementSegmentId] = useState('');
   const [programs, setPrograms] = useState([]);
   const [contentTypes, setContentTypes] = useState([]);
   const [finalVideos, setFinalVideos] = useState([]);
@@ -208,6 +227,8 @@ const EditJobDetailsPage = () => {
     user?.role === 'Admin' ||
     (['Editor', 'VideoEditor'].includes(user?.role) && (!assignedEditorId || assignedEditorId === user?.id));
   const canApproveFinal = user?.role === 'Admin' || user?.role === 'Producer' || (user?.role === 'Reporter' && reporterId === user?.id);
+  const canEditSegments = canReporterUpdateJob && !['aired', 'archived'].includes(job?.status);
+  const downloadMeta = job?.downloadMeta || null;
 
   const sortedSegments = useMemo(
     () => [...(job?.segments || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0)),
@@ -234,6 +255,10 @@ const EditJobDetailsPage = () => {
   const selectedAdditionalVideos = useMemo(
     () => availableVideos.filter((video) => selectedAdditionalVideoIds.includes(video._id)),
     [availableVideos, selectedAdditionalVideoIds]
+  );
+  const replacementSegment = useMemo(
+    () => sortedSegments.find((segment) => segment._id === replacementSegmentId) || null,
+    [replacementSegmentId, sortedSegments]
   );
   const sortedChangeLog = useMemo(
     () => [...(job?.changeLog || [])].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)),
@@ -356,26 +381,30 @@ const EditJobDetailsPage = () => {
       });
   };
 
-  const requestPackageDownload = useCallback(() =>
+  const requestPackageDownload = useCallback((scope = 'all') =>
     axiosInstance
-      .get(`/edit-jobs/${jobId}/download-package`, { responseType: 'blob' })
+      .get(`/edit-jobs/${jobId}/download-package`, {
+        params: { scope },
+        responseType: 'blob',
+      })
       .then((response) => {
-        downloadBlobResponse(response, `edit_job_${jobId}_package.zip`);
+        downloadBlobResponse(response, `edit_job_${jobId}_${scope === 'missing' ? 'new_files' : 'package'}.zip`);
       }),
   [jobId]);
 
-  const handleDownloadPackage = () => {
+  const handleDownloadPackage = (scope = 'all') => {
     setPackageLoading(true);
     setMessage('');
     setErrorMessage('');
 
-    requestPackageDownload()
+    requestPackageDownload(scope)
       .then(() => {
-        setMessage('Edit package download started.');
+        setMessage(scope === 'missing' ? 'New/missing job files download started.' : 'Full edit package download started.');
+        fetchJob();
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error('Error downloading edit package:', error);
-        setErrorMessage(getRequestErrorMessage(error, 'Edit package could not be downloaded.'));
+        setErrorMessage(await getDownloadErrorMessage(error, 'Edit package could not be downloaded.'));
       })
       .finally(() => setPackageLoading(false));
   };
@@ -414,9 +443,11 @@ const EditJobDetailsPage = () => {
 
   const toggleAdditionalVideo = (videoId) => {
     setSelectedAdditionalVideoIds((current) =>
-      current.includes(videoId)
-        ? current.filter((id) => id !== videoId)
-        : [...current, videoId]
+      replacementSegmentId
+        ? (current.includes(videoId) ? [] : [videoId])
+        : (current.includes(videoId)
+          ? current.filter((id) => id !== videoId)
+          : [...current, videoId])
     );
   };
 
@@ -428,6 +459,11 @@ const EditJobDetailsPage = () => {
   };
 
   const handleReporterUpdate = () => {
+    if (replacementSegmentId) {
+      setErrorMessage('Finish or cancel the clip replacement before sending a general job update.');
+      return;
+    }
+
     const segments = selectedAdditionalVideos.map((video, index) => ({
       video: video._id,
       order: sortedSegments.length + index,
@@ -467,6 +503,86 @@ const EditJobDetailsPage = () => {
         setErrorMessage(getRequestErrorMessage(error, 'Job could not be updated.'));
       })
       .finally(() => setUpdateSaving(false));
+  };
+
+  const startReplaceSegment = (segment) => {
+    setReplacementSegmentId(segment._id);
+    setSelectedAdditionalVideoIds([]);
+    setAdditionalClipNotes({});
+    setMessage('');
+    setErrorMessage('');
+  };
+
+  const cancelReplaceSegment = () => {
+    setReplacementSegmentId('');
+    setSelectedAdditionalVideoIds([]);
+    setAdditionalClipNotes({});
+  };
+
+  const handleReplaceSegment = () => {
+    if (!replacementSegment) {
+      setErrorMessage('Select the job clip you want to replace.');
+      return;
+    }
+
+    if (selectedAdditionalVideos.length !== 1) {
+      setErrorMessage('Select exactly one replacement clip.');
+      return;
+    }
+
+    const replacementVideo = selectedAdditionalVideos[0];
+
+    setSegmentActionLoading(`replace-${replacementSegment._id}`);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .patch(`/edit-jobs/${jobId}/segments/${replacementSegment._id}/replace`, {
+        videoId: replacementVideo._id,
+        title: getClipName(replacementVideo),
+        notes: additionalClipNotes[replacementVideo._id] || replacementSegment.notes || '',
+        type: replacementVideo.isBroll ? 'broll' : replacementSegment.type || 'other',
+        startTime: 0,
+        endTime: Number(replacementVideo.duration) || null,
+        required: replacementSegment.required !== false,
+      })
+      .then((response) => {
+        updateJobFromResponse(response, 'Clip replaced. Editor will see it as new material.');
+        cancelReplaceSegment();
+        fetchAvailableVideos();
+      })
+      .catch((error) => {
+        console.error('Error replacing job clip:', error);
+        setErrorMessage(getRequestErrorMessage(error, 'Clip could not be replaced.'));
+      })
+      .finally(() => setSegmentActionLoading(''));
+  };
+
+  const handleDeleteSegment = (segment) => {
+    if (!segment?._id) return;
+
+    const label = segment.title || segment.video?.originalFilename || segment.video?.filename || 'this clip';
+    const confirmed = window.confirm(`Remove "${label}" from this job?`);
+    if (!confirmed) return;
+
+    setSegmentActionLoading(`delete-${segment._id}`);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .delete(`/edit-jobs/${jobId}/segments/${segment._id}`)
+      .then((response) => {
+        updateJobFromResponse(response, 'Clip removed from job.');
+        if (replacementSegmentId === segment._id) {
+          cancelReplaceSegment();
+        }
+        fetchAvailableVideos();
+      })
+      .catch((error) => {
+        console.error('Error removing job clip:', error);
+        setErrorMessage(getRequestErrorMessage(error, 'Clip could not be removed from job.'));
+      })
+      .finally(() => setSegmentActionLoading(''));
   };
 
   const handleFinalFileChange = (event) => {
@@ -549,14 +665,15 @@ const EditJobDetailsPage = () => {
       .then((response) => {
         setJob(response.data.job);
         setStatus(response.data.job.status);
-        return requestPackageDownload();
+        return requestPackageDownload('missing');
       })
       .then(() => {
-        setMessage('Job claimed and edit package download started.');
+        setMessage('Job claimed and new/missing files download started.');
+        fetchJob();
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error('Error claiming and downloading job:', error);
-        setErrorMessage(getRequestErrorMessage(error, 'Job could not be claimed or downloaded.'));
+        setErrorMessage(await getDownloadErrorMessage(error, 'Job could not be claimed or downloaded.'));
       })
       .finally(() => setPackageLoading(false));
   };
@@ -623,6 +740,13 @@ const EditJobDetailsPage = () => {
           <Chip label={formatLabel(job.status)} color="primary" />
           <Chip label={formatLabel(job.priority)} variant="outlined" />
           <Chip label={`${job.segments?.length || 0} segments`} variant="outlined" />
+          {downloadMeta?.hasMissingFiles && (
+            <Chip
+              label={`${downloadMeta.missingSegmentCount + downloadMeta.missingOffFileCount} new files`}
+              color="warning"
+              variant="outlined"
+            />
+          )}
           {job.viewerMeta?.hasUnreadChanges && (
             <Chip label="New updates" color="warning" />
           )}
@@ -650,14 +774,39 @@ const EditJobDetailsPage = () => {
               Production control
             </Typography>
             <Stack spacing={1.5}>
-              {canClaim && (
+              {canClaim && canDirectDownloadPackage && (
+                <>
+                  <Button
+                    startIcon={<DownloadIcon />}
+                    variant="contained"
+                    onClick={() => handleDownloadPackage('missing')}
+                    disabled={packageLoading || downloadMeta?.hasMissingFiles === false}
+                  >
+                    {downloadMeta?.hasMissingFiles === false ? 'No new files' : 'Download new / missed'}
+                  </Button>
+                  <Button
+                    startIcon={<DownloadIcon />}
+                    variant="outlined"
+                    onClick={() => handleDownloadPackage('all')}
+                    disabled={packageLoading}
+                  >
+                    Download full package
+                  </Button>
+                  {downloadMeta && (
+                    <Typography variant="caption" color="text.secondary">
+                      Last download: {downloadMeta.lastDownloadedAt ? formatDate(downloadMeta.lastDownloadedAt) : 'Never'} / missing {downloadMeta.missingSegmentCount} clip(s), {downloadMeta.missingOffFileCount} OFF file(s)
+                    </Typography>
+                  )}
+                </>
+              )}
+              {canClaim && !canDirectDownloadPackage && (
                 <Button
-                  startIcon={canDirectDownloadPackage ? <DownloadIcon /> : <AssignmentIndIcon />}
+                  startIcon={<AssignmentIndIcon />}
                   variant="contained"
-                  onClick={canDirectDownloadPackage ? handleDownloadPackage : handleClaimAndDownload}
+                  onClick={handleClaimAndDownload}
                   disabled={packageLoading}
                 >
-                  {canDirectDownloadPackage ? 'Download Package' : 'Claim & Download Package'}
+                  Claim & download new / missed
                 </Button>
               )}
               {canClaim && !canDirectDownloadPackage && (
@@ -1070,19 +1219,39 @@ const EditJobDetailsPage = () => {
               >
                 <Box>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    Add missing clips / inserts
+                    {replacementSegment ? 'Choose replacement clip' : 'Add missing clips / inserts'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {selectedAdditionalVideos.length} clip(s) selected
+                    {replacementSegment
+                      ? `Replacing: ${replacementSegment.title || replacementSegment.video?.originalFilename || replacementSegment.video?.filename || 'selected segment'}`
+                      : `${selectedAdditionalVideos.length} clip(s) selected`}
                   </Typography>
                 </Box>
-                <TextField
-                  size="small"
-                  label="Search material"
-                  value={materialSearch}
-                  onChange={(event) => setMaterialSearch(event.target.value)}
-                  sx={{ minWidth: { md: 280 } }}
-                />
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  {replacementSegment && (
+                    <>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<SwapHorizIcon />}
+                        onClick={handleReplaceSegment}
+                        disabled={segmentActionLoading === `replace-${replacementSegment._id}` || selectedAdditionalVideos.length !== 1}
+                      >
+                        Replace clip
+                      </Button>
+                      <Button size="small" variant="outlined" onClick={cancelReplaceSegment}>
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                  <TextField
+                    size="small"
+                    label="Search material"
+                    value={materialSearch}
+                    onChange={(event) => setMaterialSearch(event.target.value)}
+                    sx={{ minWidth: { md: 280 } }}
+                  />
+                </Stack>
               </Stack>
 
               <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 340 }}>
@@ -1156,10 +1325,10 @@ const EditJobDetailsPage = () => {
             <Button
               variant="contained"
               onClick={handleReporterUpdate}
-              disabled={updateSaving}
+              disabled={updateSaving || Boolean(replacementSegment)}
               sx={{ alignSelf: 'flex-start' }}
             >
-              {updateSaving ? 'Sending update...' : 'Send update to production'}
+              {replacementSegment ? 'Finish replacement first' : (updateSaving ? 'Sending update...' : 'Send update to production')}
             </Button>
           </Stack>
         </Paper>
@@ -1179,12 +1348,12 @@ const EditJobDetailsPage = () => {
                 <TableCell>Range</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>Notes</TableCell>
-                <TableCell align="right">Open</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {sortedSegments.map((segment, index) => (
-                <TableRow key={segment._id || index} hover>
+                <TableRow key={segment._id || index} hover selected={segment._id === replacementSegmentId}>
                   <TableCell>{index + 1}</TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 800 }}>
@@ -1205,16 +1374,43 @@ const EditJobDetailsPage = () => {
                   </TableCell>
                   <TableCell>{segment.notes || segment.title || 'No notes'}</TableCell>
                   <TableCell align="right">
-                    {segment.video?._id && (
-                      <Button
-                        component={Link}
-                        to={`/video-details/${segment.video._id}?start=${segment.startTime || 0}`}
-                        size="small"
-                        endIcon={<OpenInNewIcon />}
-                      >
-                        Open
-                      </Button>
-                    )}
+                    <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                      {segment.video?._id && (
+                        <Tooltip title="Open source clip">
+                          <IconButton
+                            component={Link}
+                            to={`/video-details/${segment.video._id}?start=${segment.startTime || 0}`}
+                            size="small"
+                          >
+                            <OpenInNewIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {canEditSegments && (
+                        <>
+                          <Tooltip title="Replace clip in job">
+                            <IconButton
+                              size="small"
+                              color={segment._id === replacementSegmentId ? 'primary' : 'default'}
+                              onClick={() => startReplaceSegment(segment)}
+                              disabled={Boolean(segmentActionLoading)}
+                            >
+                              <SwapHorizIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Remove clip from job">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDeleteSegment(segment)}
+                              disabled={Boolean(segmentActionLoading)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                    </Stack>
                   </TableCell>
                 </TableRow>
               ))}

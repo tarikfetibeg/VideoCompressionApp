@@ -116,16 +116,20 @@ mongoose
 
 // Register API routes
 const adminRoutes = require('./routes/admin');
+const archiveRoutes = require('./routes/archive');
 const authRoutes = require('./routes/auth');
 const broadcastRoutes = require('./routes/broadcast');
 const editJobRoutes = require('./routes/editJobs');
+const feedbackRoutes = require('./routes/feedback');
 const uploadRoutes = require('./routes/upload');
 const videoRoutes = require('./routes/videos');
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/archive', archiveRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/broadcast', broadcastRoutes);
 app.use('/api/edit-jobs', editJobRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 
