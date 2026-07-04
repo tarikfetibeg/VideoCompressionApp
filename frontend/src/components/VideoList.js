@@ -8,7 +8,6 @@ import {
   Card,
   CardActions,
   CardContent,
-  CardMedia,
   Checkbox,
   Chip,
   Dialog,
@@ -22,6 +21,7 @@ import {
   InputLabel,
   LinearProgress,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -30,10 +30,13 @@ import {
 } from '@mui/material';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { UserContext } from '../contexts/UserContext';
+import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
   hasActiveVideoProcessing,
 } from '../utils/videoProcessing';
+import { getSearchParam } from '../utils/searchParams';
+import VideoThumbnailPreview from './common/VideoThumbnailPreview';
 
 const formatBytes = (bytes) => {
   if (!bytes || Number.isNaN(Number(bytes))) return 'N/A';
@@ -62,57 +65,6 @@ const getContentTypeName = (video) => video.contentType?.name || video.finalCate
 const shouldShowProcessingProgress = (video) =>
   ['queued', 'processing'].includes(video.processingStatus);
 
-const VideoThumbnail = ({ videoId, title }) => {
-  const [src, setSrc] = useState('');
-
-  useEffect(() => {
-    let objectUrl = '';
-
-    axiosInstance
-      .get(`/videos/thumbnail/${videoId}`, { responseType: 'blob' })
-      .then((response) => {
-        objectUrl = URL.createObjectURL(response.data);
-        setSrc(objectUrl);
-      })
-      .catch(() => {
-        setSrc('');
-      });
-
-    return () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [videoId]);
-
-  if (!src) {
-    return (
-      <Box
-        sx={{
-          height: 150,
-          bgcolor: 'grey.100',
-          color: 'text.secondary',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Typography variant="body2">No thumbnail</Typography>
-      </Box>
-    );
-  }
-
-  return (
-    <CardMedia
-      component="img"
-      height="150"
-      image={src}
-      alt={title}
-      sx={{ objectFit: 'cover' }}
-    />
-  );
-};
-
 const VideoList = ({
   scope = 'mine',
   library = 'all',
@@ -125,40 +77,61 @@ const VideoList = ({
   const [contentTypes, setContentTypes] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [eventFilter, setEventFilter] = useState('all');
   const [contentTypeFilter, setContentTypeFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({ total: 0, totalPages: 1 });
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const { user } = useContext(UserContext);
+  const { startDownload } = useBackgroundDownloads();
   const showContentTypeFilter = library === 'archive';
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchVideos = useCallback(({ silent = false } = {}) => {
     if (!silent) {
       setMessage('');
       setErrorMessage('');
+      setLoading(true);
     }
-
-    const params = new URLSearchParams();
-    if (scope === 'station') params.set('scope', 'station');
-    if (library === 'archive') params.set('library', 'archive');
-    if (showContentTypeFilter && contentTypeFilter !== 'all') {
-      params.set('contentTypeId', contentTypeFilter);
-    }
-    const query = params.toString() ? `?${params.toString()}` : '';
 
     axiosInstance
-      .get(`/videos${query}`, { headers: { Accept: 'application/json' } })
+      .get('/videos/workspace', {
+        headers: { Accept: 'application/json' },
+        params: {
+          page,
+          limit: 36,
+          scope: scope === 'station' ? 'station' : undefined,
+          library: library === 'archive' ? 'archive' : undefined,
+          event: eventFilter !== 'all' ? eventFilter : undefined,
+          contentTypeId: showContentTypeFilter && contentTypeFilter !== 'all' ? contentTypeFilter : undefined,
+          q: getSearchParam(debouncedSearchTerm),
+        },
+      })
       .then((response) => {
-        const data = Array.isArray(response.data) ? response.data : [];
+        const data = Array.isArray(response.data?.items) ? response.data.items : [];
         setVideos(data);
+        setWorkspaceMeta({
+          total: Number(response.data?.total) || 0,
+          totalPages: Number(response.data?.totalPages) || 1,
+        });
       })
       .catch((error) => {
         console.error('Error fetching videos:', error);
         if (!silent) {
-          setErrorMessage('Greška pri učitavanju videa.');
+          setErrorMessage('Greska pri ucitavanju videa.');
         }
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
       });
-  }, [scope, library, showContentTypeFilter, contentTypeFilter]);
+  }, [contentTypeFilter, debouncedSearchTerm, eventFilter, library, page, scope, showContentTypeFilter]);
 
   useEffect(() => {
     fetchVideos();
@@ -249,44 +222,26 @@ const VideoList = ({
   };
 
   const handleDownloadSelected = () => {
-    axiosInstance
-      .post('/videos/download', { videoIds: selectedVideos }, { responseType: 'blob' })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-
-        link.href = url;
-        link.setAttribute('download', `videos_${Date.now()}.zip`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        window.URL.revokeObjectURL(url);
-      })
+    startDownload({
+      kind: 'video-bulk',
+      payload: { videoIds: selectedVideos },
+      label: `Video ZIP (${selectedVideos.length})`,
+    })
       .catch((error) => {
         console.error('Error downloading videos:', error);
-        setErrorMessage('Greška pri skidanju odabranih videa.');
+        setErrorMessage(error.response?.data?.message || 'Greska pri skidanju odabranih videa.');
       });
   };
 
   const handleDownloadSingle = (video) => {
-    axiosInstance
-      .get(`/videos/download/${video._id}`, { responseType: 'blob' })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-
-        link.href = url;
-        link.setAttribute('download', video.originalFilename || video.filename || `video_${video._id}`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        window.URL.revokeObjectURL(url);
-      })
+    startDownload({
+      kind: 'video-single',
+      payload: { videoId: video._id },
+      label: video.originalFilename || video.filename || `Video ${video._id}`,
+    })
       .catch((error) => {
         console.error('Error downloading video:', error);
-        setErrorMessage('Greška pri skidanju videa.');
+        setErrorMessage(error.response?.data?.message || 'Greska pri skidanju videa.');
       });
   };
 
@@ -318,7 +273,7 @@ const VideoList = ({
       })
       .catch((err) => {
         console.error('Error deleting videos:', err);
-        setErrorMessage('Greška pri brisanju odabranih videa.');
+        setErrorMessage('GreÅ¡ka pri brisanju odabranih videa.');
       });
   };
 
@@ -334,7 +289,7 @@ const VideoList = ({
       })
       .catch((err) => {
         console.error('Error deleting video:', err);
-        setErrorMessage('Greška pri brisanju videa.');
+        setErrorMessage('GreÅ¡ka pri brisanju videa.');
       });
   };
 
@@ -354,6 +309,9 @@ const VideoList = ({
           <Typography variant="body2" color="text.secondary">
             {description}
           </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Ucitano {filteredVideos.length} od {workspaceMeta.total} rezultata.
+          </Typography>
         </Box>
 
         <Button variant="outlined" onClick={fetchVideos}>
@@ -363,6 +321,7 @@ const VideoList = ({
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 3 }}>
         <Grid container spacing={2} alignItems="center">
@@ -371,7 +330,10 @@ const VideoList = ({
               label="Search"
               fullWidth
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setPage(1);
+                setSearchTerm(e.target.value);
+              }}
               placeholder="Filename, event..."
             />
           </Grid>
@@ -382,7 +344,10 @@ const VideoList = ({
               <Select
                 value={eventFilter}
                 label="Event"
-                onChange={(e) => setEventFilter(e.target.value)}
+                onChange={(e) => {
+                  setPage(1);
+                  setEventFilter(e.target.value);
+                }}
               >
                 <MenuItem value="all">All events</MenuItem>
                 {eventOptions.map((eventName) => (
@@ -402,6 +367,7 @@ const VideoList = ({
                   value={contentTypeFilter}
                   label="Video category"
                   onChange={(event) => {
+                    setPage(1);
                     setContentTypeFilter(event.target.value);
                     setEventFilter('all');
                   }}
@@ -472,9 +438,12 @@ const VideoList = ({
                   }}
                 >
                   <Box sx={{ position: 'relative' }}>
-                    <VideoThumbnail
+                    <VideoThumbnailPreview
                       videoId={video._id}
                       title={video.originalFilename || video.filename}
+                      width="100%"
+                      height={150}
+                      enableScrubPreview
                     />
                     {!readOnly && (
                       <Checkbox
@@ -605,6 +574,15 @@ const VideoList = ({
             );
           })}
         </Grid>
+      )}
+
+      {workspaceMeta.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ mt: 3 }}>
+          <Pagination count={workspaceMeta.totalPages} page={page} onChange={(event, value) => setPage(value)} />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            Stranica {page} / {workspaceMeta.totalPages}
+          </Typography>
+        </Stack>
       )}
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>

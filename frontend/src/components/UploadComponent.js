@@ -62,7 +62,13 @@ const UploadComponent = ({ onUploadComplete }) => {
       })
       .then((response) => {
         const defaults = response.data;
-        const defaultCodec = defaults.codec === 'hevc_nvenc' ? 'h265_nvenc' : defaults.codec;
+        const codecMap = {
+          libx264: 'h264',
+          libx265: 'h265',
+          h264_nvenc: 'h264_nvenc',
+          hevc_nvenc: 'h265_nvenc',
+        };
+        const defaultCodec = codecMap[defaults.codec] || 'h264';
         const resVal = defaults.resolution || '1920x1080';
 
         setCodec(defaultCodec || 'h264');
@@ -112,12 +118,12 @@ const UploadComponent = ({ onUploadComplete }) => {
     setUploadResults([]);
 
     if (files.length === 0) {
-      setErrorMessage('Select at least one file.');
+      setErrorMessage('Odaberi barem jedan fajl.');
       return;
     }
 
     if (!eventTag.trim() || !date) {
-      setErrorMessage('Event and date are required.');
+      setErrorMessage('Event i datum su obavezni.');
       return;
     }
 
@@ -130,7 +136,7 @@ const UploadComponent = ({ onUploadComplete }) => {
 
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
-      setCurrentUploadLabel(`Uploading ${index + 1}/${files.length}: ${file.name}`);
+      setCurrentUploadLabel(`Upload ${index + 1}/${files.length}: ${file.name}`);
 
       try {
         const response = await axios.post('/upload', buildUploadFormData(file), {
@@ -180,20 +186,20 @@ const UploadComponent = ({ onUploadComplete }) => {
       setFiles([]);
       setFileInputKey((current) => current + 1);
       setErrorMessage(queueWarnings.length > 0
-        ? `${queueWarnings.length} file(s) were saved, but processing needs retry after queue/worker is available.`
+        ? `${queueWarnings.length} fajl(ova) je snimljeno, ali obradu treba ponoviti kada queue/worker bude dostupan.`
         : '');
-      setMessage(`Upload saved ${uploadedFiles.length} file(s). Processing has been queued.`);
+      setMessage(`Snimljeno ${uploadedFiles.length} fajl(ova). Obrada je stavljena u red.`);
       return;
     }
 
     setFiles(failedFiles.map((failure) => failure.file));
     setMessage(
       uploadedFiles.length > 0
-        ? `Upload saved ${uploadedFiles.length} file(s). Failed file(s) stayed selected for retry.`
+        ? `Snimljeno ${uploadedFiles.length} fajl(ova). Neuspjeli fajlovi ostaju selektovani za retry.`
         : ''
     );
     setErrorMessage(
-      `${failedFiles.length} file(s) failed: ${failedFiles.map((failure) => `${failure.file.name} (${failure.error})`).join('; ')}`
+      `${failedFiles.length} fajl(ova) nije prošlo: ${failedFiles.map((failure) => `${failure.file.name} (${failure.error})`).join('; ')}`
     );
   };
 
@@ -208,15 +214,15 @@ const UploadComponent = ({ onUploadComplete }) => {
         >
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              Raw Ingest
+              Sirovi ingest
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {files.length > 0 ? `${files.length} file(s) selected` : 'Ready for today'}
+              {files.length > 0 ? `${files.length} fajl(ova) odabrano` : 'Spremno za današnji upload'}
             </Typography>
           </Box>
 
           <Button variant="outlined" component="label" startIcon={<CloudUploadIcon />} disabled={uploading}>
-            Select
+            Odaberi
             <input
               key={fileInputKey}
               type="file"
@@ -244,7 +250,7 @@ const UploadComponent = ({ onUploadComplete }) => {
           </Grid>
           <Grid item xs={12} md={5}>
             <TextField
-              label="Date"
+              label="Datum"
               type="date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
@@ -260,7 +266,7 @@ const UploadComponent = ({ onUploadComplete }) => {
             {files.slice(0, 5).map((file) => (
               <Chip key={`${file.name}-${file.size}`} label={`${file.name} / ${formatBytes(file.size)}`} size="small" />
             ))}
-            {files.length > 5 && <Chip label={`+${files.length - 5} more`} size="small" />}
+            {files.length > 5 && <Chip label={`+${files.length - 5} još`} size="small" />}
           </Stack>
         )}
 
@@ -271,7 +277,7 @@ const UploadComponent = ({ onUploadComplete }) => {
             startIcon={<CloudUploadIcon />}
             disabled={uploading}
           >
-            {uploading ? 'Uploading...' : 'Upload'}
+            {uploading ? 'Upload u toku...' : 'Upload'}
           </Button>
           <Button
             variant="text"
@@ -279,7 +285,7 @@ const UploadComponent = ({ onUploadComplete }) => {
             startIcon={<TuneIcon />}
             disabled={uploading}
           >
-            Technical profile
+            Tehnički profil
           </Button>
         </Stack>
 
@@ -298,7 +304,7 @@ const UploadComponent = ({ onUploadComplete }) => {
             </Grid>
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
-                <InputLabel>Resolution</InputLabel>
+                <InputLabel>Rezolucija</InputLabel>
                 <Select value={resolution} label="Resolution" onChange={(event) => setResolution(event.target.value)}>
                   <MenuItem value="720">1280x720 HD</MenuItem>
                   <MenuItem value="1080">1920x1080 Full HD</MenuItem>
@@ -336,7 +342,7 @@ const UploadComponent = ({ onUploadComplete }) => {
           <Box>
             <LinearProgress variant="determinate" value={uploadProgress} />
             <Typography variant="caption" color="text.secondary">
-              {currentUploadLabel || 'Uploading'} / {uploadProgress}%
+              {currentUploadLabel || 'Upload'} / {uploadProgress}%
             </Typography>
           </Box>
         )}

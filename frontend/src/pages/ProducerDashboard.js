@@ -34,6 +34,10 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
 import { UserContext } from '../contexts/UserContext';
+import { WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
+import CorrectionQueue from '../components/jobs/CorrectionQueue';
+import { getSearchParam } from '../utils/searchParams';
 
 const getTodayInputValue = () => {
   const today = new Date();
@@ -98,6 +102,7 @@ const ProducerDashboard = () => {
   const [libraryVideos, setLibraryVideos] = useState([]);
   const [selectedContentTypeId, setSelectedContentTypeId] = useState('all');
   const [librarySearch, setLibrarySearch] = useState('');
+  const [debouncedLibrarySearch, setDebouncedLibrarySearch] = useState('');
   const [replaceTargetItem, setReplaceTargetItem] = useState(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -163,22 +168,32 @@ const ProducerDashboard = () => {
       .finally(() => setLoading(false));
   }, [selectedProgramId, selectedDate]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedLibrarySearch(librarySearch), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [librarySearch]);
+
   const loadLibraryVideos = useCallback(() => {
     axiosInstance
-      .get('/broadcast/library-videos', {
+      .get('/broadcast/library-search', {
         params: {
           contentTypeId: selectedContentTypeId,
-          search: librarySearch,
+          search: getSearchParam(debouncedLibrarySearch),
+          limit: 100,
         },
       })
       .then((response) => {
-        setLibraryVideos(Array.isArray(response.data) ? response.data : []);
+        setLibraryVideos(Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.items)
+            ? response.data.items
+            : []);
       })
       .catch((error) => {
         console.error('Error loading producer library:', error);
         setErrorMessage(error.response?.data?.message || 'TV archive material could not be loaded.');
       });
-  }, [selectedContentTypeId, librarySearch]);
+  }, [selectedContentTypeId, debouncedLibrarySearch]);
 
   const loadProducerShortcuts = useCallback(() => {
     setShortcutsLoading(true);
@@ -473,33 +488,31 @@ const ProducerDashboard = () => {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Producer Desk
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Prepare daily shows, attach approved material, and track who changed what.
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1}>
+      <WorkspaceHeader
+        eyebrow="Rundown emisije"
+        title="Producer Desk"
+        subtitle="Priprema dnevne emisije, dodavanje odobrenog materijala i praćenje izmjena."
+        chips={[
+          { label: `${activeItems.length} u emisiji`, color: 'primary' },
+          { label: `${showDay?.producers?.length || 0} producent(a)`, variant: 'outlined' },
+          { label: replaceTargetItem ? 'Replace mode aktivan' : 'Biblioteka spremna', color: replaceTargetItem ? 'warning' : 'default' },
+        ]}
+        actions={(
+          <>
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={refresh} disabled={loading}>
-            Refresh
+            Osvježi
           </Button>
           <Button variant="contained" startIcon={<EventAvailableIcon />} onClick={joinShow} disabled={!selectedProgramId || isJoined}>
-            {isJoined ? 'Joined' : 'Join show'}
+            {isJoined ? 'Priključen' : 'Priključi se emisiji'}
           </Button>
-        </Stack>
-      </Stack>
+          </>
+        )}
+      />
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+
+      <CorrectionQueue role={user?.role} userId={user?.id} />
 
       <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, mb: 2 }}>
         <Stack
@@ -690,25 +703,34 @@ const ProducerDashboard = () => {
                           </Stack>
                         </TableCell>
                         <TableCell>
-                          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-                            <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                              {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
-                            </Typography>
-                            {item.video?.correctionStatus === 'needs_correction' && (
-                              <Chip label="Potrebna ispravka" size="small" color="error" />
-                            )}
+                          <Stack direction="row" spacing={1} alignItems="flex-start">
+                            <VideoThumbnailPreview
+                              videoId={item.video?._id}
+                              title={item.title || item.video?.finalTitle || item.video?.originalFilename}
+                              enableScrubPreview
+                            />
+                            <Box sx={{ minWidth: 0 }}>
+                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>
+                                  {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
+                                </Typography>
+                                {item.video?.correctionStatus === 'needs_correction' && (
+                                  <Chip label="Potrebna ispravka" size="small" color="error" />
+                                )}
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary">
+                                {formatDate(item.video?.airDate || showDay?.airDate)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                Reporter: {getPersonName(item.video?.reporter)} / Editor: {getPersonName(item.video?.editor)}
+                              </Typography>
+                              {item.video?.correctionStatus === 'needs_correction' && (
+                                <Typography variant="caption" color="error" display="block">
+                                  {item.video?.correctionNote || 'Clip is tagged for correction.'}
+                                </Typography>
+                              )}
+                            </Box>
                           </Stack>
-                          <Typography variant="caption" color="text.secondary">
-                            {formatDate(item.video?.airDate || showDay?.airDate)}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            Reporter: {getPersonName(item.video?.reporter)} / Editor: {getPersonName(item.video?.editor)}
-                          </Typography>
-                          {item.video?.correctionStatus === 'needs_correction' && (
-                            <Typography variant="caption" color="error" display="block">
-                              {item.video?.correctionNote || 'Clip is tagged for correction.'}
-                            </Typography>
-                          )}
                         </TableCell>
                         <TableCell>
                           <Chip
@@ -800,6 +822,13 @@ const ProducerDashboard = () => {
                   return (
                     <Paper key={video._id} variant="outlined" sx={{ p: 1.25, borderRadius: 1 }}>
                       <Stack direction="row" spacing={1} alignItems="center">
+                        <VideoThumbnailPreview
+                          videoId={video._id}
+                          title={video.finalTitle || video.originalFilename || video.filename}
+                          width={84}
+                          height={52}
+                          enableScrubPreview
+                        />
                         <Box sx={{ minWidth: 0, flex: 1 }}>
                           <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
                             {video.finalTitle || video.originalFilename || video.filename}

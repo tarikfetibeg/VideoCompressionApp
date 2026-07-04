@@ -10,6 +10,10 @@ const BroadcastContentType = require('../models/BroadcastContentType');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const { PROJECT_ROOT, paths } = require('../utils/storagePaths');
+const { removeScrubPreviewFolderForVideo } = require('../services/videoProcessingService');
+const { removeHlsPreviewFolder } = require('../services/hlsPreviewService');
+const { addVideoPrefixSearchFilter } = require('../utils/searchText');
+const { addContentTypeFallbackFilter } = require('../utils/contentTypeFilters');
 
 const router = express.Router();
 
@@ -18,15 +22,19 @@ const archiveReviewStatuses = ['unreviewed', 'reviewed', 'needs_metadata', 'dupl
 const reporterRoles = ['Reporter', 'Producer', 'Admin'];
 const editorRoles = ['Editor', 'VideoEditor', 'Admin'];
 const archiveSortFields = ['uploadDate', 'name', 'category', 'tags', 'reporter', 'editor'];
+const archiveWorkspaceSortFields = {
+  uploadDate: 'uploadDate',
+  tagDate: 'tagDate',
+  name: 'originalFilename',
+  category: 'finalCategory',
+  reviewStatus: 'archiveReviewStatus',
+  updatedAt: 'updatedAt',
+};
 const videoPathFields = ['filepath', 'rawPath', 'compressedPath', 'previewPath', 'thumbnailPath'];
 const deleteRoots = [paths.root, path.join(PROJECT_ROOT, 'uploads')];
 
 router.use(authenticateToken);
 router.use(authorize(archiveRoles));
-
-function escapeRegex(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function normalizeTagList(tags) {
   const values = Array.isArray(tags)
@@ -118,6 +126,24 @@ function buildArchiveMaterialBaseFilter() {
   };
 }
 
+function parseWorkspacePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '40', 10) || 40, 1), 150);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function buildArchiveWorkspaceSort(query = {}) {
+  const sortBy = archiveWorkspaceSortFields[query.sortBy] ? query.sortBy : 'uploadDate';
+  const sortOrder = String(query.sortOrder || 'desc') === 'asc' ? 1 : -1;
+  const sortField = archiveWorkspaceSortFields[sortBy];
+
+  return { [sortField]: sortOrder, uploadDate: -1, createdAt: -1 };
+}
+
 function getSortValue(video, sortBy) {
   if (sortBy === 'name') return getVideoTitle(video).toLocaleLowerCase();
   if (sortBy === 'category') return String(video.contentType?.name || video.finalCategory || '').toLocaleLowerCase();
@@ -153,6 +179,14 @@ function populateArchiveVideo(query) {
     .populate('editor', 'username role')
     .populate('qaResponsible', 'username role')
     .populate('correctionReportedBy', 'username role')
+    .populate({
+      path: 'activeCorrectionRequest',
+      select: 'status origin assignedEditor correctionJob correctedBy correctedAt correctedVideo',
+      populate: [
+        { path: 'assignedEditor', select: 'username role' },
+        { path: 'correctedBy', select: 'username role' },
+      ],
+    })
     .populate('archiveReviewedBy', 'username role')
     .populate('archiveTagsUpdatedBy', 'username role')
     .populate('duplicateOf', 'filename originalFilename finalTitle')
@@ -160,14 +194,23 @@ function populateArchiveVideo(query) {
     .populate('contentType');
 }
 
-function buildArchiveVideoFilter(query = {}) {
+async function buildArchiveVideoFilter(query = {}) {
   const filter = buildArchiveMaterialBaseFilter();
   const andConditions = [];
-  const review = String(query.review || 'unreviewed');
-  const workflow = String(query.workflow || 'all');
+  const review = String(query.reviewStatus || query.review || 'unreviewed');
+  const workflow = String(query.workflowStatus || query.workflow || 'all');
   const search = String(query.q || '').trim();
 
-  if (review === 'unreviewed') {
+  if (review === 'queue') {
+    andConditions.push({
+      $or: [
+        { archiveReviewStatus: { $exists: false } },
+        { archiveReviewStatus: 'unreviewed' },
+        { archiveReviewStatus: 'needs_metadata' },
+        { archiveReviewStatus: null },
+      ],
+    });
+  } else if (review === 'unreviewed') {
     andConditions.push({
       $or: [
         { archiveReviewStatus: { $exists: false } },
@@ -194,30 +237,110 @@ function buildArchiveVideoFilter(query = {}) {
     filter.correctionStatus = 'needs_correction';
   }
 
-  if (query.contentTypeId && query.contentTypeId !== 'all') {
-    filter.contentType = query.contentTypeId;
-  }
+  await addContentTypeFallbackFilter(filter, query.contentTypeId);
 
-  if (search) {
-    const regex = new RegExp(escapeRegex(search), 'i');
-    andConditions.push({
-      $or: [
-        { filename: regex },
-        { originalFilename: regex },
-        { finalTitle: regex },
-        { event: regex },
-        { finalCategory: regex },
-        { keywords: regex },
-        { archiveReviewNotes: regex },
-      ],
-    });
-  }
+  addVideoPrefixSearchFilter(filter, search);
 
   if (andConditions.length > 0) {
-    filter.$and = andConditions;
+    filter.$and = [...(filter.$and || []), ...andConditions];
   }
 
   return filter;
+}
+
+async function buildArchiveWorkspaceSummary(filter) {
+  const baseFilter = buildArchiveMaterialBaseFilter();
+  const unreviewedFilter = {
+    ...baseFilter,
+    $and: [{
+      $or: [
+        { archiveReviewStatus: { $exists: false } },
+        { archiveReviewStatus: 'unreviewed' },
+        { archiveReviewStatus: null },
+      ],
+    }],
+  };
+
+  const [
+    total,
+    filtered,
+    unreviewed,
+    reviewed,
+    needsMetadata,
+    duplicate,
+    needsCorrection,
+    aired,
+    archiveReady,
+  ] = await Promise.all([
+    Video.countDocuments(baseFilter),
+    Video.countDocuments(filter),
+    Video.countDocuments(unreviewedFilter),
+    Video.countDocuments({ ...baseFilter, archiveReviewStatus: 'reviewed' }),
+    Video.countDocuments({ ...baseFilter, archiveReviewStatus: 'needs_metadata' }),
+    Video.countDocuments({ ...baseFilter, archiveReviewStatus: 'duplicate' }),
+    Video.countDocuments({ ...baseFilter, correctionStatus: 'needs_correction' }),
+    Video.countDocuments({ ...baseFilter, broadcastStatus: { $in: ['aired', 'archived'] } }),
+    Video.countDocuments({
+      ...baseFilter,
+      $or: [
+        { broadcastStatus: { $in: ['approved_for_air', 'aired', 'archived'] } },
+        { finalApprovalStatus: 'approved' },
+      ],
+    }),
+  ]);
+
+  return {
+    total,
+    filtered,
+    unreviewed,
+    reviewQueue: unreviewed + needsMetadata,
+    reviewed,
+    needsMetadata,
+    duplicate,
+    needsCorrection,
+    aired,
+    archiveReady,
+  };
+}
+
+async function buildArchiveWorkspaceFacets(filter) {
+  const [contentTypes, events] = await Promise.all([
+    Video.aggregate([
+      { $match: filter },
+      { $group: { _id: '$contentType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 25 },
+    ]),
+    Video.aggregate([
+      { $match: filter },
+      { $match: { event: { $exists: true, $nin: [null, ''] } } },
+      { $group: { _id: '$event' } },
+      { $sort: { _id: 1 } },
+      { $limit: 50 },
+    ]),
+  ]);
+
+  const typeIds = contentTypes.map((item) => item._id).filter(Boolean);
+  const types = typeIds.length
+    ? await BroadcastContentType.find({ _id: { $in: typeIds } }).select('_id name slug').lean()
+    : [];
+  const typeMap = new Map(types.map((type) => [type._id.toString(), type]));
+
+  return {
+    contentTypes: contentTypes.map((item) => {
+      const type = item._id ? typeMap.get(item._id.toString()) : null;
+      return {
+        value: item._id || 'none',
+        label: type?.name || 'Bez kategorije',
+        slug: type?.slug || '',
+        count: item.count,
+      };
+    }),
+    events: events
+      .map((event) => String(event._id || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b)),
+  };
 }
 
 function getVideoTitle(video) {
@@ -371,6 +494,7 @@ router.get('/summary', async (req, res) => {
       editedVideos,
       archiveReadyVideos,
       unreviewed,
+      reviewQueue: unreviewed + needsMetadata,
       reviewed,
       needsMetadata,
       duplicateMarked,
@@ -391,7 +515,7 @@ router.get('/videos', async (req, res) => {
 
   try {
     const videos = await populateArchiveVideo(
-      Video.find(buildArchiveVideoFilter(req.query))
+      Video.find(await buildArchiveVideoFilter(req.query))
         .sort({ uploadDate: -1 })
         .limit(limit)
     );
@@ -400,6 +524,39 @@ router.get('/videos', async (req, res) => {
   } catch (error) {
     console.error('Error loading archive videos:', error);
     res.status(500).json({ message: 'Error loading archive videos.' });
+  }
+});
+
+router.get('/videos/workspace', async (req, res) => {
+  const { page, limit, skip } = parseWorkspacePagination(req.query);
+  const filter = await buildArchiveVideoFilter(req.query);
+  const sort = buildArchiveWorkspaceSort(req.query);
+
+  try {
+    const [total, items, summary, facets] = await Promise.all([
+      Video.countDocuments(filter),
+      populateArchiveVideo(
+        Video.find(filter)
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+      ),
+      buildArchiveWorkspaceSummary(filter),
+      buildArchiveWorkspaceFacets(filter),
+    ]);
+
+    res.json({
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary,
+      facets,
+    });
+  } catch (error) {
+    console.error('Error loading archive workspace videos:', error);
+    res.status(500).json({ message: 'Error loading archive workspace videos.' });
   }
 });
 
@@ -418,6 +575,41 @@ router.get('/duplicates', async (req, res) => {
   } catch (error) {
     console.error('Error loading duplicate candidates:', error);
     res.status(500).json({ message: 'Error loading duplicate candidates.' });
+  }
+});
+
+router.get('/duplicates/workspace', async (req, res) => {
+  const { page, limit, skip } = parseWorkspacePagination(req.query);
+  const maxVideos = Math.min(Math.max(parseInt(req.query.maxVideos || '5000', 10) || 5000, 50), 10000);
+
+  try {
+    const filter = buildArchiveMaterialBaseFilter();
+    addVideoPrefixSearchFilter(filter, req.query.q);
+    const videos = await populateArchiveVideo(
+      Video.find(filter)
+        .sort({ uploadDate: -1 })
+        .limit(maxVideos)
+    ).lean();
+
+    const groups = buildDuplicateGroups(videos);
+
+    const total = groups.length;
+
+    res.json({
+      items: groups.slice(skip, skip + limit),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary: {
+        groups: total,
+        videos: groups.reduce((sum, group) => sum + group.count, 0),
+        totalSize: groups.reduce((sum, group) => sum + group.totalSize, 0),
+      },
+    });
+  } catch (error) {
+    console.error('Error loading duplicate workspace candidates:', error);
+    res.status(500).json({ message: 'Error loading duplicate workspace candidates.' });
   }
 });
 
@@ -772,6 +964,8 @@ router.delete('/videos/:id/duplicate', async (req, res) => {
       },
     });
 
+    removeScrubPreviewFolderForVideo(video);
+    removeHlsPreviewFolder(video._id);
     await Video.findByIdAndDelete(video._id);
 
     res.json({

@@ -10,6 +10,7 @@ import {
   IconButton,
   InputLabel,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -22,11 +23,15 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axiosInstance from '../../axiosConfig';
+import { ConfirmDialog, EmptyState, FilterBar, KpiStrip, StatusChip } from '../common/WorkspaceChrome';
+import { auditSeverityLabels, formatNumberBs } from '../../utils/uiLabels';
+import { getSearchParam } from '../../utils/searchParams';
 
 const roleOptions = ['all', 'Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'];
 
@@ -121,6 +126,16 @@ const AuditLogs = () => {
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [expandedRows, setExpandedRows] = useState({});
+  const [searchDraft, setSearchDraft] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({
+    total: 0,
+    totalPages: 1,
+    summary: {},
+  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingLogs, setDeletingLogs] = useState(false);
   const [filters, setFilters] = useState({
     action: '',
     userId: 'all',
@@ -128,10 +143,10 @@ const AuditLogs = () => {
     severity: 'all',
     dateFrom: '',
     dateTo: '',
-    search: '',
     limit: 250,
   });
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
   const fetchUsers = useCallback(() => {
@@ -146,26 +161,39 @@ const AuditLogs = () => {
     setErrorMessage('');
 
     axiosInstance
-      .get('/admin/audit-logs', {
+      .get('/admin/audit-logs/workspace', {
         params: {
           ...filters,
+          page,
           action: filters.action || undefined,
-          search: filters.search || undefined,
+          search: getSearchParam(debouncedSearch),
           dateFrom: filters.dateFrom || undefined,
           dateTo: filters.dateTo || undefined,
         },
       })
-      .then((response) => setLogs(Array.isArray(response.data) ? response.data : []))
+      .then((response) => {
+        setLogs(Array.isArray(response.data?.items) ? response.data.items : []);
+        setWorkspaceMeta({
+          total: Number(response.data?.total) || 0,
+          totalPages: Number(response.data?.totalPages) || 1,
+          summary: response.data?.summary || {},
+        });
+      })
       .catch((err) => {
         console.error('Error fetching audit logs:', err);
         setErrorMessage('Error fetching audit logs.');
       })
       .finally(() => setLoading(false));
-  }, [filters]);
+  }, [debouncedSearch, filters, page]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchDraft), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft]);
 
   useEffect(() => {
     fetchLogs();
@@ -178,14 +206,19 @@ const AuditLogs = () => {
   }, [filters.action, logs]);
 
   const stats = useMemo(() => ({
-    total: logs.length,
-    critical: logs.filter((log) => log.severity === 'critical').length,
-    warning: logs.filter((log) => log.severity === 'warning').length,
-    info: logs.filter((log) => log.severity === 'info').length,
-  }), [logs]);
+    total: workspaceMeta.summary.total ?? workspaceMeta.total ?? logs.length,
+    critical: workspaceMeta.summary.critical ?? logs.filter((log) => log.severity === 'critical').length,
+    warning: workspaceMeta.summary.warning ?? logs.filter((log) => log.severity === 'warning').length,
+    info: workspaceMeta.summary.info ?? logs.filter((log) => log.severity === 'info').length,
+  }), [logs, workspaceMeta]);
 
   const handleFilterChange = (event) => {
     const { name, value } = event.target;
+    setPage(1);
+    if (name === 'search') {
+      setSearchDraft(value);
+      return;
+    }
     setFilters((current) => ({
       ...current,
       [name]: value,
@@ -227,6 +260,31 @@ const AuditLogs = () => {
     );
   };
 
+  const deleteCurrentLogs = () => {
+    setDeletingLogs(true);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .delete('/admin/audit-logs', {
+        data: {
+          ...filters,
+          search: getSearchParam(debouncedSearch),
+        },
+      })
+      .then((response) => {
+        setMessage(response.data?.message || 'Audit logovi su obrisani.');
+        setDeleteConfirmOpen(false);
+        setExpandedRows({});
+        fetchLogs();
+      })
+      .catch((error) => {
+        console.error('Error deleting audit logs:', error);
+        setErrorMessage(error.response?.data?.message || 'Audit logovi nisu obrisani.');
+      })
+      .finally(() => setDeletingLogs(false));
+  };
+
   return (
     <Box>
       <Stack
@@ -255,45 +313,38 @@ const AuditLogs = () => {
           <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportJson} disabled={logs.length === 0}>
             JSON
           </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteIcon />}
+            onClick={() => setDeleteConfirmOpen(true)}
+            disabled={logs.length === 0 || loading}
+          >
+            Obrisi trenutne
+          </Button>
         </Stack>
       </Stack>
 
+      {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Loaded</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Critical</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.critical}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Warning</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.warning}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Info</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.info}</Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+      <KpiStrip
+        items={[
+          { label: 'Rezultata', value: formatNumberBs(stats.total) },
+          { label: 'Kriticno', value: formatNumberBs(stats.critical), color: stats.critical > 0 ? 'error.main' : 'success.main' },
+          { label: 'Upozorenja', value: formatNumberBs(stats.warning), color: stats.warning > 0 ? 'warning.main' : 'text.primary' },
+          { label: 'Info', value: formatNumberBs(stats.info) },
+        ]}
+        dense
+      />
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+      <FilterBar title="Audit filteri" summary="Pretraga je debounceovana, a lista je paginirana preko admin workspace endpointa.">
         <Grid container spacing={2}>
           <Grid item xs={12} md={3}>
             <TextField
               name="search"
               label="Search details"
-              value={filters.search}
+              value={searchDraft}
               onChange={handleFilterChange}
               fullWidth
               size="small"
@@ -355,7 +406,7 @@ const AuditLogs = () => {
               fullWidth
               size="small"
               type="number"
-              inputProps={{ min: 1, max: 1000 }}
+              inputProps={{ min: 1, max: 200 }}
             />
           </Grid>
           <Grid item xs={6} md={2}>
@@ -383,12 +434,13 @@ const AuditLogs = () => {
             />
           </Grid>
         </Grid>
-      </Paper>
+      </FilterBar>
 
       {logs.length === 0 ? (
-        <Alert severity="info">
-          No audit logs available for selected filters.
-        </Alert>
+        <EmptyState
+          title="Nema audit logova"
+          description="Nema sistemskih akcija za odabrane filtere."
+        />
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
           <Table size="small">
@@ -410,10 +462,10 @@ const AuditLogs = () => {
                       {formatDateTime(log.timestamp)}
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={log.severity || 'info'}
-                        size="small"
-                        color={severityColors[log.severity] || 'default'}
+                      <StatusChip
+                        value={log.severity || 'info'}
+                        maps={auditSeverityLabels}
+                        tone={severityColors[log.severity] || 'default'}
                       />
                     </TableCell>
                     <TableCell>
@@ -484,6 +536,26 @@ const AuditLogs = () => {
           </Table>
         </TableContainer>
       )}
+
+      {workspaceMeta.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ mt: 2 }}>
+          <Pagination count={workspaceMeta.totalPages} page={page} onChange={(event, value) => setPage(value)} />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            Stranica {page} / {workspaceMeta.totalPages}
+          </Typography>
+        </Stack>
+      )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Obrisati audit logove?"
+        description={`Ova akcija brise audit logove koji odgovaraju trenutnim filterima. Trenutno je ucitano ${logs.length} redova, a workspace total je ${workspaceMeta.total}.`}
+        confirmLabel="Obrisi logove"
+        confirmColor="error"
+        busy={deletingLogs}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={deleteCurrentLogs}
+      />
     </Box>
   );
 };

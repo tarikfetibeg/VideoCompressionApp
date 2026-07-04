@@ -39,7 +39,7 @@ videoQueue.on('error', (error) => {
 });
 
 async function enqueueVideoProcessing(videoId) {
-  const job = await videoQueue.add({ videoId: videoId.toString() });
+  const job = await videoQueue.add({ videoId: videoId.toString(), task: 'process-video' });
 
   await Video.findByIdAndUpdate(videoId, {
     processingStatus: 'queued',

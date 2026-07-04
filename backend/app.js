@@ -13,13 +13,30 @@ const mongoose = require('mongoose');
 const Video = require('./models/Video');
 const { ensureStorageFolders } = require('./utils/storagePaths');
 const { cleanupExpiredRawFiles } = require('./services/rawRetentionService');
+const { expireEditJobs } = require('./services/editJobLifecycleService');
+const { syncTaggedCorrectionRequests } = require('./services/correctionWorkflowService');
 const {
   enqueueVideoProcessing,
   isLocalVideoQueue,
   queueMode,
   videoQueue,
 } = require('./queues/videoQueue');
-const { processVideoJob } = require('./services/videoProcessingService');
+const { processQueuedVideoTask } = require('./services/videoQueueProcessor');
+const {
+  enqueueHlsPreview,
+  hlsQueue,
+  hlsQueueConcurrency,
+  isLocalHlsQueue,
+} = require('./queues/hlsQueue');
+const { processHlsQueueTask } = require('./services/hlsQueueProcessor');
+const { refreshStorageOverview } = require('./services/storageOverviewService');
+const {
+  enqueuePreviewMaintenance,
+  isLocalPreviewMaintenanceQueue,
+  previewMaintenanceConcurrency,
+  previewMaintenanceQueue,
+} = require('./queues/previewMaintenanceQueue');
+const { processPreviewMaintenanceTask } = require('./services/previewMaintenanceService');
 
 async function requeueLocalPendingVideos() {
   const pendingVideos = await Video.find({
@@ -43,22 +60,69 @@ async function requeueLocalPendingVideos() {
 // Define allowedOrigins only once
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
   : [];
 
 console.log('Allowed Origins:', allowedOrigins);
 
-// CORS middleware using the actual Origin header only
+function isSameHostOrigin(origin, host) {
+  if (!origin || !host) return false;
+
+  try {
+    return new URL(origin).host === host;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function requeueLocalPendingHls() {
+  const pendingVideos = await Video.find({
+    $or: [
+      { 'hlsPreview.status': { $in: ['queued', 'processing'] } },
+      { 'hlsPreview.buildStatus': { $in: ['queued', 'processing'] } },
+    ],
+  }).select('_id');
+
+  for (const video of pendingVideos) {
+    await enqueueHlsPreview(video._id, { force: true });
+  }
+
+  if (pendingVideos.length > 0) {
+    console.log(`Local HLS queue recovered ${pendingVideos.length} interrupted job(s).`);
+  }
+}
+
+async function requeueLocalPendingPreviewMaintenance() {
+  const pendingVideos = await Video.find({
+    'previewMaintenance.status': { $in: ['queued', 'processing'] },
+  }).select('_id previewMaintenance.assetTypes');
+  for (const video of pendingVideos) {
+    const assetTypes = video.previewMaintenance?.assetTypes || [];
+    if (assetTypes.length > 0) await enqueuePreviewMaintenance(video._id, assetTypes);
+  }
+  if (pendingVideos.length > 0) {
+    console.log(`Local preview queue recovered ${pendingVideos.length} interrupted job(s).`);
+  }
+}
+
+// CORS middleware keeps explicit dev origins, and also allows backend-served
+// same-host access such as http://station-host:5000 from another workstation.
 app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-    exposedHeaders: ['Content-Length', 'Content-Range', 'Content-Disposition'],
+  cors((req, callback) => {
+    const origin = req.get('Origin');
+    const host = req.get('Host');
+    const originAllowed = !origin || allowedOrigins.includes(origin) || isSameHostOrigin(origin, host);
+
+    if (!originAllowed) {
+      return callback(new Error('Not allowed by CORS'));
+    }
+
+    return callback(null, {
+      origin: origin || true,
+      credentials: true,
+      exposedHeaders: ['Content-Length', 'Content-Range', 'Content-Disposition'],
+    });
   })
 );
 
@@ -79,13 +143,18 @@ if (!mongoURI) {
 }
 
 mongoose
-  .connect(mongoURI)
+  .connect(mongoURI, {
+    autoIndex: process.env.MONGOOSE_AUTO_INDEX === 'true',
+  })
   .then(async () => {
     console.log('MongoDB connected successfully');
     console.log(`Video queue mode: ${queueMode}`);
+    refreshStorageOverview().promise.catch((error) => {
+      console.error('Initial storage overview scan failed:', error);
+    });
 
     if (isLocalVideoQueue) {
-      videoQueue.process(1, async (job) => processVideoJob(job.data, job));
+      videoQueue.process(1, async (job) => processQueuedVideoTask(job.data, job));
       videoQueue.on('completed', (job) => {
         console.log(`Local video job completed: ${job.id}`);
       });
@@ -95,6 +164,31 @@ mongoose
       console.warn('Local video processing is running inside the web process. Use Redis for production.');
       await requeueLocalPendingVideos();
     }
+    if (isLocalHlsQueue) {
+      hlsQueue.process(hlsQueueConcurrency, async (job) => processHlsQueueTask(job.data, job));
+      hlsQueue.on('completed', (job) => {
+        console.log(`Local HLS job completed: ${job.id}`);
+      });
+      hlsQueue.on('failed', (job, error) => {
+        console.error(`Local HLS job failed: ${job.id}`, error);
+      });
+      console.warn(`Local HLS processing is isolated from ingest; concurrency=${hlsQueueConcurrency}.`);
+      await requeueLocalPendingHls();
+    }
+    if (isLocalPreviewMaintenanceQueue) {
+      previewMaintenanceQueue.process(
+        previewMaintenanceConcurrency,
+        async (job) => processPreviewMaintenanceTask(job.data, job)
+      );
+      previewMaintenanceQueue.on('completed', (job) => {
+        console.log(`Local preview maintenance completed: ${job.id}`);
+      });
+      previewMaintenanceQueue.on('failed', (job, error) => {
+        console.error(`Local preview maintenance failed: ${job.id}`, error);
+      });
+      console.warn('Local preview maintenance is isolated from ingest; concurrency=1.');
+      await requeueLocalPendingPreviewMaintenance();
+    }
 
     try {
       const cleanupResult = await cleanupExpiredRawFiles();
@@ -102,6 +196,42 @@ mongoose
     } catch (cleanupError) {
       console.error('Raw retention cleanup error:', cleanupError);
     }
+
+    try {
+      const expiryResult = await expireEditJobs();
+      console.log('Edit job expiry result:', expiryResult);
+    } catch (expiryError) {
+      console.error('Edit job expiry error:', expiryError);
+    }
+
+    try {
+      const correctionResult = await syncTaggedCorrectionRequests({ limit: 100 });
+      console.log('Correction request sync result:', correctionResult);
+    } catch (correctionError) {
+      console.error('Correction request sync error:', correctionError);
+    }
+
+    setInterval(async () => {
+      try {
+        const expiryResult = await expireEditJobs();
+        if (expiryResult.expired > 0) {
+          console.log('Scheduled edit job expiry result:', expiryResult);
+        }
+      } catch (expiryError) {
+        console.error('Scheduled edit job expiry error:', expiryError);
+      }
+    }, 5 * 60 * 1000);
+
+    setInterval(async () => {
+      try {
+        const correctionResult = await syncTaggedCorrectionRequests({ limit: 100 });
+        if (correctionResult.createdOrLinked > 0 || correctionResult.skipped > 0) {
+          console.log('Scheduled correction request sync result:', correctionResult);
+        }
+      } catch (correctionError) {
+        console.error('Scheduled correction request sync error:', correctionError);
+      }
+    }, 5 * 60 * 1000);
 
     setInterval(async () => {
       try {
@@ -119,6 +249,10 @@ const adminRoutes = require('./routes/admin');
 const archiveRoutes = require('./routes/archive');
 const authRoutes = require('./routes/auth');
 const broadcastRoutes = require('./routes/broadcast');
+const correctionRoutes = require('./routes/corrections');
+const downloadRoutes = require('./routes/downloads');
+const mediaRoutes = require('./routes/media');
+const notificationRoutes = require('./routes/notifications');
 const editJobRoutes = require('./routes/editJobs');
 const feedbackRoutes = require('./routes/feedback');
 const uploadRoutes = require('./routes/upload');
@@ -128,6 +262,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/archive', archiveRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/broadcast', broadcastRoutes);
+app.use('/api/corrections', correctionRoutes);
+app.use('/api/downloads', downloadRoutes);
+app.use('/api/media', mediaRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/edit-jobs', editJobRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/upload', uploadRoutes);

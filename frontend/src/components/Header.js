@@ -48,7 +48,7 @@ const Header = () => {
                 Reporter
               </Button>
             )}
-            {['Editor', 'VideoEditor', 'Producer', 'Admin'].includes(user?.role) && (
+            {['Editor', 'VideoEditor', 'Admin'].includes(user?.role) && (
               <Button size="small" color="inherit" component={Link} to="/editor-dashboard" startIcon={<AssignmentTurnedInIcon />}>
                 Production
               </Button>
@@ -58,7 +58,7 @@ const Header = () => {
                 Producer
               </Button>
             )}
-            {['Realizator', 'Producer', 'Admin'].includes(user?.role) && (
+            {['Realizator', 'Admin'].includes(user?.role) && (
               <Button size="small" color="inherit" component={Link} to="/realizator-dashboard" startIcon={<TvIcon />}>
                 Realizator
               </Button>

@@ -23,5 +23,6 @@ test('renders application shell', () => {
     </UserProvider>
   );
 
-  expect(screen.getByText(/TV Station App/i)).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /Prijava/i })).toBeInTheDocument();
+  expect(screen.getByText(/Za novi nalog kontaktiraj administratora/i)).toBeInTheDocument();
 });

@@ -7,7 +7,7 @@ dotenvFlow.config({
 
 const mongoose = require('mongoose');
 const { isLocalVideoQueue, videoQueue } = require('../queues/videoQueue');
-const { processVideoJob } = require('../services/videoProcessingService');
+const { processQueuedVideoTask } = require('../services/videoQueueProcessor');
 
 if (isLocalVideoQueue) {
   console.log('PROCESSING_QUEUE=local: video processing runs inside the web process. Worker is not needed.');
@@ -22,7 +22,9 @@ if (!mongoURI) {
 }
 
 mongoose
-  .connect(mongoURI)
+  .connect(mongoURI, {
+    autoIndex: process.env.MONGOOSE_AUTO_INDEX === 'true',
+  })
   .then(() => {
     console.log('Video worker connected to MongoDB');
   })
@@ -32,7 +34,7 @@ mongoose
   });
 
 videoQueue.process(1, async (job) => {
-  return processVideoJob(job.data, job);
+  return processQueuedVideoTask(job.data, job);
 });
 
 videoQueue.on('completed', (job) => {

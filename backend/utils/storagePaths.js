@@ -14,6 +14,9 @@ const paths = {
   compressed: path.join(STORAGE_ROOT, 'compressed'),
   previews: path.join(STORAGE_ROOT, 'previews'),
   thumbnails: path.join(STORAGE_ROOT, 'thumbnails'),
+  scrubPreviews: path.join(STORAGE_ROOT, 'scrub-previews'),
+  hlsPreviews: path.join(STORAGE_ROOT, 'hls-previews'),
+  adminMetrics: path.join(STORAGE_ROOT, 'admin-metrics'),
   temp: path.join(STORAGE_ROOT, 'temp'),
   final: path.join(STORAGE_ROOT, 'final'),
 };

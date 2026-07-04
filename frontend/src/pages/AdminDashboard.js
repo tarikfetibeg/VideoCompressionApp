@@ -1,25 +1,15 @@
-// src/pages/AdminDashboard.js
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  AppBar,
   Box,
   Button,
   Chip,
-  Divider,
-  Drawer,
-  Grid,
-  List,
-  ListItemButton,
-  ListItemText,
-  Paper,
   Stack,
-  Toolbar,
+  Tab,
+  Tabs,
   Typography,
-  useMediaQuery,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { useTheme } from '@mui/material/styles';
 
 import axiosInstance from '../axiosConfig';
 import UserManagement from '../components/admin/UserManagement';
@@ -29,16 +19,31 @@ import AuditLogs from '../components/admin/AuditLogs';
 import BroadcastProgramManagement from '../components/admin/BroadcastProgramManagement';
 import FeedbackInbox from '../components/admin/FeedbackInbox';
 import StorageMaintenance from '../components/admin/StorageMaintenance';
+import EditJobManagement from '../components/admin/EditJobManagement';
+import {
+  FilterBar,
+  KpiStrip,
+  WorkspaceHeader,
+} from '../components/common/WorkspaceChrome';
+import { formatNumberBs } from '../utils/uiLabels';
 
-const drawerWidth = 280;
+const formatBytes = (bytes) => {
+  const value = Number(bytes || 0);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
 
 const AdminDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
   const [overviewMetrics, setOverviewMetrics] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState('');
-  const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
 
   const fetchOverviewMetrics = useCallback(() => {
     setOverviewLoading(true);
@@ -58,161 +63,112 @@ const AdminDashboard = () => {
     fetchOverviewMetrics();
   }, [fetchOverviewMetrics]);
 
-  const menuItems = useMemo(
+  const sections = useMemo(
     () => [
-      {
-        id: 'overview',
-        label: 'Overview',
-        description: 'System summary',
-      },
-      {
-        id: 'users',
-        label: 'User Management',
-        description: 'Roles and accounts',
-      },
-      {
-        id: 'videos',
-        label: 'Video Management',
-        description: 'Browse, download, delete',
-      },
-      {
-        id: 'ffmpeg',
-        label: 'FFmpeg & Storage',
-        description: 'Codec, bitrate, raw retention',
-      },
-      {
-        id: 'maintenance',
-        label: 'Maintenance',
-        description: 'OFF and raw manifests',
-      },
-      {
-        id: 'broadcast',
-        label: 'Programs',
-        description: 'Shows and content types',
-      },
-      {
-        id: 'feedback',
-        label: 'Feedback Inbox',
-        description: 'Bug reports and suggestions',
-      },
-      {
-        id: 'logs',
-        label: 'Audit Logs',
-        description: 'System activity',
-      },
+      { id: 'overview', label: 'Overview', description: 'Sistem, rizici i dnevne admin metrike' },
+      { id: 'users', label: 'Korisnici', description: 'Nalozi, role i reset lozinki' },
+      { id: 'videos', label: 'Video', description: 'Materijali, owneri, download i delete' },
+      { id: 'jobs', label: 'Jobs', description: 'Aktivni jobovi, SLA, rokovi, montažeri i lifecycle' },
+      { id: 'ffmpeg', label: 'FFmpeg', description: 'Codec, bitrate i raw retention' },
+      { id: 'maintenance', label: 'Maintenance', description: 'OFF, raw manifesti i servisni fajlovi' },
+      { id: 'broadcast', label: 'Programi', description: 'Emisije i content type katalog' },
+      { id: 'feedback', label: 'Feedback', description: 'Prijave, trijaza i odgovori korisnicima' },
+      { id: 'logs', label: 'Audit', description: 'Osjetljive promjene i sistemski logovi' },
     ],
     []
   );
 
-  const currentSection = menuItems.find((item) => item.id === activeSection);
+  const currentSection = sections.find((item) => item.id === activeSection) || sections[0];
 
-  const metricCards = [
+  const metricItems = [
     {
       label: 'Failed processing',
-      value: overviewMetrics?.failedProcessing ?? 0,
-      note: 'Klipovi koji trebaju intervenciju ili retry.',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.failedProcessing),
+      note: 'Klipovi za retry ili intervenciju',
       color: Number(overviewMetrics?.failedProcessing || 0) > 0 ? 'error.main' : 'success.main',
     },
     {
       label: 'Open feedback',
-      value: overviewMetrics?.pendingFeedback ?? 0,
-      note: 'Nove i aktivne prijave korisnika.',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.pendingFeedback),
+      note: 'Novo i u pregledu',
       color: Number(overviewMetrics?.pendingFeedback || 0) > 0 ? 'warning.main' : 'success.main',
     },
     {
       label: 'Critical logs',
-      value: overviewMetrics?.criticalLogs ?? 0,
-      note: 'Brisanja, cleanup akcije i osjetljive promjene.',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.criticalLogs),
+      note: 'Delete, cleanup, reset, replace',
       color: Number(overviewMetrics?.criticalLogs || 0) > 0 ? 'warning.main' : 'text.primary',
     },
     {
       label: 'Raw orphans',
-      value: overviewMetrics?.rawOrphans ?? 0,
-      note: 'Raw fajlovi na disku bez jasnog DB zapisa.',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.rawOrphans),
+      note: 'Disk fajlovi bez jasnog DB zapisa',
       color: Number(overviewMetrics?.rawOrphans || 0) > 0 ? 'warning.main' : 'success.main',
     },
     {
-      label: 'Raw manifest orphans',
-      value: overviewMetrics?.rawManifestOrphans ?? 0,
-      note: 'Manifesti za ciscenje iz maintenance taba.',
+      label: 'Manifest orphans',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.rawManifestOrphans),
+      note: 'Za maintenance cleanup',
       color: Number(overviewMetrics?.rawManifestOrphans || 0) > 0 ? 'warning.main' : 'success.main',
     },
     {
-      label: 'Active users',
-      value: overviewMetrics?.activeUsers ?? 0,
-      note: 'Registrovani korisnici sistema.',
-      color: 'text.primary',
+      label: 'Korisnici',
+      value: overviewLoading && !overviewMetrics ? '...' : formatNumberBs(overviewMetrics?.activeUsers),
+      note: 'Registrovani nalozi',
     },
     {
-      label: 'Jobs with updates',
-      value: overviewMetrics?.jobsWithUpdates ?? 0,
-      note: 'Jobovi koji imaju change log izmjena.',
-      color: 'text.primary',
+      label: 'Slobodan disk',
+      value: overviewLoading && !overviewMetrics ? '...' : formatBytes(overviewMetrics?.diskFreeBytes),
+      note: `${Number(overviewMetrics?.diskFreePercent || 0).toFixed(1)}% fizičkog volumena`,
+      color: overviewMetrics?.diskStatus === 'critical'
+        ? 'error.main'
+        : overviewMetrics?.diskStatus === 'warning'
+          ? 'warning.main'
+          : 'success.main',
     },
     {
-      label: 'Shows after download',
-      value: overviewMetrics?.showsChangedAfterDownload ?? 0,
-      note: 'Emisije sa download state pracenjem.',
-      color: 'text.primary',
+      label: 'Media storage',
+      value: overviewLoading && !overviewMetrics ? '...' : formatBytes(overviewMetrics?.mediaStorageBytes),
+      note: 'Masteri, raw i svi preview formati',
     },
   ];
 
   const renderOverview = () => (
     <Box>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        spacing={2}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>
-            Admin Overview
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Operativni pregled korisnika, processing gresaka, feedbacka, logova i storage stanja.
-          </Typography>
-        </Box>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={fetchOverviewMetrics}
-          disabled={overviewLoading}
-        >
-          Refresh
-        </Button>
-      </Stack>
-
       {overviewError && <Alert severity="error" sx={{ mb: 2 }}>{overviewError}</Alert>}
+      {overviewMetrics?.diskStatus === 'critical' && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Slobodan prostor je ispod critical praga. Upload nije blokiran; potrebno je provjeriti Storage Maintenance.
+        </Alert>
+      )}
+      {overviewMetrics?.diskStatus === 'warning' && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Slobodan prostor je ispod warning praga.
+        </Alert>
+      )}
 
-      <Grid container spacing={2}>
-        {metricCards.map((card) => (
-          <Grid item xs={12} sm={6} lg={3} key={card.label}>
-            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2, height: '100%' }}>
-              <Typography variant="overline" color="text.secondary">
-                {card.label}
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: card.color }}>
-                {overviewLoading && overviewMetrics === null ? '...' : card.value}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {card.note}
-              </Typography>
-            </Paper>
-          </Grid>
-        ))}
-      </Grid>
+      <KpiStrip items={metricItems} />
 
-      <Paper variant="outlined" sx={{ p: 3, mt: 3, borderRadius: 2 }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
-          Brzi admin tok rada
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Kreni od failed processing i open feedback metrika, zatim koristi Maintenance za OFF/raw
-          servisne fajlove i Audit Logs za provjeru ko je izvrsio osjetljive promjene.
-        </Typography>
-      </Paper>
+      <FilterBar
+        title="Admin tok rada"
+        summary="Kreni od gresaka u processingu, otvorenog feedbacka i maintenance signala; audit koristi za provjeru osjetljivih promjena."
+        actions={(
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={fetchOverviewMetrics}
+            disabled={overviewLoading}
+          >
+            Osvjezi metrike
+          </Button>
+        )}
+      >
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Chip label={`Jobs sa izmjenama: ${formatNumberBs(overviewMetrics?.jobsWithUpdates)}`} variant="outlined" />
+          <Chip label={`Rundown poslije downloada: ${formatNumberBs(overviewMetrics?.showsChangedAfterDownload)}`} variant="outlined" />
+          <Chip label="Destructive akcije uvijek idu kroz potvrdu" color="warning" variant="outlined" />
+        </Stack>
+      </FilterBar>
     </Box>
   );
 
@@ -224,6 +180,8 @@ const AdminDashboard = () => {
         return <UserManagement />;
       case 'videos':
         return <VideoManagement />;
+      case 'jobs':
+        return <EditJobManagement />;
       case 'ffmpeg':
         return <FfmpegSettings />;
       case 'maintenance':
@@ -240,122 +198,45 @@ const AdminDashboard = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      <Drawer
-        variant={isSmallScreen ? 'temporary' : 'permanent'}
-        open={!isSmallScreen}
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          display: { xs: 'none', md: 'block' },
-          '& .MuiDrawer-paper': {
-            width: drawerWidth,
-            boxSizing: 'border-box',
-            borderRight: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-          },
-        }}
-      >
-        <Toolbar>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              AVC Admin
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              System control panel
-            </Typography>
-          </Box>
-        </Toolbar>
+    <Box>
+      <WorkspaceHeader
+        eyebrow="Admin"
+        title="Sistemska kontrola"
+        subtitle={currentSection.description}
+        chips={[
+          { label: 'Modul', value: currentSection.label },
+          { label: 'Status', value: overviewLoading ? 'Osvjezavanje' : 'Spreman' },
+        ]}
+        actions={(
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchOverviewMetrics} disabled={overviewLoading}>
+            Osvjezi overview
+          </Button>
+        )}
+      />
 
-        <Divider />
-
-        <Box sx={{ p: 2 }}>
-          <Chip
-            label="Admin mode"
-            color="primary"
-            size="small"
-            sx={{ mb: 2, fontWeight: 600 }}
-          />
-
-          <List disablePadding>
-            {menuItems.map((item) => (
-              <ListItemButton
-                key={item.id}
-                selected={activeSection === item.id}
-                onClick={() => setActiveSection(item.id)}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.75,
-                  alignItems: 'flex-start',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '& .MuiListItemText-secondary': {
-                      color: 'primary.contrastText',
-                      opacity: 0.85,
-                    },
-                  },
-                }}
-              >
-                <ListItemText
-                  primary={item.label}
-                  secondary={item.description}
-                  primaryTypographyProps={{ fontWeight: 700 }}
-                  secondaryTypographyProps={{ fontSize: 12 }}
-                />
-              </ListItemButton>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
-
-      <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
-        <AppBar
-          position="sticky"
-          color="default"
-          elevation={0}
-          sx={{
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-          }}
+      <FilterBar title="Admin moduli" summary="Kompaktan pristup bez dodatnog bocnog menija.">
+        <Tabs
+          value={activeSection}
+          onChange={(event, value) => setActiveSection(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ minHeight: 44 }}
         >
-          <Toolbar>
-            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-              <Typography variant="h6" noWrap sx={{ fontWeight: 800 }}>
-                {currentSection?.label || 'Admin Dashboard'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {currentSection?.description || 'System management'}
-              </Typography>
-            </Box>
-          </Toolbar>
-        </AppBar>
+          {sections.map((section) => (
+            <Tab
+              key={section.id}
+              value={section.id}
+              label={section.label}
+              sx={{ minHeight: 44, textTransform: 'none', fontWeight: 800 }}
+            />
+          ))}
+        </Tabs>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          {currentSection.description}
+        </Typography>
+      </FilterBar>
 
-        <Box sx={{ p: { xs: 2, md: 4 } }}>
-          {isSmallScreen && (
-            <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-                Sections
-              </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {menuItems.map((item) => (
-                  <Chip
-                    key={item.id}
-                    label={item.label}
-                    clickable
-                    color={activeSection === item.id ? 'primary' : 'default'}
-                    onClick={() => setActiveSection(item.id)}
-                  />
-                ))}
-              </Stack>
-            </Paper>
-          )}
-
-          {renderSection()}
-        </Box>
-      </Box>
+      {renderSection()}
     </Box>
   );
 };

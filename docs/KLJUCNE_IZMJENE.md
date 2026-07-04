@@ -2,6 +2,180 @@
 
 Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje uticu na svakodnevno koristenje u TV produkciji.
 
+## 2026-06-28
+
+### Trajni correction queue za oznaku Potrebna ispravka
+
+- `Video.correctionStatus: needs_correction` je ulazni signal koji mora imati
+  otvoren `CorrectionRequest`.
+- Correction zahtjev sada podrzava porijeklo `realization`, `archive`,
+  `video_status` ili `admin`; show day vise nije obavezan za arhivske
+  prijave.
+- Startup sync i `npm run corrections:backfill` povezuju stare klipove koji
+  imaju oznaku, ali nemaju correction zahtjev.
+- Video cuva `activeCorrectionRequest`, pa Arhiva vidi da li je prijava
+  poslana, u montazi ili spremna za potvrdu.
+- Production > Ispravke po defaultu prikazuje sve otvorene prijave svim
+  montazerima. Nedodijeljena ispravka moze se preuzeti, a ispravka
+  dodijeljena drugom montazeru ostaje vidljiva bez nedozvoljenih akcija.
+- Arhivista moze poslati oznaceni klip u montazu ili povuci pogresnu oznaku
+  uz obavezno obrazlozenje. Ispravka koja je vec `in_edit` ili
+  `ready_for_review` ne moze se povuci bez Admin ovlasti.
+- Zavrseni correction final biljezi `correctedBy`, `correctedAt` i
+  `correctedVideo`; potvrdu zatvaranja zasebno biljeze `resolvedBy`,
+  `resolvedAt` i `resolutionNote`.
+- Audit Log biljezi slanje u produkciju, preuzimanje, promjene statusa,
+  finalni upload, potvrdu i povlacenje oznake.
+- Otvoreni klip ostaje u correction tabu sve dok zahtjev nije `resolved` ili
+  `dismissed`; zatvaranje cisti aktivnu oznaku, ali ne brise historiju.
+- Nakon backupa produkcijski rollout pokrece
+  `npm run corrections:backfill`, zatim `npm run indexes:create`.
+
+### Jednostavniji Reporter workflow, preview sirovina i job notifikacije
+
+- Reporter pocetna stranica sada objedinjuje ranije tabove `Priprema` i
+  `Jobs` u jedan `Radni prostor`.
+- Aktivni jobovi su prvi sadrzaj na ekranu. Jobovi koji imaju neprocitanu
+  izmjenu, zahtjev za dopunu, blizak rok ili istekao rok sortiraju se ispred
+  ostalih.
+- Svaki aktivni job ima direktne akcije `Dodaj klipove`, `Komentari` i
+  `Puni pregled`. Brzi bocni panel prikazuje status, rok, montazera i cijeli
+  razgovor bez napustanja Reporter pocetne stranice.
+- Naknadni inserti vise ne zahtijevaju povratak u event i izbor nacina
+  slanja. Dijalog `Dodaj klipove` nudi `Sa servera` i `Sa kompjutera`.
+- Server materijal objedinjuje reporterove klipove i odobrenu TV arhivu,
+  uz pretragu, kategoriju, thumbnail/scrub preview i Video Details link.
+- Novi prilog ostaje funkcionalno isti, ali je u sklopivoj sekciji.
+  Napredna polja za program, rok, prioritet, brief, OFF i instrukciju su pod
+  `Dodatne opcije`.
+- Edit Job Details sada prikazuje lazy thumbnail i scrub preview uz svaku
+  sirovinu za montazu, bez dodatne siroke kolone i bez eager media downloada.
+- Uveden je `Notification` model za job komentare. Notifikacija sadrzi
+  primaoca, autora, job, komentar, kratki preview, read stanje i TTL od 180
+  dana. Brisanje notifikacije nikada ne brise komentar iz joba.
+- Reporterov komentar obavjestava dodijeljenog montazera; komentar montazera
+  obavjestava reportera; Producent/Admin obavjestava oba ucesnika. Autor je
+  uvijek iskljucen.
+- AppShell ima globalno zvono, unread broj, listu posljednjih notifikacija,
+  `Oznaci sve kao procitano` i Snackbar za novu poruku.
+- Polling radi svakih 30 sekundi samo dok je browser tab vidljiv.
+- Otvaranje joba oznacava njegove notifikacije i job change log procitanim.
+- Novi endpointi:
+  `GET /api/notifications/workspace`,
+  `PATCH /api/notifications/:notificationId/read`,
+  `PATCH /api/notifications/read-job/:jobId` i
+  `PATCH /api/notifications/read-all`.
+- Produkcijski rollout nakon backupa baze treba pokrenuti
+  `npm run indexes:create` kako bi se kontrolisano kreirali notification
+  recipient, unique i TTL indexi. Aplikacija se ne oslanja na auto-index pri
+  svakom startu.
+
+## 2026-06-17
+
+### Globalni download manager i sigurni download ticketi
+
+- Uveden je `DownloadTicket` model sa hashiranim tokenom, korisnikom koji je kreirao download, tipom downloada, payloadom, statusom i TTL rokom vazenja.
+- Novi endpointi su `POST /api/downloads/tickets`, `GET /api/downloads/tickets/:token` i `GET /api/downloads/tickets/:ticketId/status`.
+- Podrzani download tipovi su `video-single`, `video-bulk`, `edit-package`, `edit-off-file` i `air-package`.
+- Aplikacija sada prvo kreira kratkotrajni sigurni link, zatim ga predaje browser download manageru kroz skriveni iframe. Korisnik moze nastaviti raditi dok browser/server skidaju fajl.
+- Globalni `Download manager` panel prikazuje pripremu, otvaranje, server streaming, zavrsetak, prekid, istek i greske. AppShell status bar odvojeno prikazuje upload i download statuse.
+- `beforeunload` upozorenje se aktivira dok je ticket u pripremi/otvaranju. Nakon browser handoff-a fizicko skidanje preuzima browserov download manager.
+- Stari download endpointi ostaju kompatibilni, ali su video, edit package, OFF i air package download tokovi prebaceni na zajednicki backend download servis.
+- CORS sada automatski dozvoljava same-host origin kada se aplikacija koristi preko backend-serviranog URL-a, npr. `http://host:5000`, dok `ALLOWED_ORIGINS` ostaje za odvojeni dev/frontend scenario.
+- Edit Job Details / `Iz materijala/arhive` sada prikazuje thumbnail/scrub preview za klipove koji se dodaju u job i akciju `Otvori detalje` prema Video Details.
+
+## 2026-06-16
+
+### Download, TV Archive i naknadne dopune joba
+
+- Download headeri za edit job ZIP, air package ZIP, bulk video ZIP, pojedinacni video download i OFF audio sada koriste siguran `Content-Disposition` format sa ASCII fallback nazivom i UTF-8 `filename*` vrijednoscu.
+- Ovo uklanja `ERR_INVALID_CHAR` gresku kada job, emisija ili fajl imaju BHS dijakriticke znakove, navodnike ili druge znakove koji nisu dozvoljeni u klasicnom HTTP header filename polju.
+- Production Desk / Materijal bulk download sada prikazuje stanje `Pripremam ZIP...`, indikator skidanja i primljene byteove dok server priprema paket.
+- Reporter `TV Archive` sada koristi isti kriterij kao Producer biblioteka: `edited + completed`, `approved_for_air/aired/archived` i dodatno final approval, QC passed ili aired/archived signal. Arhiva vise nije ogranicena samo na vec emitovane klipove.
+- Novi backend helper centralizuje `Final/QC odobreno` archive eligibility kako Reporter TV Archive i Producer biblioteka ne bi vise divergirali.
+- Reporter Event Workspace sada ima rezim `Dopuni postojeci job`, pa reporter moze naknadno dodati klipove/inserte iz selektovanog eventa u vec otvoreni edit job.
+- Edit Job Details sada ima jasne tabove za dopunu: `Iz materijala/arhive` i `Sa kompjutera`.
+- Novi endpoint `POST /api/edit-jobs/:jobId/material-upload` prima video fajlove, kreira `Video` zapise, stavlja ih u processing queue i odmah ih dodaje kao nove segmente joba.
+- Montazeru se novododani segmenti prikazuju kroz postojece `missing/new files` signale jer novi segment ID jos nije u njegovom download state-u.
+- Video Details preview player sada koristi stabilan 16:9 stage, pa 16:9 sadrzaj nema dodatne UI black bars od neodgovarajuceg player containera.
+
+## 2026-06-15
+
+### UI/UX operativni redizajn - faza 1
+
+- Uveden je novi globalni `AppShell` za role-aware navigaciju kroz Reporter, Produkcija, Producent, Realizator, Arhiva, Admin i Feedback radne prostore.
+- Header vise nije samo lista dugmadi; aplikacija sada ima lijevu/kompaktnu navigaciju, aktivni radni kontekst i globalni upload/status bar.
+- Uveden je centralni MUI theme sa mirnijom produkcijskom paletom, manjim radiusom, konzistentnijom tipografijom, tabelama i dugmadima.
+- Dodan je zajednicki UI sloj: `WorkspaceHeader`, `KpiStrip`, `FilterBar`, `ActionToolbar`, `EmptyState`, `ConfirmDialog` i `StatusChip`.
+- Statusi za processing, QC, broadcast, jobove, priority i role dobijaju centralne BHS label mape, umjesto da svaki ekran rucno formatira statuse.
+- Production Desk sada koristi paginirani workspace endpoint za Material tab, uz summary metrike sa servera i debounced filtere.
+- Edit Jobs board sada koristi `GET /api/edit-jobs/workspace`, dobija search/status filtere, summary metrike i pagination.
+- Producer biblioteka je prebacena na `GET /api/broadcast/library-search`, sto je priprema za vece TV arhive bez ucitavanja kompletne biblioteke odjednom.
+- Reporter, Producer i Realizator dashboardi dobijaju novi radni header sa jasnijim opisom trenutnog workflowa i status chipovima.
+
+### Novi workspace API endpointi
+
+- `GET /api/videos/workspace` vraca `items`, `total`, `page`, `limit`, `totalPages` i `summary` za produkcijske video liste.
+- `GET /api/edit-jobs/workspace` vraca paginirane edit jobove i summary za nove jobove, jobove u montazi, dopune, spremne jobove, neprocitane izmjene i nove/nedostajuce fajlove.
+- `GET /api/broadcast/library-search` vraca paginiranu Producer biblioteku odobrenih/finalizovanih materijala.
+- Postojeci endpointi ostaju aktivni radi kompatibilnosti sa starim ekranima i postepenom migracijom.
+
+### Stack odluke
+
+- Redizajn ostaje na React + MUI stacku u ovoj fazi.
+- Nisu uvedeni Vite, TanStack Query, TanStack Virtual ili React Hook Form, jer bi to bila veca stack promjena koja zahtijeva posebnu konsultaciju.
+- Detalji su dokumentovani u `docs/STACK_ODLUKE_UI_UX.md`.
+
+### UI/UX operativni redizajn - faza 2
+
+- Archivist Desk je prebacen na paginirani workspace prikaz sa `WorkspaceHeader`, `KpiStrip`, `FilterBar`, centralnim status chipovima i BHS labelama.
+- Arhiva sada ima jasniji tok za review queue, sve materijale i duplikate; metadata, tagovi, content type, review status i brisanje duplikata ostaju dostupni.
+- Admin Dashboard vise nema drugi bocni meni unutar aplikacije; admin moduli su dostupni kroz kompaktan tab/module switcher.
+- Admin Video Management sada koristi `GET /api/videos/workspace` umjesto ucitavanja kompletne video liste, a thumbnail blobovi se ucitavaju tek kada kartica udje u viewport.
+- User Management, Feedback Inbox i Audit Logs su uskladjeni sa shared UI komponentama, BHS labelama, KPI trakama i paginacijom gdje lista moze rasti.
+- Feedback korisnicka stranica sada koristi "nova prijava + moje prijave" workflow preko paginiranog feedback workspace endpointa.
+- Video Details i Edit Job Details dobijaju zajednicki status header za brze skeniranje processing/QC/broadcast/job signala.
+- Login i 404 stranice su vizuelno uskladjene sa operativnim UI sistemom.
+- Reporter archive `VideoList` sada koristi `/api/videos/workspace` i lazy thumbnail loading.
+
+### Novi workspace API endpointi - faza 2
+
+- `GET /api/archive/videos/workspace` vraca paginirane arhivske materijale sa `summary` i `facets`.
+- `GET /api/archive/duplicates/workspace` vraca paginirane grupe kandidata za duplikate.
+- `GET /api/feedback/workspace` vraca paginirani feedback inbox; ne-admin korisnici vide samo svoje prijave i bez admin-only polja.
+- `GET /api/admin/audit-logs/workspace` vraca paginirane audit logove, summary po severity statusu i kompatibilne filtere.
+- Stari endpointi ostaju aktivni radi kompatibilnosti i export scenarija.
+
+### Dinamicni scrub preview slicica
+
+- Producer, Realizator i Archivist prikazi sada mogu koristiti hover/scrub preview preko vise JPG frameova po klipu.
+- Frameovi se cuvaju u `storage/scrub-previews/<videoId>/`, odvojeno od statickog thumbnaila i MP4 preview fajla.
+- Novi video processing nakon thumbnaila pokusava napraviti scrub preview; ako generisanje ne uspije, glavni processing ne pada nego se greska upisuje u `scrubPreview.error`.
+- Dodani su endpointi `GET /api/videos/scrub-preview/:videoId/manifest` i `GET /api/videos/scrub-preview/:videoId/frame/:frameIndex`.
+- Admin / Storage Maintenance dobija tab `Preview slicice`, summary stanja i akciju `Build missing` za klipove koji nemaju scrub preview.
+- Brisanje videa i brisanje arhivskog duplikata ciste i pripadajuci `scrub-previews` folder.
+
+### Indexiranje i SearchText optimizacija
+
+- Dodani su ciljani MongoDB/Mongoose indexi za `Video`, `EditJob`, `Feedback` i `AuditLog`, fokusirani na postojece workspace filtere, sortove i paginaciju.
+- `Video`, `EditJob` i `Feedback` imaju novo tehnicko polje `searchText`, koje se popunjava pri `save()` i ne vraca se klijentu.
+- Workspace pretrage za video liste, arhivu, Producer biblioteku, edit jobove i feedback sada koriste MongoDB text search nad `searchText`, umjesto vise neindeksiranih regex uslova.
+- Frontend vise ne salje search parametar dok unos nema najmanje 2 karaktera; Producer TV archive search dobija debounce.
+- Dodane su komande `npm run searchtext:backfill`, `npm run indexes:create` i `npm run indexes:explain`.
+- Tehnicka odluka i deployment proces su dokumentovani u `docs/INDEXIRANJE_I_PERFORMANSE.md` i `docs/INDEXIRANJE_RUNBOOK.md`.
+
+### Preview i role korekcije
+
+- Dodan je dokument `docs/TV_DISTRIBUCIJA_I_PREDNOSTI.md`, koji opisuje kako aplikacija moze zamijeniti klasicnu distribuciju video materijala preko mrezenih foldera, servera i rucnog kopiranja u TV kuci.
+- Production Desk / Materijal tabela sada prikazuje thumbnail/scrub preview direktno u koloni `Materijal`, bez otvaranja detalja.
+- Production Desk / Materijal filteri sada imaju `Kategorija` filter preko content type-a, npr. `Prilog`, `Promo` ili `Insert`, da montazeri brze nadju trazeni tip materijala.
+- Editor/VideoEditor/Admin sada iz Production Desk / Materijal mogu poslati finalizovan klip arhivi na provjeru kategorije; video dobija `archiveReviewStatus: needs_metadata` i ulazi u Archive Desk review queue.
+- Materijal i arhivski duplikat prikazi vise ne ispisuju isti filename kao sekundarni tekst kada je jednak glavnom naslovu.
+- Category filteri za TV Archive, My Archive, Archive Desk, Admin Video Management i Producer biblioteku sada prepoznaju i legacy `finalCategory` zapise bez `contentType` ID-a; `Prilog` ukljucuje i stare `video-report` klipove.
+- Dodana je komanda `npm run contenttypes:backfill` koja popunjava `contentType` na starim video zapisima i kanonizuje `video-report` u `prilog`.
+- Reporter `My Archive` i `TV Archive` kartice koriste isti `VideoThumbnailPreview` kao Producer, Realizator i Archivist workflowi.
+- Producer rola vise nema pristup Production Desk navigaciji niti `/editor-dashboard` ruti; dnevni rad producenta ostaje u Producer Desk-u, uz Video Details za pregled klipova.
+
 ## 2026-06-09
 
 ### Raw recovery ownership
@@ -309,3 +483,58 @@ Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje ut
 - Workflow filter u `Archive Desk` vise nema `Raw ingest`; fokus je na finalnom materijalu, archive-ready materijalu, aired/archived materijalu i klipovima sa potrebnom ispravkom.
 - Dodano je sortiranje arhivskog materijala po upload datumu, imenu, kategoriji, tagovima, reporteru ili editoru, uz izbor smjera sortiranja.
 - Zbunjujuce `Metadata` dugme u Actions koloni je preimenovano u `Needs metadata`; njegova uloga je oznacavanje klipa kojem trebaju bolji metapodaci, dok se stvarno editovanje metapodataka radi kroz `Video Details -> Edit metadata`.
+
+## Partial search, Job lifecycle, ispravke i HLS streaming
+
+- Video arhiva koristi `searchPrefixes`, pa `in`, `ins` i `inse` nalaze `insert`.
+- Prefix search je neosjetljiv na BHS dijakritiku i koristi MongoDB multikey index.
+- Edit Job sada odvaja montazni `status` od `workspaceState` lifecyclea.
+- Kategorije sadrzaja imaju SLA rok, grace period i opciju automatskog isteka.
+- Istekli jobovi se ne brisu; prelaze iz aktivne produkcije u Historiju.
+- Admin dobija Jobs modul za status, lifecycle, montazera, kategoriju, rok,
+  prioritet, reaktivaciju i sigurno brisanje.
+- Realizatorova prijava greske biljezi playhead i kreira `CorrectionRequest`.
+- Producent vidi correction queue, a poznati montazer automatski dobija urgentni
+  correction job.
+- Video Details vise ne pravi puni Axios Blob. Koristi ticketovani HLS
+  720p/480p, a MP4 `206 Partial Content` ostaje fallback.
+- Admin Storage Maintenance dobija HLS pregled, zauzeti prostor, Build missing
+  i retry failed akcije.
+- Detaljan rollout i rollback su u `docs/HLS_STREAMING_I_JOB_SLA.md`.
+- Zavrsna provjera: backend syntax 39/39, frontend build PASS i frontend
+  testovi 12/12 PASS.
+
+## NVENC HLS i uslovna MP4 preview retencija
+
+- HLS obrada je izdvojena iz ingest queuea u poseban `hlsQueue` i HLS worker.
+- Jedan FFmpeg proces sada dekodira izvor jednom i paralelno pravi 720p/480p
+  rendicije.
+- Admin moze nakon stvarnog capability probea ukljuciti `h264_nvenc`, preset
+  `p5`, uz automatski `libx264 veryfast` fallback za GPU/runtime greske.
+- HLS rebuild koristi versioned privremeni folder i aktivira novu verziju tek
+  nakon validacije playlista i segmenata.
+- Novi browser-kompatibilni H.264/yuv420p MP4 sa AAC/MP3 ili bez audija ne
+  dobija redundantni MP4 preview kada je politika `when_required`.
+- MOV, MXF, HEVC, 10-bit i nepodrzan audio zadrzavaju H.264/AAC MP4 preview.
+- Admin `MP4 preview cleanup` ima FFprobe dry-run, ponovnu provjeru pri
+  brisanju, batch limit i Audit Log; master/final fajl se nikada ne brise.
+- Media ticket cache smanjuje MongoDB read/write pozive za HLS segmente.
+- Dodat je `npm run hls:benchmark -- --input=<klip>`.
+- Tehnicki runbook i reference:
+  `docs/NVENC_I_PREVIEW_RETENCIJA.md`.
+
+## Admin storage pregled i media profili
+
+- Admin Overview prikazuje slobodan disk, disk status i ukupni media storage.
+- Storage Maintenance dobija Kapacitet pregled sa fizickim volumenom,
+  media/operativnom/aplikacijskom raspodjelom i odvojenim MongoDB statistikama.
+- Storage scan radi u pozadini, kesira se 10 minuta i cuva posljednji snapshot.
+- Warning/critical pragovi su podesivi, ali nikada automatski ne blokiraju
+  produkcijski upload.
+- MP4, HLS, thumbnail i scrub profili imaju validirane postavke i nezavisne
+  profile version brojeve.
+- Postojeci previewi su legacy/outdated dok Admin rucno ne pokrene rebuild.
+- MP4/thumbnail/scrub rebuild koristi zaseban maintenance queue; HLS ostaje u
+  svom queueu, a ingest nastavlja nezavisno.
+- Node runtime je standardizovan na 20.x.
+- Detalji: `docs/STORAGE_I_MEDIA_PROFILI.md`.

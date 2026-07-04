@@ -8,6 +8,7 @@ const BroadcastContentType = require('../models/BroadcastContentType');
 const ShowDay = require('../models/ShowDay');
 const Video = require('../models/Video');
 const EditJob = require('../models/EditJob');
+const CorrectionRequest = require('../models/CorrectionRequest');
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
 const authenticateToken = require('../middleware/authenticateToken');
@@ -27,6 +28,12 @@ const {
 } = require('../utils/storagePaths');
 const { enqueueVideoProcessing } = require('../queues/videoQueue');
 const { getQueueErrorMessage } = require('../utils/queueErrors');
+const { addVideoPrefixSearchFilter } = require('../utils/searchText');
+const { addContentTypeFallbackFilter } = require('../utils/contentTypeFilters');
+const { applyApprovedArchiveEligibility } = require('../utils/archiveEligibility');
+const { setDownloadHeaders } = require('../utils/downloadHeaders');
+const { streamAirPackage } = require('../services/downloadService');
+const { createOrUpdateCorrectionRequest } = require('../services/correctionWorkflowService');
 
 const router = express.Router();
 
@@ -222,8 +229,22 @@ function getQaResponsibilityType(role) {
 
 async function ensureDefaultContentTypes() {
   const count = await BroadcastContentType.countDocuments();
-  if (count > 0) return;
-  await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
+  if (count === 0) {
+    await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
+    return;
+  }
+  await Promise.all(defaultContentTypes.map((type) =>
+    BroadcastContentType.updateOne(
+      { slug: type.slug, jobSlaHours: { $exists: false } },
+      {
+        $set: {
+          jobSlaHours: type.jobSlaHours,
+          jobGraceHours: type.jobGraceHours,
+          autoExpireJobs: true,
+        },
+      }
+    )
+  ));
 }
 
 async function getArchivePrilogContentType() {
@@ -339,38 +360,65 @@ function isEligibleBroadcastMaterial(video) {
     ['aired', 'archived'].includes(video.broadcastStatus);
 }
 
-function buildLibraryVideoFilter({ contentTypeId, search }) {
-  const filter = {
-    status: 'edited',
-    processingStatus: 'completed',
-    broadcastStatus: { $in: ['approved_for_air', 'aired', 'archived'] },
-    $or: [
-      { finalApprovalStatus: 'approved' },
-      { qcStatus: 'passed' },
-      { broadcastStatus: { $in: ['aired', 'archived'] } },
-    ],
-  };
+async function buildLibraryVideoFilter({ contentTypeId, search }) {
+  const filter = {};
+  applyApprovedArchiveEligibility(filter);
 
-  if (contentTypeId && contentTypeId !== 'all') {
-    filter.contentType = contentTypeId;
-  }
+  await addContentTypeFallbackFilter(filter, contentTypeId);
 
   const trimmedSearch = String(search || '').trim();
-  if (trimmedSearch) {
-    const searchRegex = new RegExp(trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$and = [{
-      $or: [
-        { finalTitle: searchRegex },
-        { originalFilename: searchRegex },
-        { filename: searchRegex },
-        { event: searchRegex },
-        { finalCategory: searchRegex },
-        { keywords: searchRegex },
-      ],
-    }];
-  }
+  addVideoPrefixSearchFilter(filter, trimmedSearch);
 
   return filter;
+}
+
+function parsePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '50', 10) || 50, 1), 200);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function buildLibrarySort(query = {}) {
+  const sortBy = String(query.sortBy || 'recent');
+  const sortOrder = String(query.sortOrder || 'desc') === 'asc' ? 1 : -1;
+  const sortFields = {
+    recent: 'uploadDate',
+    airedAt: 'airedAt',
+    archivedAt: 'archivedAt',
+    title: 'finalTitle',
+    category: 'finalCategory',
+  };
+  const field = sortFields[sortBy] || 'uploadDate';
+  return { [field]: sortOrder, airedAt: -1, archivedAt: -1, finalApprovedAt: -1, uploadDate: -1 };
+}
+
+function populateLibraryVideoList(query) {
+  return query
+    .populate('program')
+    .populate('contentType')
+    .populate('sourceJob', 'title reporter')
+    .populate('uploader', 'username role')
+    .populate('reporter', 'username role')
+    .populate('editor', 'username role')
+    .populate('qaResponsible', 'username role')
+    .populate('correctionReportedBy', 'username role')
+    .populate('finalApprovedBy', 'username role');
+}
+
+async function buildLibrarySummary(filter) {
+  const [total, approved, aired, archived, needsCorrection] = await Promise.all([
+    Video.countDocuments(filter),
+    Video.countDocuments({ ...filter, broadcastStatus: 'approved_for_air' }),
+    Video.countDocuments({ ...filter, broadcastStatus: 'aired' }),
+    Video.countDocuments({ ...filter, broadcastStatus: 'archived' }),
+    Video.countDocuments({ ...filter, correctionStatus: 'needs_correction' }),
+  ]);
+
+  return { total, approved, aired, archived, needsCorrection };
 }
 
 function resolveExistingPath(...candidatePaths) {
@@ -677,7 +725,7 @@ router.post('/direct-final-upload', authorize(directFinalUploadRoles), handleDir
 });
 
 router.get('/final-videos', authorize(['Producer', 'Admin']), async (req, res) => {
-  const { programId, airDate, contentTypeId } = req.query;
+  const { programId, airDate, contentTypeId, search } = req.query;
   const filter = {
     status: 'edited',
     finalApprovalStatus: 'approved',
@@ -686,7 +734,8 @@ router.get('/final-videos', authorize(['Producer', 'Admin']), async (req, res) =
   };
 
   if (programId && programId !== 'all') filter.program = programId;
-  if (contentTypeId && contentTypeId !== 'all') filter.contentType = contentTypeId;
+  await addContentTypeFallbackFilter(filter, contentTypeId);
+  addVideoPrefixSearchFilter(filter, search);
 
   const parsedDate = parseAirDate(airDate);
   if (parsedDate) {
@@ -720,7 +769,8 @@ router.get('/library-videos', authorize(['Producer', 'Admin']), async (req, res)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 500);
 
   try {
-    const videos = await Video.find(buildLibraryVideoFilter({ contentTypeId, search }))
+    const filter = await buildLibraryVideoFilter({ contentTypeId, search });
+    const videos = await Video.find(filter)
       .populate('program')
       .populate('contentType')
       .populate('sourceJob', 'title reporter')
@@ -737,6 +787,38 @@ router.get('/library-videos', authorize(['Producer', 'Admin']), async (req, res)
   } catch (error) {
     console.error('Error fetching producer library videos:', error);
     res.status(500).json({ message: 'Error fetching producer video library' });
+  }
+});
+
+router.get('/library-search', authorize(['Producer', 'Admin']), async (req, res) => {
+  const { contentTypeId, search } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
+
+  try {
+    const filter = await buildLibraryVideoFilter({ contentTypeId, search });
+    const sort = buildLibrarySort(req.query);
+    const [total, items, summary] = await Promise.all([
+      Video.countDocuments(filter),
+      populateLibraryVideoList(
+        Video.find(filter)
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+      ),
+      buildLibrarySummary(filter),
+    ]);
+
+    res.json({
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary,
+    });
+  } catch (error) {
+    console.error('Error searching producer library videos:', error);
+    res.status(500).json({ message: 'Error searching producer video library' });
   }
 });
 
@@ -941,125 +1023,15 @@ router.post('/show-day/join', authorize(producerRoles), async (req, res) => {
 
 router.get('/show-day/:showDayId/download-package', authorize(downloadRoles), async (req, res) => {
   try {
-    let showDay = await populateShowDay(ShowDay.findById(req.params.showDayId));
-    if (!showDay) return res.status(404).json({ message: 'Show day not found.' });
-
-    const activeItems = (showDay.items || [])
-      .filter((item) => item.status !== 'removed')
-      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-
-    if (activeItems.length === 0) {
-      return res.status(400).json({ message: 'No active material in this show.' });
-    }
-
-    const packageEntries = activeItems.map((item, index) => {
-      const video = item.video;
-      const sourcePath = resolveExistingPath(video?.compressedPath, video?.filepath, video?.rawPath, video?.previewPath);
-      const baseTitle = item.title || video?.finalTitle || video?.originalFilename || video?.filename || `item_${index + 1}`;
-      const extension = path.extname(sourcePath || video?.filename || video?.originalFilename || '.mp4') || '.mp4';
-      const fileName = `${String(index + 1).padStart(2, '0')}_${sanitizePackageName(baseTitle)}${extension}`;
-
-      return {
-        item,
-        sourcePath,
-        fileName,
-        missing: !sourcePath,
-      };
+    await streamAirPackage({
+      user: req.user,
+      payload: { showDayId: req.params.showDayId },
+      res,
     });
-
-    const availableEntries = packageEntries.filter((entry) => entry.sourcePath);
-    if (availableEntries.length === 0) {
-      return res.status(404).json({ message: 'Show material files are missing from local storage.' });
-    }
-
-    const downloadTime = new Date();
-    const mutableShowDay = await ShowDay.findById(showDay._id);
-    const existingState = (mutableShowDay.downloadStates || []).find(
-      (state) => getObjectIdString(state.user) === req.user.id
-    );
-
-    if (existingState) {
-      existingState.lastDownloadedAt = downloadTime;
-      existingState.downloadCount = Number(existingState.downloadCount || 0) + 1;
-    } else {
-      mutableShowDay.downloadStates.push({
-        user: req.user.id,
-        lastDownloadedAt: downloadTime,
-        downloadCount: 1,
-      });
-    }
-
-    mutableShowDay.activityLog.push({
-      action: 'download_air_package',
-      summary: `${req.user.username || 'Realizator'} downloaded the air package.`,
-      performedBy: req.user.id,
-      createdAt: downloadTime,
-      details: {
-        availableFiles: availableEntries.length,
-        missingFiles: packageEntries.length - availableEntries.length,
-      },
-    });
-    await mutableShowDay.save();
-
-    await AuditLog.create({
-      action: 'Download Show Air Package',
-      performedBy: req.user.id,
-      details: {
-        showDayId: showDay._id,
-        programId: showDay.program?._id || showDay.program,
-        airDate: showDay.airDate,
-        availableFiles: availableEntries.length,
-        missingFiles: packageEntries.length - availableEntries.length,
-      },
-    });
-
-    showDay = await populateShowDay(ShowDay.findById(showDay._id));
-
-    const zip = archiver('zip', { zlib: { level: 0 } });
-    const programName = sanitizePackageName(showDay.program?.name || 'show');
-    const airDate = new Date(showDay.airDate).toISOString().slice(0, 10);
-    const zipFilename = `${programName}_${airDate}_air_package.zip`;
-    const manifest = {
-      program: showDay.program?.name || null,
-      airDate,
-      downloadedAt: downloadTime.toISOString(),
-      downloadedBy: req.user.username || req.user.id,
-      items: packageEntries.map((entry, index) => ({
-        order: index + 1,
-        title: entry.item.title || entry.item.video?.finalTitle || entry.item.video?.originalFilename || null,
-        contentType: entry.item.contentType?.name || null,
-        status: entry.item.status,
-        file: entry.sourcePath ? entry.fileName : null,
-        sourceAvailable: Boolean(entry.sourcePath),
-        reporter: entry.item.video?.reporter?.username || null,
-        editor: entry.item.video?.editor?.username || null,
-        qaResponsible: entry.item.video?.qaResponsible?.username || null,
-      })),
-    };
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
-
-    zip.on('error', (error) => {
-      console.error('Show package ZIP error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ message: 'Error creating show package.' });
-      }
-    });
-
-    zip.pipe(res);
-    zip.append(buildRundownText(showDay, activeItems), { name: 'RUNDOWN.txt' });
-    zip.append(JSON.stringify(manifest, null, 2), { name: 'show_manifest.json' });
-
-    availableEntries.forEach((entry) => {
-      zip.file(entry.sourcePath, { name: `VIDEO/${entry.fileName}` });
-    });
-
-    await zip.finalize();
   } catch (error) {
     console.error('Error downloading show package:', error);
     if (!res.headersSent) {
-      res.status(500).json({ message: 'Error downloading show package' });
+      res.status(error.statusCode || 500).json({ message: error.message || 'Error downloading show package' });
     }
   }
 });
@@ -1352,7 +1324,7 @@ router.patch('/show-day/:showDayId/items/reorder', authorize(reorderRoles), asyn
 });
 
 router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correctionReportRoles), async (req, res) => {
-  const { note = '' } = req.body || {};
+  const { note = '', timestamp = 0 } = req.body || {};
 
   try {
     const showDay = await ShowDay.findById(req.params.showDayId);
@@ -1370,6 +1342,7 @@ router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correct
     const materialTitle = item.title || video.finalTitle || video.originalFilename || video.filename || `Material ${req.params.itemId}`;
     const trimmedNote = String(note || '').trim();
     const correctionNote = trimmedNote || 'Realizator reported an issue. Correction needed.';
+    const correctionTimestamp = Math.max(Number(timestamp) || 0, 0);
 
     video.correctionStatus = 'needs_correction';
     video.correctionNote = correctionNote;
@@ -1384,12 +1357,26 @@ router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correct
     ].filter(Boolean)));
     video.correctionReports.push({
       note: correctionNote,
+      timestamp: correctionTimestamp,
       reportedBy: req.user.id,
       reportedAt: now,
       showDay: showDay._id,
       showDayItem: item._id,
     });
     await video.save();
+    const correctionWorkflow = await createOrUpdateCorrectionRequest({
+      showDay,
+      item,
+      video,
+      user: req.user,
+      note: correctionNote,
+      timestamp: correctionTimestamp,
+    });
+    const latestReport = video.correctionReports[video.correctionReports.length - 1];
+    if (latestReport) {
+      latestReport.correctionRequest = correctionWorkflow.request._id;
+      await video.save();
+    }
 
     item.updatedAt = now;
     showDay.activityLog.push({
@@ -1403,6 +1390,9 @@ router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correct
         title: materialTitle,
         correctionStatus: 'needs_correction',
         note: correctionNote,
+        timestamp: correctionTimestamp,
+        correctionRequestId: correctionWorkflow.request._id,
+        correctionJobId: correctionWorkflow.correctionJob?._id || null,
       },
     });
     await showDay.save();
@@ -1417,6 +1407,9 @@ router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correct
         title: materialTitle,
         correctionStatus: 'needs_correction',
         note: correctionNote,
+        timestamp: correctionTimestamp,
+        correctionRequestId: correctionWorkflow.request._id,
+        correctionJobId: correctionWorkflow.correctionJob?._id || null,
       },
     });
 
@@ -1424,6 +1417,8 @@ router.post('/show-day/:showDayId/items/:itemId/report-error', authorize(correct
     res.json({
       message: 'Clip tagged as Potrebna ispravka.',
       showDay: serializeShowDay(populatedShowDay, req.user),
+      correctionRequest: correctionWorkflow.request,
+      correctionJob: correctionWorkflow.correctionJob,
     });
   } catch (error) {
     console.error('Error reporting material correction:', error);
@@ -1495,6 +1490,40 @@ router.patch('/show-day/:showDayId/items/:itemId/replace', authorize(producerRol
     });
 
     await showDay.save();
+
+    const correctionRequest = await CorrectionRequest.findOne({
+      video: previousVideoId,
+      status: { $in: ['reported', 'assigned', 'in_edit', 'ready_for_review'] },
+    }).sort({ updatedAt: -1 });
+    if (correctionRequest) {
+      correctionRequest.status = 'resolved';
+      correctionRequest.resolvedBy = req.user.id;
+      correctionRequest.resolvedAt = new Date();
+      correctionRequest.resolutionNote = `Materijal zamijenjen verzijom ${materialTitle}.`;
+      correctionRequest.correctedBy = correctionRequest.assignedEditor || video.editor || req.user.id;
+      correctionRequest.correctedAt = correctionRequest.resolvedAt;
+      correctionRequest.correctedVideo = video._id;
+      await correctionRequest.save();
+      await Video.findByIdAndUpdate(previousVideoId, {
+        $set: {
+          correctionStatus: 'resolved',
+          activeCorrectionRequest: null,
+          correctionResolvedBy: req.user.id,
+          correctionResolvedAt: correctionRequest.resolvedAt,
+          correctionResolvedNote: correctionRequest.resolutionNote,
+        },
+      });
+      if (correctionRequest.correctionJob) {
+        await EditJob.findByIdAndUpdate(correctionRequest.correctionJob, {
+          $set: {
+            workspaceState: 'closed',
+            workspaceStateChangedAt: new Date(),
+            workspaceStateChangedBy: req.user.id,
+            workspaceStateReason: correctionRequest.resolutionNote,
+          },
+        });
+      }
+    }
 
     await AuditLog.create({
       action: 'Replace Show Material',

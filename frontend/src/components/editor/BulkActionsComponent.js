@@ -16,6 +16,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
 import axiosInstance from '../../axiosConfig';
+import { useBackgroundDownloads } from '../../contexts/BackgroundDownloadContext';
 
 const BulkActionsComponent = ({
   selectedVideos,
@@ -23,8 +24,10 @@ const BulkActionsComponent = ({
   clearSelection,
   refreshVideos,
 }) => {
+  const { startDownload } = useBackgroundDownloads();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [downloadQueued, setDownloadQueued] = useState(false);
 
   if (selectedVideos.length === 0) {
     return null;
@@ -32,22 +35,19 @@ const BulkActionsComponent = ({
 
   const handleDownloadSelected = () => {
     setErrorMessage('');
+    setDownloadQueued(true);
 
-    axiosInstance
-      .post('/videos/download', { videoIds: selectedVideos }, { responseType: 'blob' })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `production_selection_${Date.now()}.zip`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-      })
+    startDownload({
+      kind: 'video-bulk',
+      payload: { videoIds: selectedVideos },
+      label: `Materijal ZIP (${selectedVideos.length})`,
+    })
       .catch((error) => {
         console.error('Error downloading videos:', error);
-        setErrorMessage('Selected videos could not be downloaded.');
+        setErrorMessage(error.response?.data?.message || 'Odabrani materijali se ne mogu skinuti.');
+      })
+      .finally(() => {
+        setDownloadQueued(false);
       });
   };
 
@@ -61,7 +61,7 @@ const BulkActionsComponent = ({
       })
       .catch((err) => {
         console.error('Error deleting videos:', err);
-        setErrorMessage('Selected videos could not be deleted.');
+        setErrorMessage('Odabrani materijali se ne mogu obrisati.');
       })
       .finally(() => setConfirmOpen(false));
   };
@@ -78,6 +78,15 @@ const BulkActionsComponent = ({
           {errorMessage}
         </Alert>
       )}
+      {downloadQueued && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Stack spacing={1}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              Pripremam ZIP paket za {selectedVideos.length} materijal(a). Status je u globalnom download panelu.
+            </Typography>
+          </Stack>
+        </Alert>
+      )}
 
       <Stack
         direction={{ xs: 'column', md: 'row' }}
@@ -87,7 +96,7 @@ const BulkActionsComponent = ({
       >
         <Box>
           <Typography sx={{ fontWeight: 800 }}>
-            {selectedVideos.length} selected
+            Odabrano: {selectedVideos.length}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {previewNames.join(', ')}
@@ -96,29 +105,40 @@ const BulkActionsComponent = ({
         </Box>
 
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<DownloadIcon />} variant="contained" onClick={handleDownloadSelected}>
-            Download
+          <Button
+            startIcon={<DownloadIcon />}
+            variant="contained"
+            onClick={handleDownloadSelected}
+            disabled={downloadQueued}
+          >
+            {downloadQueued ? 'Pripremam ZIP...' : 'Skini'}
           </Button>
-          <Button startIcon={<DeleteIcon />} variant="outlined" color="error" onClick={() => setConfirmOpen(true)}>
-            Delete
+          <Button
+            startIcon={<DeleteIcon />}
+            variant="outlined"
+            color="error"
+            onClick={() => setConfirmOpen(true)}
+            disabled={downloadQueued}
+          >
+            Obriši
           </Button>
-          <Button startIcon={<CloseIcon />} variant="text" onClick={clearSelection}>
-            Clear
+          <Button startIcon={<CloseIcon />} variant="text" onClick={clearSelection} disabled={downloadQueued}>
+            Očisti
           </Button>
         </Stack>
       </Stack>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Delete selected material</DialogTitle>
+        <DialogTitle>Obriši odabrani materijal</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will delete {selectedVideos.length} selected video record(s) and their stored files.
+            Ova akcija briše {selectedVideos.length} odabrani(h) video zapis(a) i pripadajuće fajlove.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button onClick={() => setConfirmOpen(false)}>Odustani</Button>
           <Button onClick={handleDeleteConfirmed} color="error" variant="contained">
-            Delete
+            Obriši
           </Button>
         </DialogActions>
       </Dialog>

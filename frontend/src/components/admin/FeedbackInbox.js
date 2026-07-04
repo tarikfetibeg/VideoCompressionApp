@@ -9,6 +9,7 @@ import {
   Grid,
   InputLabel,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -22,8 +23,12 @@ import ReplyIcon from '@mui/icons-material/Reply';
 import SaveIcon from '@mui/icons-material/Save';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import axiosInstance from '../../axiosConfig';
+import { EmptyState, FilterBar, KpiStrip } from '../common/WorkspaceChrome';
+import { formatNumberBs } from '../../utils/uiLabels';
+import { getSearchParam } from '../../utils/searchParams';
 
 const statusOptions = [
+  { value: 'open', label: 'Otvorene' },
   { value: 'all', label: 'Svi statusi' },
   { value: 'new', label: 'Novo' },
   { value: 'reviewing', label: 'U pregledu' },
@@ -344,12 +349,19 @@ const FeedbackCard = ({ feedback, users, onUpdate, onComment, onMarkSeen }) => {
 const FeedbackInbox = () => {
   const [feedback, setFeedback] = useState([]);
   const [users, setUsers] = useState([]);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({
+    total: 0,
+    totalPages: 1,
+    summary: {},
+  });
   const [filters, setFilters] = useState({
-    status: 'new',
+    status: 'open',
     type: 'all',
     priority: 'all',
     area: 'all',
-    search: '',
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -367,33 +379,60 @@ const FeedbackInbox = () => {
     setErrorMessage('');
 
     axiosInstance
-      .get('/feedback', { params: { ...filters, limit: 300 } })
-      .then((response) => setFeedback(Array.isArray(response.data) ? response.data : []))
+      .get('/feedback/workspace', {
+        params: {
+          ...filters,
+          page,
+          limit: 30,
+          q: getSearchParam(debouncedSearch),
+        },
+      })
+      .then((response) => {
+        setFeedback(Array.isArray(response.data?.items) ? response.data.items : []);
+        setWorkspaceMeta({
+          total: Number(response.data?.total) || 0,
+          totalPages: Number(response.data?.totalPages) || 1,
+          summary: response.data?.summary || {},
+        });
+      })
       .catch((error) => {
         console.error('Error fetching feedback inbox:', error);
         setErrorMessage('Nije moguce ucitati feedback inbox.');
       })
       .finally(() => setLoading(false));
-  }, [filters]);
+  }, [debouncedSearch, filters, page]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchDraft), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft]);
+
+  useEffect(() => {
     fetchFeedback();
   }, [fetchFeedback]);
 
   const stats = useMemo(() => ({
-    total: feedback.length,
-    urgent: feedback.filter((item) => item.priority === 'urgent').length,
-    newItems: feedback.filter((item) => item.status === 'new').length,
+    total: workspaceMeta.summary.filtered ?? workspaceMeta.total ?? feedback.length,
+    urgent: workspaceMeta.summary.urgent ?? feedback.filter((item) => item.priority === 'urgent').length,
+    high: workspaceMeta.summary.high ?? feedback.filter((item) => item.priority === 'high').length,
+    newItems: workspaceMeta.summary.new ?? feedback.filter((item) => item.status === 'new').length,
     unseen: feedback.filter((item) => !item.adminSeenAt).length,
-    open: feedback.filter((item) => ['new', 'reviewing', 'planned'].includes(item.status)).length,
-  }), [feedback]);
+    open: Object.prototype.hasOwnProperty.call(workspaceMeta.summary, 'new')
+      ? (workspaceMeta.summary.new ?? 0) + (workspaceMeta.summary.reviewing ?? 0) + (workspaceMeta.summary.planned ?? 0)
+      : feedback.filter((item) => ['new', 'reviewing', 'planned'].includes(item.status)).length,
+  }), [feedback, workspaceMeta]);
 
   const handleFilterChange = (event) => {
     const { name, value } = event.target;
+    setPage(1);
+    if (name === 'search') {
+      setSearchDraft(value);
+      return;
+    }
     setFilters((current) => ({
       ...current,
       [name]: value,
@@ -485,46 +524,25 @@ const FeedbackInbox = () => {
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Loaded</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.total}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Open</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.open}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">New</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.newItems}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Urgent</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.urgent}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <Typography variant="overline" color="text.secondary">Unseen</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>{stats.unseen}</Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+      <KpiStrip
+        items={[
+          { label: 'Rezultata', value: formatNumberBs(stats.total) },
+          { label: 'Otvoreno', value: formatNumberBs(stats.open), color: stats.open > 0 ? 'warning.main' : 'success.main' },
+          { label: 'Novo', value: formatNumberBs(stats.newItems), color: stats.newItems > 0 ? 'primary.main' : 'text.primary' },
+          { label: 'Urgent', value: formatNumberBs(stats.urgent), color: stats.urgent > 0 ? 'error.main' : 'text.primary' },
+          { label: 'Visoko', value: formatNumberBs(stats.high), color: stats.high > 0 ? 'warning.main' : 'text.primary' },
+          { label: 'Nevidjeno', value: formatNumberBs(stats.unseen) },
+        ]}
+        dense
+      />
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+      <FilterBar title="Feedback filteri" summary="Inbox koristi paginirani feedback workspace i debounce pretragu.">
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
             <TextField
               name="search"
               label="Search"
-              value={filters.search}
+              value={searchDraft}
               onChange={handleFilterChange}
               fullWidth
               size="small"
@@ -571,12 +589,10 @@ const FeedbackInbox = () => {
             </FormControl>
           </Grid>
         </Grid>
-      </Paper>
+      </FilterBar>
 
       {feedback.length === 0 ? (
-        <Alert severity="info">
-          Nema prijava za trenutne filtere.
-        </Alert>
+        <EmptyState title="Nema prijava" description="Nema feedback prijava za trenutne filtere." />
       ) : (
         <Stack spacing={2}>
           {feedback.map((item) => (
@@ -589,6 +605,15 @@ const FeedbackInbox = () => {
               onMarkSeen={markFeedbackSeen}
             />
           ))}
+        </Stack>
+      )}
+
+      {workspaceMeta.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ mt: 2 }}>
+          <Pagination count={workspaceMeta.totalPages} page={page} onChange={(event, value) => setPage(value)} />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            Stranica {page} / {workspaceMeta.totalPages}
+          </Typography>
         </Stack>
       )}
     </Box>

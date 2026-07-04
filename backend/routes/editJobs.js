@@ -7,6 +7,9 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 const EditJob = require('../models/EditJob');
 const Video = require('../models/Video');
+const CorrectionRequest = require('../models/CorrectionRequest');
+const ShowDay = require('../models/ShowDay');
+const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
@@ -16,8 +19,10 @@ const {
   createStoredFilename,
   createMp4Filename,
   createJpgFilename,
+  createRawManifestPath,
 } = require('../utils/storagePaths');
 const { enqueueVideoProcessing } = require('../queues/videoQueue');
+const { probeMedia } = require('../services/videoProcessingService');
 const {
   allowedVideoExtensions,
   allowedVideoMimetypes,
@@ -26,6 +31,20 @@ const {
 const BroadcastProgram = require('../models/BroadcastProgram');
 const BroadcastContentType = require('../models/BroadcastContentType');
 const { getQueueErrorMessage } = require('../utils/queueErrors');
+const { addTextSearchFilter } = require('../utils/searchText');
+const { setDownloadHeaders } = require('../utils/downloadHeaders');
+const { buildApprovedArchiveEligibilityCondition } = require('../utils/archiveEligibility');
+const { streamEditPackage, streamOffFile } = require('../services/downloadService');
+const {
+  createCommentNotifications,
+  getCommentRecipientIds,
+  markJobNotificationsRead,
+} = require('../services/jobNotificationService');
+const {
+  applySlaToJob,
+  calculateJobSchedule,
+  getDeadlineState,
+} = require('../services/editJobLifecycleService');
 
 const router = express.Router();
 
@@ -43,6 +62,8 @@ const allowedStatuses = [
   'archived',
 ];
 const allowedPriorities = ['low', 'normal', 'high', 'urgent'];
+const allowedWorkspaceStates = ['active', 'expired', 'closed', 'cancelled'];
+const allowedJobKinds = ['standard', 'correction'];
 const allowedSegmentTypes = [
   'sot',
   'broll',
@@ -80,6 +101,11 @@ const MAX_BRIEF_IMPORT_SIZE_MB = Number(process.env.MAX_BRIEF_IMPORT_SIZE_MB) > 
   ? Number(process.env.MAX_BRIEF_IMPORT_SIZE_MB)
   : 25;
 const MAX_BRIEF_IMPORT_SIZE_BYTES = MAX_BRIEF_IMPORT_SIZE_MB * 1024 * 1024;
+const MAX_JOB_MATERIAL_FILES = parseInt(process.env.MAX_JOB_MATERIAL_FILES || '20', 10) || 20;
+const MAX_UPLOAD_SIZE_GB = Number(process.env.MAX_UPLOAD_SIZE_GB) > 0
+  ? Number(process.env.MAX_UPLOAD_SIZE_GB)
+  : 25;
+const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_GB * 1024 * 1024 * 1024;
 
 const offAudioStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -165,6 +191,37 @@ const finalVideoUpload = multer({
   },
 });
 
+const jobMaterialStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    ensureFolderExists(paths.raw);
+    cb(null, paths.raw);
+  },
+  filename: (req, file, cb) => {
+    cb(null, createStoredFilename('job_source', file.originalname));
+  },
+});
+
+const jobMaterialUpload = multer({
+  storage: jobMaterialStorage,
+  fileFilter: (req, file, cb) => {
+    const mimetype = String(file.mimetype || '').toLowerCase();
+    const extension = path.extname(file.originalname || '').toLowerCase();
+
+    if (allowedVideoMimetypes.includes(mimetype) || allowedVideoExtensions.includes(extension)) {
+      return cb(null, true);
+    }
+
+    return cb(
+      new Error(`Unsupported job material format. Supported: ${supportedVideoFormatSummary}.`),
+      false
+    );
+  },
+  limits: {
+    fileSize: MAX_UPLOAD_SIZE_BYTES,
+    files: MAX_JOB_MATERIAL_FILES,
+  },
+});
+
 router.use(authenticateToken);
 router.use(authorize(allowedJobRoles));
 
@@ -199,6 +256,19 @@ function canReporterUpdateJob(user, job) {
   if (user.role === 'Admin') return true;
   if (user.role !== 'Reporter') return false;
   return getObjectIdString(job.reporter) === user.id;
+}
+
+function buildAppendableVideoFilter(user, videoIds) {
+  const filter = { _id: { $in: videoIds } };
+  if (user?.role === 'Admin') return filter;
+
+  return {
+    ...filter,
+    $or: [
+      { uploader: user.id },
+      buildApprovedArchiveEligibilityCondition(),
+    ],
+  };
 }
 
 function canUploadFinalForJob(user, job) {
@@ -257,7 +327,7 @@ function getJobDownloadMeta(job, user) {
 }
 
 function getUnreadChangeCount(job, user) {
-  if (!isProductionUser(user)) return 0;
+  if (!user || !canAccessJob(user, job)) return 0;
 
   const lastViewedAt = getViewerLastViewedAt(job, user);
   const lastViewedTimestamp = lastViewedAt ? new Date(lastViewedAt).getTime() : 0;
@@ -265,6 +335,10 @@ function getUnreadChangeCount(job, user) {
   return (job.changeLog || []).filter((change) => {
     if (change.type === 'job_created') return false;
     if (getObjectIdString(change.author) === user.id) return false;
+
+    const recipientIds = buildObjectIdSet(change.recipientUsers);
+    if (recipientIds.size > 0 && !recipientIds.has(user.id)) return false;
+    if (user.role === 'Reporter' && recipientIds.size === 0) return false;
 
     const changeTimestamp = change.createdAt ? new Date(change.createdAt).getTime() : 0;
     return changeTimestamp > lastViewedTimestamp;
@@ -285,11 +359,12 @@ function serializeJob(job, user) {
       hasUnreadChanges: unreadChangeCount > 0,
     },
     downloadMeta,
+    deadlineState: getDeadlineState(data),
   };
 }
 
 async function markJobViewed(job, user) {
-  if (!isProductionUser(user)) return;
+  if (!user || !canAccessJob(user, job)) return;
 
   const now = new Date();
   const existingState = (job.viewerStates || []).find(
@@ -310,7 +385,7 @@ async function markJobViewed(job, user) {
   );
 }
 
-function addJobChange(job, user, type, summary, details = {}) {
+function addJobChange(job, user, type, summary, details = {}, recipientUsers = []) {
   const changeTime = new Date();
 
   job.changeLog.push({
@@ -318,6 +393,7 @@ function addJobChange(job, user, type, summary, details = {}) {
     summary,
     author: user.id,
     actorRole: user.role,
+    recipientUsers,
     details,
     createdAt: changeTime,
   });
@@ -418,14 +494,93 @@ function handleFinalVideoUpload(req, res, next) {
   });
 }
 
+function handleJobMaterialUpload(req, res, next) {
+  jobMaterialUpload.array('videos', MAX_JOB_MATERIAL_FILES)(req, res, (error) => {
+    if (!error) return next();
+
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: `Video fajl je prevelik. Maksimalno je ${MAX_UPLOAD_SIZE_GB} GB po fajlu.`,
+      });
+    }
+
+    if (error.code === 'LIMIT_FILE_COUNT') {
+      return res.status(413).json({
+        message: `Previše video fajlova. Maksimalno je ${MAX_JOB_MATERIAL_FILES} po jobu.`,
+      });
+    }
+
+    return res.status(400).json({ message: error.message || 'Upload materijala nije uspio.' });
+  });
+}
+
 async function removeUploadedFiles(files = []) {
   await Promise.all(
     files.map((file) =>
       fs.promises.unlink(file.path).catch((error) => {
-        console.warn(`Could not remove uploaded OFF file "${file.path}":`, error.message);
+        console.warn(`Could not remove uploaded file "${file.path}":`, error.message);
       })
     )
   );
+}
+
+function buildSourceMetadata(mediaProbe = {}) {
+  return {
+    sourceFormat: mediaProbe.container || null,
+    sourceCodec: mediaProbe.codec || null,
+    sourceResolution: mediaProbe.resolution || null,
+    sourceBitrate: mediaProbe.bitrate || null,
+    sourceFramerate: mediaProbe.framerate || null,
+    sourceDuration: mediaProbe.duration || null,
+    sourceAudioCodec: mediaProbe.audioCodec || null,
+    sourceAudioChannels: mediaProbe.audioChannels || null,
+    sourceAudioSampleRate: mediaProbe.audioSampleRate || null,
+  };
+}
+
+async function inspectSourceMedia(rawVideoPath) {
+  try {
+    const mediaProbe = await probeMedia(rawVideoPath);
+    return buildSourceMetadata(mediaProbe);
+  } catch (error) {
+    console.warn(`Could not probe source media "${rawVideoPath}":`, error.message);
+    return buildSourceMetadata();
+  }
+}
+
+async function enqueueOrMarkFailed(videoDoc) {
+  try {
+    const queueJob = await enqueueVideoProcessing(videoDoc._id);
+    videoDoc.processingJobId = queueJob.id.toString();
+    await videoDoc.save();
+    return { job: queueJob, error: null };
+  } catch (error) {
+    const queueMessage = getQueueErrorMessage(error);
+    videoDoc.processingStatus = 'failed';
+    videoDoc.processingError = queueMessage;
+    videoDoc.processingCompletedAt = new Date();
+    await videoDoc.save();
+    return { job: null, error: queueMessage };
+  }
+}
+
+async function writeRawUploadManifest(rawVideoPath, manifest) {
+  try {
+    ensureFolderExists(paths.rawManifests);
+    await fs.promises.writeFile(
+      createRawManifestPath(rawVideoPath),
+      JSON.stringify(
+        {
+          ...manifest,
+          createdAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+  } catch (error) {
+    console.warn('Could not write job material upload manifest:', error.message);
+  }
 }
 
 function stripRtfToText(value) {
@@ -488,6 +643,41 @@ function parseSegmentsField(value) {
   }
 
   throw new Error('Segments must be an array.');
+}
+
+function parseOptionalArrayField(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return trimmed.split(',').map((item) => item.trim());
+    }
+  }
+
+  return [];
+}
+
+function getPrimaryJobVideo(job) {
+  return (job?.segments || []).map((segment) => segment.video).find(Boolean) || null;
+}
+
+function getJobMaterialContext(job, body = {}) {
+  const primaryVideo = getPrimaryJobVideo(job);
+  const dateValue = body.date || primaryVideo?.tagDate || new Date();
+  const parsedDate = new Date(dateValue);
+
+  return {
+    event: String(body.event || primaryVideo?.event || job.title || 'Job material').trim(),
+    location: String(body.location || primaryVideo?.location || '').trim(),
+    tagDate: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+  };
 }
 
 function sanitizeFilename(value, fallback = 'untitled') {
@@ -943,10 +1133,169 @@ function normalizeSegment(segment, index) {
   };
 }
 
+function parsePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '50', 10) || 50, 1), 200);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function buildJobFilter(query = {}, user) {
+  const filter = {};
+  const andConditions = [];
+
+  if (user.role === 'Reporter') {
+    filter.reporter = user.id;
+  }
+
+  if (query.status && query.status !== 'all') {
+    filter.status = query.status;
+  }
+
+  if (query.priority && query.priority !== 'all') {
+    filter.priority = query.priority;
+  }
+
+  if (query.workspaceState === 'history') {
+    filter.workspaceState = { $in: ['expired', 'closed', 'cancelled'] };
+  } else if (query.workspaceState && query.workspaceState !== 'all') {
+    filter.workspaceState = query.workspaceState;
+  } else if (query.includeClosed !== 'true') {
+    andConditions.push({
+      $or: [
+        { workspaceState: 'active' },
+        { workspaceState: { $exists: false } },
+      ],
+    });
+  }
+
+  if (query.contentTypeId && query.contentTypeId !== 'all') {
+    filter.contentType = query.contentTypeId;
+  }
+
+  if (query.assignedEditor && query.assignedEditor !== 'all') {
+    if (query.assignedEditor === 'unassigned') {
+      andConditions.push({
+        $or: [
+          { assignedEditor: { $exists: false } },
+          { assignedEditor: null },
+        ],
+      });
+    } else {
+      filter.assignedEditor = query.assignedEditor;
+    }
+  }
+
+  if (query.jobKind && query.jobKind !== 'all') {
+    filter.jobKind = query.jobKind;
+  }
+
+  const now = new Date();
+  if (query.deadlineState === 'overdue') {
+    filter.deadline = { $lt: now };
+  } else if (query.deadlineState === 'due_soon') {
+    filter.deadline = { $gte: now, $lte: new Date(now.getTime() + 2 * 60 * 60 * 1000) };
+  } else if (query.deadlineState === 'no_deadline') {
+    andConditions.push({
+      $or: [
+        { deadline: { $exists: false } },
+        { deadline: null },
+      ],
+    });
+  }
+
+  const search = String(query.q || '').trim();
+  addTextSearchFilter(filter, search);
+
+  if (andConditions.length > 0) {
+    filter.$and = [...(filter.$and || []), ...andConditions];
+  }
+
+  return filter;
+}
+
+function buildJobSort(query = {}) {
+  const sortBy = String(query.sortBy || 'updatedAt');
+  const sortOrder = String(query.sortOrder || 'desc') === 'asc' ? 1 : -1;
+  const sortFields = {
+    updatedAt: 'updatedAt',
+    createdAt: 'createdAt',
+    deadline: 'deadline',
+    expiresAt: 'expiresAt',
+    priority: 'priority',
+    status: 'status',
+    workspaceState: 'workspaceState',
+    title: 'title',
+  };
+  const field = sortFields[sortBy] || 'updatedAt';
+  return { [field]: sortOrder, updatedAt: -1, createdAt: -1 };
+}
+
+async function buildJobSummary(filter, user) {
+  const [
+    total,
+    submitted,
+    inEdit,
+    needsInfo,
+    ready,
+    expired,
+    closed,
+    cancelled,
+    overdue,
+    dueSoon,
+    corrections,
+    sampleJobs,
+  ] = await Promise.all([
+    EditJob.countDocuments(filter),
+    EditJob.countDocuments({ ...filter, status: { $in: ['submitted', 'draft'] } }),
+    EditJob.countDocuments({ ...filter, status: { $in: ['claimed', 'in_edit'] } }),
+    EditJob.countDocuments({ ...filter, status: 'needs_info' }),
+    EditJob.countDocuments({ ...filter, status: { $in: ['ready_for_qc', 'approved'] } }),
+    EditJob.countDocuments({ ...filter, workspaceState: 'expired' }),
+    EditJob.countDocuments({ ...filter, workspaceState: 'closed' }),
+    EditJob.countDocuments({ ...filter, workspaceState: 'cancelled' }),
+    EditJob.countDocuments({ ...filter, workspaceState: 'active', deadline: { $lt: new Date() } }),
+    EditJob.countDocuments({
+      ...filter,
+      workspaceState: 'active',
+      deadline: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 60 * 60 * 1000) },
+    }),
+    EditJob.countDocuments({ ...filter, jobKind: 'correction' }),
+    populateJob(EditJob.find(filter).sort({ updatedAt: -1 }).limit(500)),
+  ]);
+
+  const serializedSample = sampleJobs.map((job) => serializeJob(job, user));
+
+  return {
+    total,
+    submitted,
+    inEdit,
+    needsInfo,
+    ready,
+    expired,
+    closed,
+    cancelled,
+    overdue,
+    dueSoon,
+    corrections,
+    unreadUpdates: serializedSample.filter((job) => job.viewerMeta?.hasUnreadChanges).length,
+    missingFiles: serializedSample.filter((job) => job.downloadMeta?.hasMissingFiles).length,
+    sampledForSignals: serializedSample.length,
+  };
+}
+
 async function populateJob(query) {
   return query
     .populate('reporter', 'username role')
     .populate('assignedEditor', 'username role')
+    .populate('contentType', 'name slug autoExpireJobs jobSlaHours jobGraceHours')
+    .populate('workspaceStateChangedBy', 'username role')
+    .populate('parentJob', 'title status workspaceState')
+    .populate('sourceVideo', 'filename originalFilename finalTitle correctionStatus')
+    .populate('correctionRequest', 'status note timestamp')
     .populate('segments.video', 'filename originalFilename event location tagDate duration status processingStatus qcStatus broadcastStatus')
     .populate('comments.author', 'username role')
     .populate('changeLog.author', 'username role')
@@ -954,17 +1303,40 @@ async function populateJob(query) {
     .populate('downloadStates.user', 'username role');
 }
 
+router.get('/workspace', async (req, res) => {
+  try {
+    const { page, limit, skip } = parsePagination(req.query);
+    const filter = buildJobFilter(req.query, req.user);
+    const sort = buildJobSort(req.query);
+
+    const [total, jobs, summary] = await Promise.all([
+      EditJob.countDocuments(filter),
+      populateJob(
+        EditJob.find(filter)
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+      ),
+      buildJobSummary(filter, req.user),
+    ]);
+
+    res.json({
+      items: jobs.map((job) => serializeJob(job, req.user)),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary,
+    });
+  } catch (error) {
+    console.error('Error fetching edit job workspace:', error);
+    res.status(500).json({ message: 'Error fetching edit job workspace' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
-    const filter = {};
-
-    if (req.user.role === 'Reporter') {
-      filter.reporter = req.user.id;
-    }
-
-    if (req.query.status && req.query.status !== 'all') {
-      filter.status = req.query.status;
-    }
+    const filter = buildJobFilter(req.query, req.user);
 
     const jobs = await populateJob(
       EditJob.find(filter).sort({ updatedAt: -1, createdAt: -1 })
@@ -974,6 +1346,158 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching edit jobs:', error);
     res.status(500).json({ message: 'Error fetching edit jobs' });
+  }
+});
+
+router.post('/admin/apply-sla', authorize(['Admin']), async (req, res) => {
+  try {
+    const requestedIds = Array.isArray(req.body?.jobIds)
+      ? req.body.jobIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).slice(0, 500)
+      : [];
+    const filter = {
+      workspaceState: { $in: ['active', null] },
+      expiresAt: null,
+    };
+    if (requestedIds.length > 0) filter._id = { $in: requestedIds };
+
+    const jobs = await EditJob.find(filter)
+      .populate('contentType', 'name slug autoExpireJobs jobSlaHours jobGraceHours')
+      .limit(500);
+    let applied = 0;
+    let skipped = 0;
+
+    for (const job of jobs) {
+      if (!job.contentType || job.contentType.autoExpireJobs === false) {
+        skipped += 1;
+        continue;
+      }
+      applySlaToJob(job, job.contentType, { deadline: job.deadline || null });
+      job.workspaceState = job.workspaceState || 'active';
+      await job.save();
+      applied += 1;
+    }
+
+    await AuditLog.create({
+      action: 'Apply Edit Job SLA',
+      performedBy: req.user.id,
+      details: {
+        requestedCount: requestedIds.length,
+        scanned: jobs.length,
+        applied,
+        skipped,
+      },
+    });
+
+    res.json({ message: 'SLA je primijenjen na odabrane jobove.', scanned: jobs.length, applied, skipped });
+  } catch (error) {
+    console.error('Error applying edit job SLA:', error);
+    res.status(500).json({ message: 'SLA nije moguće primijeniti.' });
+  }
+});
+
+router.patch('/:jobId/admin', authorize(['Admin']), async (req, res) => {
+  try {
+    const job = await EditJob.findById(req.params.jobId);
+    if (!job) return res.status(404).json({ message: 'Edit job nije pronadjen.' });
+
+    const changes = [];
+    if (req.body.status !== undefined) {
+      if (!allowedStatuses.includes(req.body.status)) {
+        return res.status(400).json({ message: 'Neispravan workflow status.' });
+      }
+      changes.push(`status ${job.status} -> ${req.body.status}`);
+      job.status = req.body.status;
+    }
+
+    if (req.body.workspaceState !== undefined) {
+      if (!allowedWorkspaceStates.includes(req.body.workspaceState)) {
+        return res.status(400).json({ message: 'Neispravno stanje radnog prostora.' });
+      }
+      changes.push(`workspace ${job.workspaceState || 'active'} -> ${req.body.workspaceState}`);
+      job.workspaceState = req.body.workspaceState;
+      job.workspaceStateChangedAt = new Date();
+      job.workspaceStateChangedBy = req.user.id;
+      job.workspaceStateReason = String(req.body.workspaceStateReason || '').trim();
+    }
+
+    if (req.body.priority !== undefined) {
+      if (!allowedPriorities.includes(req.body.priority)) {
+        return res.status(400).json({ message: 'Neispravan prioritet.' });
+      }
+      changes.push(`prioritet ${job.priority} -> ${req.body.priority}`);
+      job.priority = req.body.priority;
+    }
+
+    if (req.body.assignedEditorId !== undefined) {
+      const editorId = String(req.body.assignedEditorId || '').trim();
+      if (editorId) {
+        const editor = await User.findOne({
+          _id: editorId,
+          role: { $in: ['Editor', 'VideoEditor'] },
+        }).select('_id username role');
+        if (!editor) return res.status(400).json({ message: 'Odabrani montažer nije dostupan.' });
+        job.assignedEditor = editor._id;
+        if (['draft', 'submitted', 'needs_info'].includes(job.status)) job.status = 'claimed';
+        changes.push(`montažer -> ${editor.username}`);
+      } else {
+        job.assignedEditor = null;
+        changes.push('montažer uklonjen');
+      }
+    }
+
+    let contentType = null;
+    if (req.body.contentTypeId !== undefined) {
+      contentType = await BroadcastContentType.findOne({
+        _id: req.body.contentTypeId,
+        active: true,
+      });
+      if (!contentType) return res.status(400).json({ message: 'Odabrana kategorija nije dostupna.' });
+      job.contentType = contentType._id;
+      changes.push(`kategorija -> ${contentType.name}`);
+    } else if (job.contentType) {
+      contentType = await BroadcastContentType.findById(job.contentType);
+    }
+
+    if (req.body.deadline !== undefined || req.body.contentTypeId !== undefined) {
+      const deadline = req.body.deadline ? new Date(req.body.deadline) : job.deadline;
+      if (req.body.deadline && Number.isNaN(deadline.getTime())) {
+        return res.status(400).json({ message: 'Neispravan rok.' });
+      }
+      if (contentType) {
+        applySlaToJob(job, contentType, { deadline: deadline || null });
+      } else {
+        job.deadline = deadline || null;
+        job.expiresAt = null;
+      }
+      changes.push(`rok -> ${job.deadline ? job.deadline.toISOString() : 'bez roka'}`);
+    }
+
+    if (job.workspaceState === 'active' && job.expiresAt && new Date(job.expiresAt) <= new Date()) {
+      job.expiresAt = contentType
+        ? calculateJobSchedule(contentType, { createdAt: new Date(), deadline: null }).expiresAt
+        : null;
+    }
+
+    if (changes.length === 0) {
+      return res.status(400).json({ message: 'Nema promjena za spremanje.' });
+    }
+
+    addJobChange(job, req.user, 'status_updated', `Admin izmjena: ${changes.join(', ')}`, {
+      changes,
+    });
+    await job.save();
+
+    await AuditLog.create({
+      action: 'Admin Manage Edit Job',
+      performedBy: req.user.id,
+      details: { jobId: job._id, title: job.title, changes },
+    });
+
+    const populatedJob = await populateJob(EditJob.findById(job._id));
+    res.json({ message: 'Job je ažuriran.', job: serializeJob(populatedJob, req.user) });
+  } catch (error) {
+    console.error('Error managing edit job:', error);
+    res.status(500).json({ message: error.message || 'Job nije moguće ažurirati.' });
   }
 });
 
@@ -1006,6 +1530,7 @@ router.post('/', handleOffAudioUpload, async (req, res) => {
     description,
     scriptText,
     program,
+    contentTypeId,
     deadline,
     priority = 'normal',
     status = 'submitted',
@@ -1036,7 +1561,21 @@ router.post('/', handleOffAudioUpload, async (req, res) => {
     return res.status(400).json({ message: 'Invalid job status.' });
   }
 
+  if (!mongoose.Types.ObjectId.isValid(contentTypeId)) {
+    await removeUploadedFiles(req.files);
+    return res.status(400).json({ message: 'Aktivna kategorija joba je obavezna.' });
+  }
+
   try {
+    const contentType = await BroadcastContentType.findOne({
+      _id: contentTypeId,
+      active: true,
+    });
+    if (!contentType) {
+      await removeUploadedFiles(req.files);
+      return res.status(400).json({ message: 'Aktivna kategorija joba je obavezna.' });
+    }
+
     const normalizedSegments = segments.map(normalizeSegment);
     const videoIds = Array.from(new Set(normalizedSegments.map((segment) => segment.video.toString())));
     const videoCount = await Video.countDocuments({ _id: { $in: videoIds } });
@@ -1063,9 +1602,11 @@ router.post('/', handleOffAudioUpload, async (req, res) => {
       scriptText: normalizedScriptText,
       offFiles,
       program: program || '',
-      deadline: deadline ? new Date(deadline) : null,
+      contentType: contentType._id,
       priority,
       status,
+      workspaceState: 'active',
+      jobKind: 'standard',
       reporter: req.user.id,
       segments: normalizedSegments,
       comments: comment
@@ -1075,11 +1616,16 @@ router.post('/', handleOffAudioUpload, async (req, res) => {
           }]
         : [],
     });
+    applySlaToJob(job, contentType, {
+      deadline: deadline ? new Date(deadline) : null,
+    });
 
     addJobChange(job, req.user, 'job_created', 'Job created and sent to production.', {
       segmentCount: normalizedSegments.length,
       offFileCount: offFiles.length,
       hasBriefText: Boolean(normalizedScriptText),
+      contentTypeId: contentType._id,
+      expiresAt: job.expiresAt,
     });
 
     await job.save();
@@ -1119,13 +1665,24 @@ router.delete('/:jobId', async (req, res) => {
       return res.status(403).json({ message: 'Only the job reporter or admin can delete this job.' });
     }
 
-    if (['aired', 'archived'].includes(job.status)) {
+    if (
+      ['aired', 'archived'].includes(job.status)
+      || (job.workspaceState && job.workspaceState !== 'active' && req.user.role !== 'Admin')
+    ) {
       return res.status(409).json({ message: 'Aired or archived jobs cannot be deleted.' });
     }
 
     const finalVideoCount = await Video.countDocuments({ sourceJob: job._id });
     if (finalVideoCount > 0) {
       return res.status(409).json({ message: 'This job has final videos attached and cannot be deleted safely.' });
+    }
+
+    const segmentVideoIds = (job.segments || []).map((segment) => segment.video).filter(Boolean);
+    const rundownReferenceCount = segmentVideoIds.length > 0
+      ? await ShowDay.countDocuments({ 'items.video': { $in: segmentVideoIds } })
+      : 0;
+    if (rundownReferenceCount > 0) {
+      return res.status(409).json({ message: 'Job ima materijal povezan sa rundownom i ne može se sigurno obrisati.' });
     }
 
     const deletedInfo = {
@@ -1177,176 +1734,38 @@ router.delete('/:jobId', async (req, res) => {
 
 router.get('/:jobId/download-package', authorize(productionRoles), async (req, res) => {
   try {
-    const job = await EditJob.findById(req.params.jobId)
-      .populate('reporter', 'username role')
-      .populate('assignedEditor', 'username role')
-      .populate('changeLog.author', 'username role')
-      .populate('downloadStates.user', 'username role')
-      .populate(
-        'segments.video',
-        'filename originalFilename filepath rawPath compressedPath previewPath event location tagDate duration status processingStatus qcStatus broadcastStatus'
-      );
-
-    if (!job) return res.status(404).json({ message: 'Edit job not found' });
-
-    if (!canAccessJob(req.user, job)) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
-
-    if (!canDownloadJobPackage(req.user, job)) {
-      return res.status(409).json({ message: 'Claim this job before downloading the edit package.' });
-    }
-
-    const downloadScope = req.query.scope === 'missing' ? 'missing' : 'all';
-    const sortedSegments = [...(job.segments || [])].sort(
-      (a, b) => Number(a.order || 0) - Number(b.order || 0)
-    );
-
-    if (sortedSegments.length === 0) {
-      return res.status(400).json({ message: 'Edit job has no segments to package.' });
-    }
-
-    const downloadState = getJobDownloadState(job, req.user);
-    const downloadedSegmentIds = buildObjectIdSet(downloadState?.downloadedSegmentIds);
-    const downloadedOffFileIds = buildObjectIdSet(downloadState?.downloadedOffFileIds);
-    const packageSegments = downloadScope === 'missing'
-      ? sortedSegments.filter((segment) => !downloadedSegmentIds.has(getObjectIdString(segment._id)))
-      : sortedSegments;
-    const packageOffFiles = downloadScope === 'missing'
-      ? (job.offFiles || []).filter((offFile) => !downloadedOffFileIds.has(getObjectIdString(offFile._id)))
-      : (job.offFiles || []);
-
-    if (downloadScope === 'missing' && packageSegments.length === 0 && packageOffFiles.length === 0) {
-      return res.status(409).json({ message: 'No new or previously missed job files to download.' });
-    }
-
-    const packageEntries = packageSegments.map((segment, index) => {
-      const sourcePath = getVideoSourcePath(segment.video);
-      const videoFilename = getVideoFilename(segment.video, sourcePath);
-      const sourceExt = sourcePath
-        ? path.extname(sourcePath)
-        : path.extname(videoFilename);
-      const baseName = sanitizeFilename(path.basename(videoFilename, path.extname(videoFilename)), `clip_${index + 1}`);
-      const sourceFile = sourcePath
-        ? `VIDEO/${padOrder(index + 1)}_${baseName}${sourceExt || ''}`
-        : '';
-
-      return {
-        order: index + 1,
-        title: segment.title || videoFilename,
-        type: segment.type || 'other',
-        start: formatTime(segment.startTime),
-        end: segment.endTime === null || segment.endTime === undefined ? '' : formatTime(segment.endTime),
-        notes: segment.notes || '',
-        sourceFile,
-        sourceAvailable: Boolean(sourcePath),
-        sourcePath,
-        segmentId: segment._id || null,
-        videoId: segment.video?._id || null,
-        processingStatus: segment.video?.processingStatus || 'unknown',
-      };
+    await streamEditPackage({
+      user: req.user,
+      payload: {
+        jobId: req.params.jobId,
+        scope: req.query.scope,
+      },
+      res,
     });
-
-    const offAudioEntries = buildOffAudioEntries(job, packageOffFiles);
-    const downloadableSegmentIds = packageEntries
-      .filter((entry) => entry.sourceAvailable && entry.segmentId)
-      .map((entry) => entry.segmentId);
-    const downloadableOffFileIds = offAudioEntries
-      .filter((entry) => entry.sourceAvailable && entry.id)
-      .map((entry) => entry.id);
-    const availableFileCount = downloadableSegmentIds.length + downloadableOffFileIds.length;
-
-    if (downloadScope === 'missing' && availableFileCount === 0) {
-      return res.status(404).json({ message: 'New job files exist, but none are currently available on disk.' });
-    }
-
-    await markJobPackageDownloaded(job._id, req.user, downloadableSegmentIds, downloadableOffFileIds);
-
-    const zipFilename = `${sanitizeFilename(job.title, 'edit_job')}_${job._id}_${downloadScope === 'missing' ? 'new_files' : 'edit_package'}.zip`;
-    const archive = archiver('zip', { zlib: { level: 0 } });
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
-
-    archive.on('warning', (warning) => {
-      console.warn('Edit package ZIP warning:', warning);
-    });
-
-    archive.on('error', (error) => {
-      console.error('Edit package ZIP error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ message: 'Error creating edit package.' });
-      } else {
-        res.destroy(error);
-      }
-    });
-
-    archive.pipe(res);
-
-    archive.append(await createBriefDocxBuffer(job), { name: 'BRIEF_REPORTER.docx' });
-
-    offAudioEntries.forEach((entry) => {
-      if (entry.sourcePath) {
-        archive.file(entry.sourcePath, { name: entry.packagePath });
-      }
-    });
-
-    packageEntries.forEach((entry) => {
-      if (entry.sourcePath) {
-        archive.file(entry.sourcePath, { name: entry.sourceFile });
-      }
-    });
-
-    try {
-      await AuditLog.create({
-        action: 'Download Edit Job Package',
-        performedBy: req.user.id,
-        details: {
-          jobId: job._id,
-          title: job.title,
-          downloadScope,
-          segmentCount: packageSegments.length,
-          offFileCount: offAudioEntries.length,
-          missingFileCount: packageEntries.filter((entry) => !entry.sourceAvailable).length,
-          missingOffFileCount: offAudioEntries.filter((entry) => !entry.sourceAvailable).length,
-          markedSegmentDownloads: downloadableSegmentIds.length,
-          markedOffDownloads: downloadableOffFileIds.length,
-        },
-      });
-    } catch (auditError) {
-      console.error('Edit package audit log error:', auditError);
-    }
-
-    await archive.finalize();
   } catch (error) {
     console.error('Error creating edit package:', error);
     if (!res.headersSent) {
-      res.status(500).json({ message: 'Error creating edit package' });
+      res.status(error.statusCode || 500).json({ message: error.message || 'Error creating edit package' });
     }
   }
 });
 
 router.get('/:jobId/off-files/:fileId', async (req, res) => {
   try {
-    const job = await EditJob.findById(req.params.jobId);
-    if (!job) return res.status(404).json({ message: 'Edit job not found' });
-
-    if (!canAccessJob(req.user, job)) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
-
-    const offFile = job.offFiles.id(req.params.fileId);
-    if (!offFile) return res.status(404).json({ message: 'OFF file not found' });
-
-    const sourcePath = resolveExistingPath(offFile.storagePath || offFile.path);
-    if (!sourcePath) return res.status(404).json({ message: 'OFF audio file is missing on disk.' });
-
-    res.setHeader('Content-Type', offFile.mimetype || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${sanitizeFilename(offFile.originalName, 'off_audio')}"`);
-    fs.createReadStream(sourcePath).pipe(res);
+    await streamOffFile({
+      user: req.user,
+      payload: {
+        jobId: req.params.jobId,
+        fileId: req.params.fileId,
+        inline: true,
+      },
+      res,
+    });
   } catch (error) {
     console.error('Error serving OFF audio file:', error);
-    res.status(500).json({ message: 'Error serving OFF audio file' });
+    if (!res.headersSent) {
+      res.status(error.statusCode || 500).json({ message: error.message || 'Error serving OFF audio file' });
+    }
   }
 });
 
@@ -1373,6 +1792,191 @@ router.get('/:jobId/final-videos', async (req, res) => {
   } catch (error) {
     console.error('Error fetching job final videos:', error);
     res.status(500).json({ message: 'Error fetching job final videos' });
+  }
+});
+
+router.post('/:jobId/material-upload', handleJobMaterialUpload, async (req, res) => {
+  const uploadedFiles = req.files || [];
+  const retainedSourcePaths = new Set();
+
+  if (uploadedFiles.length === 0) {
+    return res.status(400).json({ message: 'Odaberi barem jedan video fajl.' });
+  }
+
+  try {
+    const job = await EditJob.findById(req.params.jobId)
+      .populate('segments.video', 'event location tagDate duration');
+
+    if (!job) {
+      await removeUploadedFiles(uploadedFiles);
+      return res.status(404).json({ message: 'Edit job nije pronadjen.' });
+    }
+
+    if (!canReporterUpdateJob(req.user, job)) {
+      await removeUploadedFiles(uploadedFiles);
+      return res.status(403).json({ message: 'Samo reporter ovog joba ili admin mogu dodati materijal.' });
+    }
+
+    if (
+      ['aired', 'archived'].includes(job.status)
+      || (job.workspaceState && job.workspaceState !== 'active' && req.user.role !== 'Admin')
+    ) {
+      await removeUploadedFiles(uploadedFiles);
+      return res.status(409).json({ message: 'Emitovani ili arhivirani jobovi se ne mogu mijenjati.' });
+    }
+
+    const context = getJobMaterialContext(job, req.body);
+    const notes = parseOptionalArrayField(req.body.notes);
+    const types = parseOptionalArrayField(req.body.types);
+    const existingOrders = (job.segments || []).map((item) => Number(item.order || 0));
+    const baseOrder = existingOrders.length > 0 ? Math.max(...existingOrders) + 1 : 0;
+    const createdVideoIds = [];
+    const queueFailures = [];
+    const auditFiles = [];
+
+    ensureFolderExists(paths.compressed);
+    ensureFolderExists(paths.previews);
+    ensureFolderExists(paths.thumbnails);
+
+    for (let index = 0; index < uploadedFiles.length; index += 1) {
+      const file = uploadedFiles[index];
+      const outputFilename = createMp4Filename('compressed', file.originalname);
+      const outputPath = path.join(paths.compressed, outputFilename);
+      const previewFilename = createMp4Filename('preview', file.originalname);
+      const previewPath = path.join(paths.previews, previewFilename);
+      const thumbnailFilename = createJpgFilename('thumb', file.originalname);
+      const thumbnailPath = path.join(paths.thumbnails, thumbnailFilename);
+      const inputStats = fs.existsSync(file.path) ? fs.statSync(file.path) : null;
+      const sourceMetadata = await inspectSourceMedia(file.path);
+      const segmentType = allowedSegmentTypes.includes(types[index]) ? types[index] : 'other';
+
+      await writeRawUploadManifest(file.path, {
+        uploadKind: 'job-material-upload',
+        originalFilename: file.originalname,
+        uploaderId: req.user.id,
+        uploaderUsername: req.user.username,
+        uploaderRole: req.user.role,
+        jobId: job._id,
+        event: context.event,
+        location: context.location,
+        tagDate: context.tagDate,
+        status: 'raw',
+        processingMode: 'transcode',
+      });
+
+      const videoDoc = new Video({
+        filename: outputFilename,
+        filepath: outputPath,
+        originalFilename: file.originalname,
+
+        rawPath: file.path,
+        compressedPath: outputPath,
+        previewPath,
+        thumbnailPath,
+
+        uploader: req.user.id,
+        reporter: job.reporter,
+        event: context.event,
+        location: context.location,
+        tagDate: context.tagDate,
+
+        status: 'raw',
+        processingStatus: 'queued',
+        processingMode: 'transcode',
+        processingProgress: 0,
+        isBroll: segmentType === 'broll',
+        ...sourceMetadata,
+
+        sizeOriginal: inputStats ? inputStats.size : null,
+        sizeCompressed: null,
+        sizePreview: null,
+        sizeThumbnail: null,
+        duration: sourceMetadata.sourceDuration,
+
+        rawRetentionDays: 0,
+        rawExpiresAt: null,
+        rawDeleted: false,
+        rawDeletedAt: null,
+
+        uploadDate: new Date(),
+      });
+
+      await videoDoc.save();
+      retainedSourcePaths.add(file.path);
+      const enqueueResult = await enqueueOrMarkFailed(videoDoc);
+      if (enqueueResult.error) {
+        queueFailures.push({
+          originalFilename: file.originalname,
+          error: enqueueResult.error,
+        });
+      }
+
+      createdVideoIds.push(videoDoc._id);
+      job.segments.push(normalizeSegment({
+        video: videoDoc._id,
+        order: baseOrder + index,
+        title: file.originalname,
+        notes: notes[index] || '',
+        type: segmentType,
+        startTime: 0,
+        endTime: Number(sourceMetadata.sourceDuration) || null,
+        required: true,
+      }, baseOrder + index));
+
+      auditFiles.push({
+        originalFilename: file.originalname,
+        storedFilename: outputFilename,
+        previewFilename,
+        thumbnailFilename,
+        queueError: enqueueResult.error || null,
+      });
+    }
+
+    addJobChange(job, req.user, 'segments_added', `Dodano ${createdVideoIds.length} novi(h) klip(ova) direktnim uploadom.`, {
+      segmentCount: createdVideoIds.length,
+      uploadMode: 'job-material-upload',
+    });
+
+    if (job.status === 'needs_info') {
+      job.status = job.assignedEditor ? 'claimed' : 'submitted';
+    }
+
+    await job.save();
+
+    await AuditLog.create({
+      action: 'Upload Job Material',
+      performedBy: req.user.id,
+      details: {
+        jobId: job._id,
+        title: job.title,
+        count: createdVideoIds.length,
+        files: auditFiles,
+      },
+    });
+
+    const [populatedJob, populatedVideos] = await Promise.all([
+      populateJob(EditJob.findById(job._id)),
+      Video.find({ _id: { $in: createdVideoIds } })
+        .populate('uploader', 'username role')
+        .populate('reporter', 'username role')
+        .populate('editor', 'username role')
+        .populate('qaResponsible', 'username role')
+        .populate('program')
+        .populate('contentType'),
+    ]);
+
+    res.status(202).json({
+      message: queueFailures.length > 0
+        ? `Materijal je dodan u job, ali ${queueFailures.length} fajl(ova) treba ponovo staviti u obradu.`
+        : 'Materijal je uploadovan i dodan u job.',
+      job: serializeJob(populatedJob, req.user),
+      videos: populatedVideos,
+      queueFailures,
+    });
+  } catch (error) {
+    await removeUploadedFiles(uploadedFiles.filter((file) => !retainedSourcePaths.has(file.path)));
+    console.error('Error uploading job material:', error);
+    res.status(500).json({ message: error.message || 'Upload materijala u job nije uspio.' });
   }
 });
 
@@ -1490,6 +2094,18 @@ router.post('/:jobId/final-upload', authorize(['Editor', 'VideoEditor', 'Admin']
     });
     job.status = 'ready_for_qc';
     await job.save();
+    if (job.jobKind === 'correction' && job.correctionRequest) {
+      await CorrectionRequest.findByIdAndUpdate(job.correctionRequest, {
+        $set: {
+          status: 'ready_for_review',
+          assignedEditor: req.user.id,
+          correctedBy: req.user.id,
+          correctedAt: new Date(),
+          correctedVideo: videoDoc._id,
+          seenBy: [],
+        },
+      });
+    }
 
     await AuditLog.create({
       action: 'Upload Final Video From Job',
@@ -1500,6 +2116,9 @@ router.post('/:jobId/final-upload', authorize(['Editor', 'VideoEditor', 'Admin']
         programId: program._id,
         contentTypeId: contentType._id,
         airDate: parsedAirDate,
+        jobKind: job.jobKind,
+        correctionRequestId: job.correctionRequest || null,
+        correctedBy: job.jobKind === 'correction' ? req.user.id : null,
       },
     });
 
@@ -1555,7 +2174,10 @@ router.patch('/:jobId/reporter-update', handleOffAudioUpload, async (req, res) =
       return res.status(403).json({ message: 'Only the job reporter can update this job.' });
     }
 
-    if (['aired', 'archived'].includes(job.status)) {
+    if (
+      ['aired', 'archived'].includes(job.status)
+      || (job.workspaceState && job.workspaceState !== 'active' && req.user.role !== 'Admin')
+    ) {
       await removeUploadedFiles(req.files);
       return res.status(409).json({ message: 'Aired or archived jobs cannot be changed.' });
     }
@@ -1568,15 +2190,16 @@ router.patch('/:jobId/reporter-update', handleOffAudioUpload, async (req, res) =
 
     if (normalizedSegments.length > 0) {
       const videoIds = Array.from(new Set(normalizedSegments.map((segment) => segment.video.toString())));
-      const videoCount = await Video.countDocuments({ _id: { $in: videoIds } });
+      const videoCount = await Video.countDocuments(buildAppendableVideoFilter(req.user, videoIds));
 
       if (videoCount !== videoIds.length) {
         await removeUploadedFiles(req.files);
-        return res.status(400).json({ message: 'One or more selected videos do not exist.' });
+        return res.status(400).json({ message: 'Jedan ili vise odabranih klipova nije dostupno za ovaj job.' });
       }
     }
 
     const changes = [];
+    let addedComment = null;
     const hasDescriptionField = Object.prototype.hasOwnProperty.call(req.body, 'description');
     const hasScriptTextField = Object.prototype.hasOwnProperty.call(req.body, 'scriptText');
     const nextDescription = hasDescriptionField ? (description || '') : job.description;
@@ -1620,13 +2243,23 @@ router.patch('/:jobId/reporter-update', handleOffAudioUpload, async (req, res) =
     }
 
     if (comment && comment.trim()) {
+      const recipientIds = getCommentRecipientIds(job, req.user);
       job.comments.push({
         body: comment.trim(),
         author: req.user.id,
       });
-      addJobChange(job, req.user, 'reporter_note_added', 'Reporter je dodao novu napomenu uz izmjenu.', {
-        comment: comment.trim(),
-      });
+      addedComment = job.comments[job.comments.length - 1];
+      addJobChange(
+        job,
+        req.user,
+        'comment_added',
+        'Reporter je dodao novu napomenu uz izmjenu.',
+        {
+          commentId: addedComment._id,
+          comment: comment.trim(),
+        },
+        recipientIds
+      );
       changes.push('comment');
     }
 
@@ -1639,6 +2272,15 @@ router.patch('/:jobId/reporter-update', handleOffAudioUpload, async (req, res) =
     }
 
     await job.save();
+
+    let notificationsCreated = 0;
+    if (addedComment) {
+      try {
+        notificationsCreated = await createCommentNotifications(job, req.user, addedComment);
+      } catch (notificationError) {
+        console.error('Reporter update saved, but notifications could not be created:', notificationError);
+      }
+    }
 
     await AuditLog.create({
       action: 'Reporter Update Edit Job',
@@ -1656,6 +2298,7 @@ router.patch('/:jobId/reporter-update', handleOffAudioUpload, async (req, res) =
     res.json({
       message: 'Job updated successfully',
       job: serializeJob(populatedJob, req.user),
+      notificationsCreated,
     });
   } catch (error) {
     await removeUploadedFiles(req.files);
@@ -1673,7 +2316,10 @@ router.delete('/:jobId/segments/:segmentId', async (req, res) => {
       return res.status(403).json({ message: 'Only the job reporter can update this job.' });
     }
 
-    if (['aired', 'archived'].includes(job.status)) {
+    if (
+      ['aired', 'archived'].includes(job.status)
+      || (job.workspaceState && job.workspaceState !== 'active' && req.user.role !== 'Admin')
+    ) {
       return res.status(409).json({ message: 'Aired or archived jobs cannot be changed.' });
     }
 
@@ -1740,7 +2386,10 @@ router.patch('/:jobId/segments/:segmentId/replace', async (req, res) => {
       return res.status(403).json({ message: 'Only the job reporter can update this job.' });
     }
 
-    if (['aired', 'archived'].includes(job.status)) {
+    if (
+      ['aired', 'archived'].includes(job.status)
+      || (job.workspaceState && job.workspaceState !== 'active' && req.user.role !== 'Admin')
+    ) {
       return res.status(409).json({ message: 'Aired or archived jobs cannot be changed.' });
     }
 
@@ -1751,9 +2400,10 @@ router.patch('/:jobId/segments/:segmentId/replace', async (req, res) => {
     const segment = job.segments.id(req.params.segmentId);
     if (!segment) return res.status(404).json({ message: 'Job segment not found.' });
 
-    const replacementVideo = await Video.findById(videoId).select('filename originalFilename duration');
+    const replacementVideo = await Video.findOne(buildAppendableVideoFilter(req.user, [videoId]))
+      .select('filename originalFilename duration');
     if (!replacementVideo) {
-      return res.status(404).json({ message: 'Replacement video not found.' });
+      return res.status(404).json({ message: 'Zamjenski klip nije dostupan za ovaj job.' });
     }
 
     const hasField = (fieldName) => Object.prototype.hasOwnProperty.call(req.body, fieldName);
@@ -1825,7 +2475,15 @@ router.get('/:jobId', async (req, res) => {
     }
 
     const responseJob = serializeJob(job, req.user);
-    await markJobViewed(job, req.user);
+    await Promise.all([
+      markJobViewed(job, req.user),
+      markJobNotificationsRead(job._id, req.user.id),
+    ]);
+    responseJob.viewerMeta = {
+      lastViewedAt: new Date(),
+      unreadChangeCount: 0,
+      hasUnreadChanges: false,
+    };
 
     res.json(responseJob);
   } catch (error) {
@@ -1855,6 +2513,21 @@ router.patch('/:jobId/status', async (req, res) => {
 
     job.status = status;
     await job.save();
+    if (job.jobKind === 'correction' && job.correctionRequest) {
+      const correctionStatus = status === 'in_edit'
+        ? 'in_edit'
+        : status === 'ready_for_qc'
+          ? 'ready_for_review'
+          : null;
+      if (correctionStatus) {
+        const correctionUpdate = { status: correctionStatus, seenBy: [] };
+        if (correctionStatus === 'ready_for_review') {
+          correctionUpdate.correctedBy = req.user.id;
+          correctionUpdate.correctedAt = new Date();
+        }
+        await CorrectionRequest.findByIdAndUpdate(job.correctionRequest, { $set: correctionUpdate });
+      }
+    }
 
     await AuditLog.create({
       action: 'Update Edit Job Status',
@@ -1885,6 +2558,15 @@ router.patch('/:jobId/claim', authorize(productionRoles), async (req, res) => {
     }
 
     await job.save();
+    if (job.jobKind === 'correction' && job.correctionRequest) {
+      await CorrectionRequest.findByIdAndUpdate(job.correctionRequest, {
+        $set: {
+          assignedEditor: req.user.id,
+          status: 'assigned',
+          seenBy: [],
+        },
+      });
+    }
 
     await AuditLog.create({
       action: 'Claim Edit Job',
@@ -1918,15 +2600,39 @@ router.post('/:jobId/comments', async (req, res) => {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
+    const recipientIds = getCommentRecipientIds(job, req.user);
     job.comments.push({
       body: body.trim(),
       author: req.user.id,
     });
+    const comment = job.comments[job.comments.length - 1];
+    addJobChange(
+      job,
+      req.user,
+      'comment_added',
+      `${req.user.role === 'Reporter' ? 'Reporter' : 'Produkcija'} je dodala novi komentar.`,
+      {
+        commentId: comment._id,
+        comment: body.trim(),
+      },
+      recipientIds
+    );
 
     await job.save();
 
+    let notificationsCreated = 0;
+    try {
+      notificationsCreated = await createCommentNotifications(job, req.user, comment);
+    } catch (notificationError) {
+      console.error('Comment saved, but notifications could not be created:', notificationError);
+    }
+
     const populatedJob = await populateJob(EditJob.findById(job._id));
-    res.status(201).json({ message: 'Comment added', job: serializeJob(populatedJob, req.user) });
+    res.status(201).json({
+      message: 'Komentar je dodan.',
+      job: serializeJob(populatedJob, req.user),
+      notificationsCreated,
+    });
   } catch (error) {
     console.error('Error adding edit job comment:', error);
     res.status(500).json({ message: 'Error adding comment' });

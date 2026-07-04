@@ -3,14 +3,16 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Grid,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Paper,
-  Stack,
   Tab,
   Tabs,
-  Typography,
+  TextField,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -20,12 +22,16 @@ import VideoListComponent from '../components/editor/VideoListComponent';
 import VideoUploadComponent from '../components/editor/VideoUploadComponent';
 import BulkActionsComponent from '../components/editor/BulkActionsComponent';
 import EditJobBoard from '../components/jobs/EditJobBoard';
+import CorrectionQueue from '../components/jobs/CorrectionQueue';
 import { UserContext } from '../contexts/UserContext';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
   IDLE_REFRESH_MS,
   hasActiveVideoProcessing,
 } from '../utils/videoProcessing';
+import { KpiStrip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import { formatDateTimeBs, formatRole } from '../utils/uiLabels';
+import { getSearchParam } from '../utils/searchParams';
 
 const defaultFilters = {
   search: '',
@@ -33,112 +39,34 @@ const defaultFilters = {
   location: '',
   date: '',
   uploader: '',
+  contentTypeId: 'all',
   status: 'all',
   processingStatus: 'all',
   qcStatus: 'all',
   broadcastStatus: 'all',
 };
 
-const normalizeDate = (value) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
+const defaultCategoryReviewDialog = {
+  open: false,
+  video: null,
+  notes: '',
+  busy: false,
 };
 
 const getUploaderName = (video) => video.uploader?.username || 'Unknown';
-
-const matchesText = (video, search) => {
-  if (!search) return true;
-
-  const target = search.toLowerCase().trim();
-  return [
-    video.originalFilename,
-    video.filename,
-    video.event,
-    video.location,
-    video.status,
-    video.processingStatus,
-    video.qcStatus,
-    video.broadcastStatus,
-    getUploaderName(video),
-    video.reporter?.username,
-    video.editor?.username,
-    video.qaResponsible?.username,
-    video.program?.name,
-    video.contentType?.name,
-    ...(video.keywords || []),
-  ]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(target));
-};
-
-const filterVideos = (videos, filters) =>
-  videos.filter((video) => {
-    const eventMatch = filters.event
-      ? (video.event || '').toLowerCase().includes(filters.event.toLowerCase())
-      : true;
-    const locationMatch = filters.location
-      ? (video.location || '').toLowerCase().includes(filters.location.toLowerCase())
-      : true;
-    const uploaderMatch = filters.uploader
-      ? getUploaderName(video).toLowerCase().includes(filters.uploader.toLowerCase())
-      : true;
-    const dateMatch = filters.date
-      ? normalizeDate(video.tagDate || video.uploadDate) === filters.date
-      : true;
-    const statusMatch = filters.status === 'all' || video.status === filters.status;
-    const processingMatch =
-      filters.processingStatus === 'all' ||
-      video.processingStatus === filters.processingStatus;
-    const qcMatch = filters.qcStatus === 'all' || (video.qcStatus || 'pending') === filters.qcStatus;
-    const broadcastMatch =
-      filters.broadcastStatus === 'all' ||
-      (video.broadcastStatus || 'not_ready') === filters.broadcastStatus;
-
-    return (
-      matchesText(video, filters.search) &&
-      eventMatch &&
-      locationMatch &&
-      uploaderMatch &&
-      dateMatch &&
-      statusMatch &&
-      processingMatch &&
-      qcMatch &&
-      broadcastMatch
-    );
-  });
 
 const buildOptions = (videos, getter) =>
   Array.from(new Set(videos.map(getter).filter(Boolean))).sort((a, b) =>
     String(a).localeCompare(String(b))
   );
 
-const SummaryTile = ({ label, value, tone = 'default' }) => {
-  const colorMap = {
-    default: 'text.primary',
-    active: 'primary.main',
-    warning: 'warning.main',
-    error: 'error.main',
-    success: 'success.main',
-  };
-
-  return (
-    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, height: '100%' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-        {label}
-      </Typography>
-      <Typography variant="h5" sx={{ fontWeight: 800, color: colorMap[tone] }}>
-        {value}
-      </Typography>
-    </Paper>
-  );
-};
-
 const EditorDashboard = () => {
   const { user } = useContext(UserContext);
   const [videos, setVideos] = useState([]);
   const [filters, setFilters] = useState(defaultFilters);
+  const [debouncedFilters, setDebouncedFilters] = useState(defaultFilters);
+  const [workspaceMeta, setWorkspaceMeta] = useState({ total: 0, summary: {} });
+  const [contentTypes, setContentTypes] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -146,26 +74,68 @@ const EditorDashboard = () => {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [activeView, setActiveView] = useState('jobs');
+  const [categoryReviewDialog, setCategoryReviewDialog] = useState(defaultCategoryReviewDialog);
 
   const canUploadFinal = ['Editor', 'VideoEditor', 'Admin'].includes(user?.role);
+  const canRequestCategoryReview = ['Editor', 'VideoEditor', 'Admin'].includes(user?.role);
 
-  const fetchVideos = useCallback(({ silent = false } = {}) => {
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedFilters(filters), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [filters]);
+
+  useEffect(() => {
+    axiosInstance
+      .get('/broadcast/content-types')
+      .then((response) => {
+        setContentTypes(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error loading content types:', error);
+      });
+  }, []);
+
+  const fetchVideos = useCallback((optionsArg = {}) => {
+    const silent = Boolean(optionsArg?.silent);
     if (!silent) {
       setLoading(true);
       setErrorMessage('');
     }
 
+    const params = {
+      q: getSearchParam(debouncedFilters.search),
+      event: debouncedFilters.event || undefined,
+      location: debouncedFilters.location || undefined,
+      date: debouncedFilters.date || undefined,
+      contentTypeId: debouncedFilters.contentTypeId !== 'all' ? debouncedFilters.contentTypeId : undefined,
+      status: debouncedFilters.status !== 'all' ? debouncedFilters.status : undefined,
+      processingStatus: debouncedFilters.processingStatus !== 'all' ? debouncedFilters.processingStatus : undefined,
+      qcStatus: debouncedFilters.qcStatus !== 'all' ? debouncedFilters.qcStatus : undefined,
+      broadcastStatus: debouncedFilters.broadcastStatus !== 'all' ? debouncedFilters.broadcastStatus : undefined,
+      limit: 150,
+      sortBy: 'uploadDate',
+      sortOrder: 'desc',
+    };
+
     axiosInstance
-      .get('/videos?all=true', { headers: { Accept: 'application/json' } })
+      .get('/videos/workspace', {
+        params,
+        headers: { Accept: 'application/json' },
+      })
       .then((response) => {
-        const data = Array.isArray(response.data) ? response.data : [];
+        const data = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.items)
+            ? response.data.items
+            : [];
         setVideos(data);
+        setWorkspaceMeta(Array.isArray(response.data) ? { total: data.length, summary: {} } : response.data || {});
         setLastRefresh(new Date());
       })
       .catch((err) => {
         console.error('Error fetching videos:', err);
         if (!silent) {
-          setErrorMessage('Video list could not be loaded.');
+          setErrorMessage('Lista materijala se ne može učitati.');
         }
       })
       .finally(() => {
@@ -173,7 +143,7 @@ const EditorDashboard = () => {
           setLoading(false);
         }
       });
-  }, []);
+  }, [debouncedFilters]);
 
   useEffect(() => {
     fetchVideos();
@@ -189,7 +159,7 @@ const EditorDashboard = () => {
     return () => window.clearInterval(intervalId);
   }, [fetchVideos, hasActiveProcessing]);
 
-  const filteredVideos = useMemo(() => filterVideos(videos, filters), [videos, filters]);
+  const filteredVideos = videos;
 
   const selectedVideoObjects = useMemo(
     () => videos.filter((video) => selectedVideos.includes(video._id)),
@@ -201,22 +171,24 @@ const EditorDashboard = () => {
       events: buildOptions(videos, (video) => video.event),
       locations: buildOptions(videos, (video) => video.location),
       reporters: buildOptions(videos, getUploaderName),
+      contentTypes: contentTypes.filter((type) => type.active !== false),
     }),
-    [videos]
+    [contentTypes, videos]
   );
 
   const stats = useMemo(
     () => ({
-      total: videos.length,
-      raw: videos.filter((video) => video.status === 'raw').length,
-      processing: videos.filter((video) => ['queued', 'processing'].includes(video.processingStatus)).length,
-      qcPending: videos.filter((video) => (video.qcStatus || 'pending') === 'pending').length,
-      approved: videos.filter((video) => video.broadcastStatus === 'approved_for_air').length,
-      failed: videos.filter(
+      total: workspaceMeta.summary?.total ?? workspaceMeta.total ?? videos.length,
+      raw: workspaceMeta.summary?.raw ?? videos.filter((video) => video.status === 'raw').length,
+      processing: (workspaceMeta.summary?.queued ?? 0) + (workspaceMeta.summary?.processing ?? 0)
+        || videos.filter((video) => ['queued', 'processing'].includes(video.processingStatus)).length,
+      qcPending: workspaceMeta.summary?.qcPending ?? videos.filter((video) => (video.qcStatus || 'pending') === 'pending').length,
+      approved: workspaceMeta.summary?.approved ?? videos.filter((video) => video.broadcastStatus === 'approved_for_air').length,
+      failed: workspaceMeta.summary?.failed ?? videos.filter(
         (video) => video.processingStatus === 'failed' || video.qcStatus === 'failed'
       ).length,
     }),
-    [videos]
+    [videos, workspaceMeta]
   );
 
   const clearSelection = () => setSelectedVideos([]);
@@ -247,12 +219,59 @@ const EditorDashboard = () => {
     axiosInstance
       .post(`/videos/${video._id}/requeue-processing`)
       .then((response) => {
-        setMessage(response.data?.message || 'Video processing has been queued again.');
+        setMessage(response.data?.message || 'Obrada videa je ponovo stavljena u red.');
         fetchVideos();
       })
       .catch((error) => {
         console.error('Error retrying video processing:', error);
-        setErrorMessage(error.response?.data?.message || 'Video processing could not be retried.');
+        setErrorMessage(error.response?.data?.message || 'Obrada videa se ne može ponovo pokrenuti.');
+      });
+  };
+
+  const openCategoryReviewDialog = (video) => {
+    setMessage('');
+    setErrorMessage('');
+    setCategoryReviewDialog({
+      open: true,
+      video,
+      notes: `Trenutna kategorija: ${video.contentType?.name || video.finalCategory || 'bez kategorije'}.`,
+      busy: false,
+    });
+  };
+
+  const closeCategoryReviewDialog = () => {
+    if (categoryReviewDialog.busy) return;
+    setCategoryReviewDialog(defaultCategoryReviewDialog);
+  };
+
+  const submitCategoryReviewRequest = () => {
+    const video = categoryReviewDialog.video;
+    if (!video) return;
+
+    setCategoryReviewDialog((current) => ({ ...current, busy: true }));
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .patch(`/videos/${video._id}/archive-review-request`, {
+        notes: categoryReviewDialog.notes,
+      })
+      .then((response) => {
+        const updatedVideo = response.data?.video;
+        if (updatedVideo?._id) {
+          setVideos((currentVideos) =>
+            currentVideos.map((currentVideo) =>
+              currentVideo._id === updatedVideo._id ? updatedVideo : currentVideo
+            )
+          );
+        }
+        setCategoryReviewDialog(defaultCategoryReviewDialog);
+        setMessage(response.data?.message || 'Materijal je poslan arhivi na provjeru kategorije.');
+      })
+      .catch((error) => {
+        console.error('Error requesting archive category review:', error);
+        setCategoryReviewDialog((current) => ({ ...current, busy: false }));
+        setErrorMessage(error.response?.data?.message || 'Provjera kategorije se ne moze poslati arhivi.');
       });
   };
 
@@ -260,29 +279,19 @@ const EditorDashboard = () => {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        spacing={2}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              Production Desk
-            </Typography>
-            <Chip label={user?.role || 'User'} size="small" color="primary" />
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {lastRefresh ? `Last refresh ${lastRefresh.toLocaleTimeString()}` : 'Loading material'}
-          </Typography>
-        </Box>
-
-        <Stack direction="row" spacing={1} alignItems="center">
+      <WorkspaceHeader
+        eyebrow="Dnevna produkcija"
+        title="Production Desk"
+        subtitle={lastRefresh ? `Zadnje osvježenje: ${formatDateTimeBs(lastRefresh)}` : 'Učitavanje materijala i jobova'}
+        chips={[
+          { label: formatRole(user?.role), color: 'primary' },
+          { label: `${workspaceMeta.total ?? videos.length} materijala`, variant: 'outlined' },
+        ]}
+        actions={(
+          <>
           {loading && <CircularProgress size={22} />}
           <Button startIcon={<RefreshIcon />} variant="outlined" onClick={fetchVideos} disabled={loading}>
-            Refresh
+            Osvježi
           </Button>
           {canUploadFinal && (
             <Button
@@ -290,11 +299,12 @@ const EditorDashboard = () => {
               variant="contained"
               onClick={() => setUploadOpen((open) => !open)}
             >
-              Direct Final
+              Direktni final
             </Button>
           )}
-        </Stack>
-      </Stack>
+          </>
+        )}
+      />
 
       {errorMessage && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -307,26 +317,16 @@ const EditorDashboard = () => {
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="Total" value={stats.total} />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="Raw" value={stats.raw} tone="active" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="Processing" value={stats.processing} tone="warning" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="QC Pending" value={stats.qcPending} tone="warning" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="Approved" value={stats.approved} tone="success" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <SummaryTile label="Issues" value={stats.failed} tone="error" />
-        </Grid>
-      </Grid>
+      <KpiStrip
+        items={[
+          { label: 'Ukupno', value: stats.total },
+          { label: 'Sirovina', value: stats.raw, color: 'primary.main' },
+          { label: 'Obrada', value: stats.processing, color: 'warning.main' },
+          { label: 'QC čeka', value: stats.qcPending, color: 'warning.main' },
+          { label: 'Odobreno', value: stats.approved, color: 'success.main' },
+          { label: 'Problemi', value: stats.failed, color: 'error.main' },
+        ]}
+      />
 
       {canUploadFinal && uploadOpen && (
         <VideoUploadComponent
@@ -345,12 +345,15 @@ const EditorDashboard = () => {
           scrollButtons="auto"
         >
           <Tab value="jobs" label="Jobs" />
-          <Tab value="material" label="Material" />
+          <Tab value="corrections" label="Ispravke" />
+          <Tab value="material" label="Materijal" />
         </Tabs>
       </Paper>
 
       {activeView === 'jobs' ? (
         <EditJobBoard />
+      ) : activeView === 'corrections' ? (
+        <CorrectionQueue role={user?.role} userId={user?.id} />
       ) : (
         <>
           <SearchAndFilterComponent
@@ -374,9 +377,37 @@ const EditorDashboard = () => {
             onSelectVideo={handleSelectVideo}
             onSelectAllVisible={handleSelectAllVisible}
             onRetryProcessing={handleRetryProcessing}
+            onRequestCategoryReview={canRequestCategoryReview ? openCategoryReviewDialog : undefined}
           />
         </>
       )}
+
+      <Dialog open={categoryReviewDialog.open} onClose={closeCategoryReviewDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Provjera kategorije</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Posalji materijal arhiveru ako kategorija nije ispravna ili treba dodatnu metadata provjeru.
+          </DialogContentText>
+          <TextField
+            label="Napomena za arhivu"
+            value={categoryReviewDialog.notes}
+            onChange={(event) =>
+              setCategoryReviewDialog((current) => ({ ...current, notes: event.target.value }))
+            }
+            minRows={3}
+            multiline
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCategoryReviewDialog} disabled={categoryReviewDialog.busy}>
+            Odustani
+          </Button>
+          <Button variant="contained" onClick={submitCategoryReviewRequest} disabled={categoryReviewDialog.busy}>
+            {categoryReviewDialog.busy ? 'Saljem...' : 'Posalji arhivi'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

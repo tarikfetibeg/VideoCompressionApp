@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   Box,
   Checkbox,
-  Chip,
   IconButton,
   LinearProgress,
   Paper,
@@ -20,12 +19,21 @@ import {
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import ReplayIcon from '@mui/icons-material/Replay';
+import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import VideoThumbnailPreview from '../common/VideoThumbnailPreview';
+import { EmptyState, StatusChip } from '../common/WorkspaceChrome';
+import {
+  archiveReviewLabels,
+  broadcastLabels,
+  formatDateBs,
+  materialLabels,
+  processingLabels,
+  qcLabels,
+} from '../../utils/uiLabels';
 
 const formatDate = (value) => {
-  if (!value) return 'No date';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'No date';
-  return date.toLocaleDateString();
+  if (!value) return 'Bez datuma';
+  return formatDateBs(value);
 };
 
 const formatBytes = (bytes) => {
@@ -45,28 +53,40 @@ const formatBytes = (bytes) => {
 
 const getUploaderName = (video) => video.uploader?.username || 'Unknown';
 const getPersonName = (person) => person?.username || 'N/A';
-
-const getProcessingColor = (status) => {
-  if (status === 'completed') return 'success';
-  if (status === 'failed') return 'error';
-  if (status === 'processing' || status === 'queued') return 'warning';
-  return 'default';
+const getVideoTitle = (video) => video.finalTitle || video.originalFilename || video.filename || 'Bez naziva';
+const normalizeDisplayText = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/\.[a-z0-9]{2,6}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase();
+const isSameDisplayText = (value, candidates = []) => {
+  const normalizedValue = normalizeDisplayText(value);
+  return Boolean(normalizedValue) && candidates.some((candidate) =>
+    normalizeDisplayText(candidate) === normalizedValue
+  );
 };
-
-const getQcColor = (status) => {
-  if (status === 'passed') return 'success';
-  if (status === 'failed') return 'error';
-  return 'warning';
+const getVideoFileLabel = (video) => {
+  const title = getVideoTitle(video);
+  const filename = video.originalFilename || video.filename || '';
+  return filename && !isSameDisplayText(filename, [title]) ? filename : '';
 };
-
-const getBroadcastColor = (status) => {
-  if (status === 'approved_for_air' || status === 'aired') return 'success';
-  if (status === 'qc_failed') return 'error';
-  if (status === 'ready_for_approval' || status === 'qc_pending') return 'warning';
-  return 'default';
-};
-
-const formatStatusLabel = (value) => String(value || 'N/A').replace(/_/g, ' ');
+const getAssignmentEventLabel = (video, title) => (
+  video.event && !isSameDisplayText(video.event, [
+    title,
+    video.finalTitle,
+    video.originalFilename,
+    video.filename,
+  ])
+    ? video.event
+    : ''
+);
+const getContentTypeName = (video) => video.contentType?.name || video.finalCategory || 'Bez kategorije';
+const canRequestCategoryReview = (video) =>
+  video.status === 'edited' &&
+  video.processingStatus === 'completed' &&
+  video.archiveReviewStatus !== 'needs_metadata';
 
 const VideoListComponent = ({
   videos,
@@ -74,6 +94,7 @@ const VideoListComponent = ({
   onSelectVideo,
   onSelectAllVisible,
   onRetryProcessing,
+  onRequestCategoryReview,
 }) => {
   const visibleIds = videos.map((video) => video._id);
   const allVisibleSelected =
@@ -83,14 +104,10 @@ const VideoListComponent = ({
 
   if (videos.length === 0) {
     return (
-      <Paper variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: 'center' }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
-          No material found
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Adjust filters or refresh the workspace.
-        </Typography>
-      </Paper>
+      <EmptyState
+        title="Nema materijala"
+        description="Promijeni filtere ili osvježi produkcijski prikaz."
+      />
     );
   }
 
@@ -106,12 +123,12 @@ const VideoListComponent = ({
                 onChange={onSelectAllVisible}
               />
             </TableCell>
-            <TableCell>Material</TableCell>
-            <TableCell>Assignment</TableCell>
-            <TableCell>Processing</TableCell>
+            <TableCell>Materijal</TableCell>
+            <TableCell>Zaduženje</TableCell>
+            <TableCell>Obrada</TableCell>
             <TableCell>QC / Air</TableCell>
             <TableCell>Format</TableCell>
-            <TableCell align="right">Actions</TableCell>
+            <TableCell align="right">Akcije</TableCell>
           </TableRow>
         </TableHead>
 
@@ -120,6 +137,15 @@ const VideoListComponent = ({
             const selected = selectedVideos.includes(video._id);
             const processingProgress = Number(video.processingProgress) || 0;
             const showProgress = ['queued', 'processing'].includes(video.processingStatus);
+            const title = getVideoTitle(video);
+            const fileLabel = getVideoFileLabel(video);
+            const assignmentEvent = getAssignmentEventLabel(video, title);
+            const categoryReviewDisabled = !canRequestCategoryReview(video);
+            const categoryReviewTooltip = video.archiveReviewStatus === 'needs_metadata'
+              ? 'Vec je poslano arhivi na provjeru kategorije'
+              : categoryReviewDisabled
+                ? 'Samo zavrsen/finalizovan materijal moze ici arhivi na provjeru kategorije'
+                : 'Prijavi pogresnu kategoriju arhivi';
 
             return (
               <TableRow
@@ -136,27 +162,52 @@ const VideoListComponent = ({
                   <Checkbox checked={selected} onChange={() => onSelectVideo(video._id)} />
                 </TableCell>
 
-                <TableCell sx={{ minWidth: 260 }}>
-                  <Stack spacing={0.75}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <PlayCircleOutlineIcon fontSize="small" color="action" />
-                      <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
-                        {video.originalFilename || video.filename}
-                      </Typography>
-                    </Stack>
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                      <Chip label={video.status || 'N/A'} size="small" />
-                      {video.isBroll && <Chip label="B-roll" size="small" color="primary" />}
-                      <Chip label={formatBytes(video.sizeCompressed || video.sizeOriginal)} size="small" variant="outlined" />
+                <TableCell sx={{ minWidth: 340 }}>
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <VideoThumbnailPreview
+                      videoId={video._id}
+                      title={`Preview: ${title}`}
+                      width={96}
+                      height={54}
+                      enableScrubPreview
+                    />
+                    <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <PlayCircleOutlineIcon fontSize="small" color="action" />
+                        <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                          {title}
+                        </Typography>
+                      </Stack>
+                      {fileLabel && (
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          Fajl: {fileLabel}
+                        </Typography>
+                      )}
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                        <StatusChip value={video.status} maps={materialLabels} />
+                        <StatusChip label={getContentTypeName(video)} variant="outlined" tone="default" />
+                        {video.isBroll && <StatusChip label="B-roll" tone="primary" />}
+                        {video.archiveReviewStatus === 'needs_metadata' && (
+                          <StatusChip value={video.archiveReviewStatus} maps={archiveReviewLabels} />
+                        )}
+                        <StatusChip label={formatBytes(video.sizeCompressed || video.sizeOriginal)} variant="outlined" />
+                      </Stack>
                     </Stack>
                   </Stack>
                 </TableCell>
 
                 <TableCell sx={{ minWidth: 220 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
-                    {video.event || 'No event'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" display="block">
+                  {assignmentEvent && (
+                    <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+                      {assignmentEvent}
+                    </Typography>
+                  )}
+                  <Typography
+                    variant={assignmentEvent ? 'caption' : 'body2'}
+                    color={assignmentEvent ? 'text.secondary' : 'text.primary'}
+                    display="block"
+                    sx={{ fontWeight: assignmentEvent ? 400 : 700 }}
+                  >
                     {[video.location, formatDate(video.tagDate || video.uploadDate)].filter(Boolean).join(' / ')}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
@@ -173,11 +224,7 @@ const VideoListComponent = ({
                 </TableCell>
 
                 <TableCell sx={{ minWidth: 170 }}>
-                  <Chip
-                    label={formatStatusLabel(video.processingStatus)}
-                    size="small"
-                    color={getProcessingColor(video.processingStatus)}
-                  />
+                  <StatusChip value={video.processingStatus} maps={processingLabels} />
                   {showProgress && (
                     <Box sx={{ mt: 1, width: 140 }}>
                       <LinearProgress variant="determinate" value={processingProgress} />
@@ -195,17 +242,11 @@ const VideoListComponent = ({
 
                 <TableCell sx={{ minWidth: 190 }}>
                   <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                    <Chip
-                      label={`QC ${formatStatusLabel(video.qcStatus || 'pending')}`}
-                      size="small"
-                      color={getQcColor(video.qcStatus || 'pending')}
-                    />
-                    <Chip
-                      label={formatStatusLabel(video.broadcastStatus || 'not_ready')}
-                      size="small"
-                      color={getBroadcastColor(video.broadcastStatus || 'not_ready')}
-                      variant="outlined"
-                    />
+                    <StatusChip value={video.qcStatus || 'pending'} maps={qcLabels} />
+                    <StatusChip value={video.broadcastStatus || 'not_ready'} maps={broadcastLabels} variant="outlined" />
+                    {video.correctionStatus === 'needs_correction' && (
+                      <StatusChip label="Potrebna ispravka" tone="error" />
+                    )}
                   </Stack>
                 </TableCell>
 
@@ -219,13 +260,27 @@ const VideoListComponent = ({
                 <TableCell align="right">
                   <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                     {video.processingStatus === 'failed' && onRetryProcessing && (
-                      <Tooltip title="Retry processing">
+                      <Tooltip title="Ponovi obradu">
                         <IconButton onClick={() => onRetryProcessing(video)} size="small">
                           <ReplayIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                     )}
-                    <Tooltip title="Open details">
+                    {onRequestCategoryReview && (
+                      <Tooltip title={categoryReviewTooltip}>
+                        <span>
+                          <IconButton
+                            onClick={() => onRequestCategoryReview(video)}
+                            size="small"
+                            color={video.archiveReviewStatus === 'needs_metadata' ? 'warning' : 'default'}
+                            disabled={categoryReviewDisabled}
+                          >
+                            <ReportProblemOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                    <Tooltip title="Otvori detalje">
                       <IconButton component={Link} to={`/video-details/${video._id}`} size="small">
                         <OpenInNewIcon fontSize="small" />
                       </IconButton>

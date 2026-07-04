@@ -43,6 +43,9 @@ const emptyType = {
   slug: '',
   description: '',
   active: true,
+  autoExpireJobs: true,
+  jobSlaHours: 72,
+  jobGraceHours: 4,
 };
 
 const BroadcastProgramManagement = () => {
@@ -147,6 +150,9 @@ const BroadcastProgramManagement = () => {
       slug: type.slug || '',
       description: type.description || '',
       active: type.active !== false,
+      autoExpireJobs: type.autoExpireJobs !== false,
+      jobSlaHours: type.jobSlaHours || 72,
+      jobGraceHours: type.jobGraceHours ?? 4,
     });
   };
 
@@ -283,6 +289,37 @@ const BroadcastProgramManagement = () => {
                 onChange={(event) => setTypeForm((current) => ({ ...current, description: event.target.value }))}
                 fullWidth
               />
+              <Grid container spacing={1.5}>
+                <Grid item xs={6}>
+                  <TextField
+                    label="SLA rok (sati)"
+                    type="number"
+                    value={typeForm.jobSlaHours}
+                    onChange={(event) => setTypeForm((current) => ({ ...current, jobSlaHours: event.target.value }))}
+                    inputProps={{ min: 1, max: 720 }}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    label="Grace period (sati)"
+                    type="number"
+                    value={typeForm.jobGraceHours}
+                    onChange={(event) => setTypeForm((current) => ({ ...current, jobGraceHours: event.target.value }))}
+                    inputProps={{ min: 0, max: 168 }}
+                    fullWidth
+                  />
+                </Grid>
+              </Grid>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={typeForm.autoExpireJobs}
+                    onChange={(event) => setTypeForm((current) => ({ ...current, autoExpireJobs: event.target.checked }))}
+                  />
+                }
+                label="Automatski premjesti istekle jobove u historiju"
+              />
               <FormControlLabel
                 control={
                   <Checkbox
@@ -307,6 +344,7 @@ const BroadcastProgramManagement = () => {
                 <TableRow>
                   <TableCell>Type</TableCell>
                   <TableCell>Slug</TableCell>
+                  <TableCell>SLA</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Edit</TableCell>
                 </TableRow>
@@ -323,6 +361,12 @@ const BroadcastProgramManagement = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>{type.slug}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{type.jobSlaHours || 72}h + {type.jobGraceHours ?? 4}h</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {type.autoExpireJobs === false ? 'Bez automatskog isteka' : 'Automatski istek'}
+                      </Typography>
+                    </TableCell>
                     <TableCell>
                       <Chip label={type.active ? 'Active' : 'Inactive'} size="small" color={type.active ? 'success' : 'default'} />
                     </TableCell>

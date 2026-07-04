@@ -3,12 +3,107 @@ const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
 const Video = require('../models/Video');
 const AuditLog = require('../models/AuditLog');
-const { ensureFolderExists } = require('../utils/storagePaths');
+const {
+  getMediaSettings,
+  parseResolution,
+} = require('./mediaProfileService');
+const {
+  inspectBrowserCompatibility,
+  toPlaybackCompatibility,
+} = require('./mediaCompatibilityService');
+const { paths, ensureFolderExists } = require('../utils/storagePaths');
+
+const SCRUB_PREVIEW_VERSION = 'frames-v1';
+const SCRUB_PREVIEW_FRAME_COUNT = 12;
+const SCRUB_PREVIEW_FRAME_WIDTH = 320;
+const SCRUB_PREVIEW_FRAME_HEIGHT = 180;
+
+function isPathInside(parentPath, candidatePath) {
+  if (!candidatePath) return false;
+  const resolvedParent = path.resolve(parentPath);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(`${resolvedParent}${path.sep}`);
+}
 
 function removeFileIfExists(filePath) {
   if (filePath && fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
+}
+
+function removeDirectoryIfExists(folderPath) {
+  if (folderPath && fs.existsSync(folderPath)) {
+    fs.rmSync(folderPath, { recursive: true, force: true });
+  }
+}
+
+function resolveExistingPath(...candidatePaths) {
+  for (const candidatePath of candidatePaths) {
+    if (!candidatePath) continue;
+
+    const resolvedPath = path.resolve(candidatePath);
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
+    }
+  }
+
+  return null;
+}
+
+function getScrubPreviewFolder(videoOrId) {
+  const videoId = videoOrId?._id || videoOrId;
+  return path.join(paths.scrubPreviews, String(videoId));
+}
+
+function getScrubPreviewFramePath(folderPath, frameIndex) {
+  return path.join(folderPath, `frame_${String(frameIndex).padStart(2, '0')}.jpg`);
+}
+
+function getScrubPreviewFolderForVideo(video) {
+  return video?.scrubPreview?.folderPath || getScrubPreviewFolder(video?._id || video);
+}
+
+function removeScrubPreviewFolderForVideo(video) {
+  const folderPath = getScrubPreviewFolder(video?._id || video);
+  const resolvedFolder = path.resolve(folderPath);
+
+  if (!isPathInside(paths.scrubPreviews, resolvedFolder)) {
+    return false;
+  }
+
+  removeDirectoryIfExists(resolvedFolder);
+  return true;
+}
+
+function hasUsableScrubPreview(video) {
+  const frameCount = Number(video?.scrubPreview?.frameCount) || 0;
+  if (!video?._id || frameCount <= 0 || video.scrubPreview?.error) return false;
+
+  const folderPath = getScrubPreviewFolderForVideo(video);
+  const resolvedFolder = path.resolve(folderPath);
+  if (!isPathInside(paths.scrubPreviews, resolvedFolder)) return false;
+
+  const firstFrame = getScrubPreviewFramePath(resolvedFolder, 0);
+  const lastFrame = getScrubPreviewFramePath(resolvedFolder, frameCount - 1);
+  return fs.existsSync(firstFrame) && fs.existsSync(lastFrame);
+}
+
+function resolveScrubPreviewFramePath(video, frameIndex) {
+  const frameCount = Number(video?.scrubPreview?.frameCount) || 0;
+  const parsedIndex = Number(frameIndex);
+
+  if (!Number.isInteger(parsedIndex) || parsedIndex < 0 || parsedIndex >= frameCount) {
+    return null;
+  }
+
+  const folderPath = getScrubPreviewFolderForVideo(video);
+  const framePath = getScrubPreviewFramePath(path.resolve(folderPath), parsedIndex);
+
+  if (!isPathInside(paths.scrubPreviews, framePath) || !fs.existsSync(framePath)) {
+    return null;
+  }
+
+  return framePath;
 }
 
 function getFileSize(filePath) {
@@ -111,18 +206,31 @@ function convertVideo({
   });
 }
 
-function convertPreviewVideo({ inputPath, outputPath, onProgress }) {
+function convertPreviewAttempt({
+  inputPath,
+  outputPath,
+  onProgress,
+  encoder,
+  preset,
+  resolution,
+  videoBitrate,
+  audioBitrate,
+  frameRate,
+}) {
   return new Promise((resolve, reject) => {
     ensureFolderExists(path.dirname(outputPath));
+    const dimensions = parseResolution(resolution, '1280x720');
+    const aspectFilter = `scale=w=${dimensions.width}:h=${dimensions.height}:force_original_aspect_ratio=decrease:force_divisible_by=2,`
+      + `pad=${dimensions.width}:${dimensions.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .inputOptions(['-fflags +genpts'])
-      .videoCodec('libx264')
+      .videoCodec(encoder)
       .audioCodec('aac')
-      .size('1280x720')
-      .videoBitrate(2000)
-      .audioBitrate('128k')
-      .fps(30)
+      .videoFilters(aspectFilter)
+      .videoBitrate(videoBitrate)
+      .audioBitrate(`${audioBitrate}k`)
+      .fps(frameRate)
       .outputOptions([
         '-map 0:v:0',
         '-map 0:a?',
@@ -131,8 +239,22 @@ function convertPreviewVideo({ inputPath, outputPath, onProgress }) {
         '-pix_fmt yuv420p',
         '-movflags +faststart',
         '-max_muxing_queue_size 2048',
-        '-preset veryfast',
-      ])
+      ]);
+
+    if (encoder === 'h264_nvenc') {
+      command.outputOptions([
+        `-preset ${preset}`,
+        '-tune hq',
+        '-profile:v high',
+        '-rc vbr',
+        '-spatial-aq 1',
+        '-temporal-aq 1',
+      ]);
+    } else {
+      command.outputOptions([`-preset ${preset}`]);
+    }
+
+    command
       .on('progress', (progress) => {
         const percent = getFfmpegProgressPercent(progress);
         if (percent !== null && onProgress) {
@@ -145,23 +267,292 @@ function convertPreviewVideo({ inputPath, outputPath, onProgress }) {
   });
 }
 
-function createThumbnail({ inputPath, outputPath }) {
+function isPreviewNvencRuntimeError(error) {
+  return /(cannot load (?:nvcuda|nvencodeapi)|no capable devices|device not available|encode session|openencode session|driver does not support|required nvenc api|nvenc api version|cannot init cuda|cuda_error|out of memory|error while opening encoder|failed to (?:open|initiali[sz]e) (?:encoder|device))/i
+    .test(String(error?.message || ''));
+}
+
+async function convertPreviewVideo({
+  inputPath,
+  outputPath,
+  onProgress,
+  settings,
+  sourceFramerate,
+}) {
+  const mediaSettings = settings || await getMediaSettings();
+  const requestedEncoder = mediaSettings.mp4PreviewEncoder;
+  const resolution = mediaSettings.mp4PreviewResolution;
+  const frameRate = mediaSettings.mp4PreviewFramerateMode === 'source_capped_50'
+    ? Math.min(Math.max(Number(sourceFramerate) || 30, 1), 50)
+    : mediaSettings.mp4PreviewFramerate;
+  const startedAt = Date.now();
+  let encoderUsed = requestedEncoder;
+  let preset = requestedEncoder === 'h264_nvenc'
+    ? mediaSettings.mp4PreviewNvencPreset
+    : mediaSettings.mp4PreviewCpuPreset;
+  let cpuFallbackUsed = false;
+  let fallbackReason = '';
+
+  try {
+    await convertPreviewAttempt({
+      inputPath,
+      outputPath,
+      onProgress,
+      encoder: encoderUsed,
+      preset,
+      resolution,
+      videoBitrate: mediaSettings.mp4PreviewVideoBitrate,
+      audioBitrate: mediaSettings.mp4PreviewAudioBitrate,
+      frameRate,
+    });
+  } catch (error) {
+    if (
+      requestedEncoder !== 'h264_nvenc'
+      || mediaSettings.mp4PreviewCpuFallback === false
+      || !isPreviewNvencRuntimeError(error)
+    ) {
+      throw error;
+    }
+    removeFileIfExists(outputPath);
+    encoderUsed = 'libx264';
+    preset = mediaSettings.mp4PreviewCpuPreset;
+    cpuFallbackUsed = true;
+    fallbackReason = error.message;
+    await convertPreviewAttempt({
+      inputPath,
+      outputPath,
+      onProgress,
+      encoder: encoderUsed,
+      preset,
+      resolution,
+      videoBitrate: mediaSettings.mp4PreviewVideoBitrate,
+      audioBitrate: mediaSettings.mp4PreviewAudioBitrate,
+      frameRate,
+    });
+  }
+
+  const dimensions = parseResolution(resolution);
+  return {
+    profileVersion: mediaSettings.mp4PreviewProfileVersion,
+    encoderRequested: requestedEncoder,
+    encoderUsed,
+    encoderPreset: preset,
+    cpuFallbackUsed,
+    fallbackReason,
+    width: dimensions.width,
+    height: dimensions.height,
+    videoBitrate: mediaSettings.mp4PreviewVideoBitrate,
+    audioBitrate: mediaSettings.mp4PreviewAudioBitrate,
+    framerate: frameRate,
+    size: getFileSize(outputPath) || 0,
+    processingMs: Date.now() - startedAt,
+    createdAt: new Date(),
+    error: '',
+  };
+}
+
+function createThumbnail({
+  inputPath,
+  outputPath,
+  resolution = '640x360',
+  jpegQuality = 3,
+}) {
   return new Promise((resolve, reject) => {
     ensureFolderExists(path.dirname(outputPath));
+    const dimensions = parseResolution(resolution, '640x360');
+    const aspectFilter = `scale=w=${dimensions.width}:h=${dimensions.height}:force_original_aspect_ratio=decrease:force_divisible_by=2,`
+      + `pad=${dimensions.width}:${dimensions.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
     ffmpeg(inputPath)
       .inputOptions(['-fflags +genpts'])
       .seekInput('00:00:01')
       .frames(1)
-      .size('640x360')
+      .videoFilters(aspectFilter)
       .outputOptions([
         '-map 0:v:0',
-        '-q:v 3',
+        `-q:v ${jpegQuality}`,
       ])
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
   });
+}
+
+function getScrubPreviewTimestamp(duration, frameIndex, frameCount) {
+  const parsedDuration = Number(duration);
+  if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+    return 0;
+  }
+
+  const position = parsedDuration * ((frameIndex + 0.5) / frameCount);
+  const upperBound = Math.max(parsedDuration - 0.15, 0);
+  return Math.min(Math.max(position, 0), upperBound);
+}
+
+function createScrubPreviewFrame({
+  inputPath,
+  outputPath,
+  timestamp,
+  width,
+  height,
+  jpegQuality = 3,
+}) {
+  return new Promise((resolve, reject) => {
+    ensureFolderExists(path.dirname(outputPath));
+    const aspectFilter = `scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease:force_divisible_by=2,`
+      + `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+
+    ffmpeg(inputPath)
+      .inputOptions(['-fflags +genpts'])
+      .seekInput(timestamp)
+      .frames(1)
+      .videoFilters(aspectFilter)
+      .outputOptions([
+        '-map 0:v:0',
+        `-q:v ${jpegQuality}`,
+      ])
+      .on('end', resolve)
+      .on('error', reject)
+      .save(outputPath);
+  });
+}
+
+async function buildScrubPreviewForVideo(video, options = {}) {
+  const mediaSettings = options.settings || await getMediaSettings();
+  const scrubDimensions = parseResolution(mediaSettings.scrubResolution, '320x180');
+  const {
+    force = false,
+    frameCount = mediaSettings.scrubFrameCount || SCRUB_PREVIEW_FRAME_COUNT,
+    frameWidth = scrubDimensions.width || SCRUB_PREVIEW_FRAME_WIDTH,
+    frameHeight = scrubDimensions.height || SCRUB_PREVIEW_FRAME_HEIGHT,
+    jpegQuality = mediaSettings.scrubJpegQuality || 3,
+  } = options;
+
+  if (!video?._id) {
+    return { status: 'skipped', reason: 'missing_video' };
+  }
+
+  if (!force && hasUsableScrubPreview(video)) {
+    return {
+      status: 'skipped',
+      reason: 'already_exists',
+      videoId: video._id,
+      frameCount: video.scrubPreview.frameCount,
+    };
+  }
+
+  const folderPath = getScrubPreviewFolder(video._id);
+  const resolvedFolder = path.resolve(folderPath);
+
+  if (!isPathInside(paths.scrubPreviews, resolvedFolder)) {
+    const errorMessage = 'Scrub preview path is outside storage.';
+    video.scrubPreview = {
+      ...(video.scrubPreview || {}),
+      folderPath: resolvedFolder,
+      frameCount: 0,
+      frameWidth,
+      frameHeight,
+      duration: video.duration || null,
+      createdAt: new Date(),
+      version: SCRUB_PREVIEW_VERSION,
+      profileVersion: mediaSettings.scrubProfileVersion,
+      jpegQuality,
+      error: errorMessage,
+    };
+    await video.save();
+    return { status: 'failed', reason: errorMessage, videoId: video._id };
+  }
+
+  const inputPath = resolveExistingPath(
+    video.previewPath,
+    video.compressedPath,
+    video.filepath,
+    video.rawPath
+  );
+
+  if (!inputPath) {
+    const errorMessage = 'Source file not found.';
+    video.scrubPreview = {
+      ...(video.scrubPreview || {}),
+      folderPath: resolvedFolder,
+      frameCount: 0,
+      frameWidth,
+      frameHeight,
+      duration: video.duration || null,
+      createdAt: new Date(),
+      version: SCRUB_PREVIEW_VERSION,
+      profileVersion: mediaSettings.scrubProfileVersion,
+      jpegQuality,
+      error: errorMessage,
+    };
+    await video.save();
+    return { status: 'skipped', reason: 'source_missing', videoId: video._id };
+  }
+
+  try {
+    removeDirectoryIfExists(resolvedFolder);
+    ensureFolderExists(resolvedFolder);
+
+    const mediaProbe = await probeMedia(inputPath);
+    const duration = mediaProbe.duration || video.duration || null;
+    const generatedFrameCount = Math.max(1, Math.min(Number(frameCount) || SCRUB_PREVIEW_FRAME_COUNT, 24));
+
+    for (let index = 0; index < generatedFrameCount; index += 1) {
+      await createScrubPreviewFrame({
+        inputPath,
+        outputPath: getScrubPreviewFramePath(resolvedFolder, index),
+        timestamp: getScrubPreviewTimestamp(duration, index, generatedFrameCount),
+        width: frameWidth,
+        height: frameHeight,
+        jpegQuality,
+      });
+    }
+
+    video.duration = video.duration || duration;
+    video.scrubPreview = {
+      folderPath: resolvedFolder,
+      frameCount: generatedFrameCount,
+      frameWidth,
+      frameHeight,
+      duration,
+      createdAt: new Date(),
+      version: SCRUB_PREVIEW_VERSION,
+      profileVersion: mediaSettings.scrubProfileVersion,
+      jpegQuality,
+      error: '',
+    };
+    await video.save();
+
+    return {
+      status: 'built',
+      videoId: video._id,
+      frameCount: generatedFrameCount,
+      folderPath: resolvedFolder,
+    };
+  } catch (error) {
+    const errorMessage = error.message || 'Scrub preview generation failed.';
+
+    removeDirectoryIfExists(resolvedFolder);
+    video.scrubPreview = {
+      folderPath: resolvedFolder,
+      frameCount: 0,
+      frameWidth,
+      frameHeight,
+      duration: video.duration || null,
+      createdAt: new Date(),
+      version: SCRUB_PREVIEW_VERSION,
+      profileVersion: mediaSettings.scrubProfileVersion,
+      jpegQuality,
+      error: errorMessage,
+    };
+    await video.save();
+
+    return {
+      status: 'failed',
+      reason: errorMessage,
+      videoId: video._id,
+    };
+  }
 }
 
 async function updateProgress(video, job, processingProgress) {
@@ -253,21 +644,76 @@ async function processVideoJob({ videoId }, job) {
     await video.save();
 
     const reportProgress = createProgressReporter(video, job);
+    const mediaSettings = await getMediaSettings();
+    const previewPolicy = mediaSettings.mp4PreviewPolicy === 'always'
+      ? 'always'
+      : 'when_required';
     await reportProgress(5, { force: true });
 
     if (video.processingMode === 'finalize') {
-      await convertPreviewVideo({
-        inputPath,
-        outputPath: video.previewPath,
-        onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 5, 45)),
-      });
+      const sourceCompatibility = await inspectBrowserCompatibility(inputPath);
+      const skipPreview = previewPolicy === 'when_required' && sourceCompatibility.compatible;
+      if (skipPreview) {
+        video.previewPath = null;
+        video.sizePreview = 0;
+        video.playbackCompatibility = toPlaybackCompatibility(sourceCompatibility, 'compressed');
+        video.mp4Preview = {
+          profileVersion: mediaSettings.mp4PreviewProfileVersion,
+          encoderRequested: mediaSettings.mp4PreviewEncoder,
+          encoderUsed: 'source',
+          width: sourceCompatibility.probe?.width,
+          height: sourceCompatibility.probe?.height,
+          videoBitrate: video.sourceBitrate,
+          audioBitrate: null,
+          framerate: video.sourceFramerate,
+          size: getFileSize(inputPath) || 0,
+          processingMs: 0,
+          createdAt: new Date(),
+          error: '',
+        };
+      } else {
+        video.mp4Preview = await convertPreviewVideo({
+          inputPath,
+          outputPath: video.previewPath,
+          onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 5, 45)),
+          settings: mediaSettings,
+          sourceFramerate: video.sourceFramerate,
+        });
+        video.playbackCompatibility = toPlaybackCompatibility(
+          await inspectBrowserCompatibility(video.previewPath),
+          'preview'
+        );
+      }
       await reportProgress(45, { force: true });
 
       await createThumbnail({
         inputPath,
         outputPath: video.thumbnailPath,
+        resolution: mediaSettings.thumbnailResolution,
+        jpegQuality: mediaSettings.thumbnailJpegQuality,
       });
-      await reportProgress(70, { force: true });
+      {
+        const dimensions = parseResolution(mediaSettings.thumbnailResolution, '640x360');
+        video.thumbnail = {
+          profileVersion: mediaSettings.thumbnailProfileVersion,
+          width: dimensions.width,
+          height: dimensions.height,
+          jpegQuality: mediaSettings.thumbnailJpegQuality,
+          size: getFileSize(video.thumbnailPath) || 0,
+          createdAt: new Date(),
+          error: '',
+        };
+      }
+      await reportProgress(62, { force: true });
+
+      const scrubResult = await buildScrubPreviewForVideo(video, {
+        force: true,
+        settings: mediaSettings,
+      });
+      if (scrubResult.status === 'failed') {
+        console.warn(`Scrub preview failed for video ${video._id}: ${scrubResult.reason}`);
+      }
+      await reportProgress(78, { force: true });
 
       ensureFolderExists(path.dirname(video.compressedPath));
       fs.renameSync(inputPath, video.compressedPath);
@@ -289,17 +735,68 @@ async function processVideoJob({ videoId }, job) {
       });
       await reportProgress(45, { force: true });
 
-      await convertPreviewVideo({
-        inputPath,
-        outputPath: video.previewPath,
-        onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 45, 70)),
-      });
+      const compressedCompatibility = await inspectBrowserCompatibility(video.compressedPath);
+      const skipPreview = previewPolicy === 'when_required' && compressedCompatibility.compatible;
+      if (skipPreview) {
+        video.previewPath = null;
+        video.sizePreview = 0;
+        video.playbackCompatibility = toPlaybackCompatibility(compressedCompatibility, 'compressed');
+        video.mp4Preview = {
+          profileVersion: mediaSettings.mp4PreviewProfileVersion,
+          encoderRequested: mediaSettings.mp4PreviewEncoder,
+          encoderUsed: 'source',
+          width: compressedCompatibility.probe?.width,
+          height: compressedCompatibility.probe?.height,
+          videoBitrate: video.bitrate,
+          audioBitrate: null,
+          framerate: video.framerate,
+          size: getFileSize(video.compressedPath) || 0,
+          processingMs: 0,
+          createdAt: new Date(),
+          error: '',
+        };
+      } else {
+        video.mp4Preview = await convertPreviewVideo({
+          inputPath,
+          outputPath: video.previewPath,
+          onProgress: (percent) => reportProgress(mapPhaseProgress(percent, 45, 70)),
+          settings: mediaSettings,
+          sourceFramerate: video.sourceFramerate,
+        });
+        video.playbackCompatibility = toPlaybackCompatibility(
+          await inspectBrowserCompatibility(video.previewPath),
+          'preview'
+        );
+      }
       await reportProgress(70, { force: true });
 
       await createThumbnail({
         inputPath,
         outputPath: video.thumbnailPath,
+        resolution: mediaSettings.thumbnailResolution,
+        jpegQuality: mediaSettings.thumbnailJpegQuality,
       });
+      {
+        const dimensions = parseResolution(mediaSettings.thumbnailResolution, '640x360');
+        video.thumbnail = {
+          profileVersion: mediaSettings.thumbnailProfileVersion,
+          width: dimensions.width,
+          height: dimensions.height,
+          jpegQuality: mediaSettings.thumbnailJpegQuality,
+          size: getFileSize(video.thumbnailPath) || 0,
+          createdAt: new Date(),
+          error: '',
+        };
+      }
+      await reportProgress(84, { force: true });
+
+      const scrubResult = await buildScrubPreviewForVideo(video, {
+        force: true,
+        settings: mediaSettings,
+      });
+      if (scrubResult.status === 'failed') {
+        console.warn(`Scrub preview failed for video ${video._id}: ${scrubResult.reason}`);
+      }
       await reportProgress(90, { force: true });
 
       if (!video.rawRetentionDays || video.rawRetentionDays <= 0) {
@@ -315,7 +812,7 @@ async function processVideoJob({ videoId }, job) {
 
     video.filepath = video.compressedPath || video.filepath;
     video.sizeCompressed = getFileSize(video.compressedPath);
-    video.sizePreview = getFileSize(video.previewPath);
+    video.sizePreview = video.previewPath ? getFileSize(video.previewPath) : 0;
     video.sizeThumbnail = getFileSize(video.thumbnailPath);
     video.duration = mediaProbe.duration || video.duration;
     video.codec = video.codec || mediaProbe.codec;
@@ -378,6 +875,18 @@ async function processVideoJob({ videoId }, job) {
 }
 
 module.exports = {
+  SCRUB_PREVIEW_VERSION,
+  buildScrubPreviewForVideo,
+  convertPreviewVideo,
+  createScrubPreviewFrame,
+  createThumbnail,
+  getScrubPreviewTimestamp,
+  getScrubPreviewFolder,
+  getScrubPreviewFolderForVideo,
+  getScrubPreviewFramePath,
+  hasUsableScrubPreview,
   probeMedia,
   processVideoJob,
+  removeScrubPreviewFolderForVideo,
+  resolveScrubPreviewFramePath,
 };

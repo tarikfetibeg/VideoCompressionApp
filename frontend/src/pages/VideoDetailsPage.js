@@ -30,6 +30,14 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import SaveIcon from '@mui/icons-material/Save';
 import axios from '../axiosConfig';
 import { UserContext } from '../contexts/UserContext';
+import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
+import { StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import {
+  broadcastLabels,
+  formatDateBs,
+  processingLabels,
+  qcLabels,
+} from '../utils/uiLabels';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
   isVideoProcessingActive,
@@ -98,17 +106,17 @@ const getUserLabel = (option) =>
   option ? `${option.username || 'Unknown'} / ${option.role || 'Role'}` : '';
 
 const getWorkflowStage = (video) => {
-  if (!video) return { label: 'Loading', color: 'default' };
-  if (['aired', 'archived'].includes(video.broadcastStatus)) return { label: 'Archive / aired', color: 'info' };
+  if (!video) return { label: 'Ucitavanje', color: 'default' };
+  if (['aired', 'archived'].includes(video.broadcastStatus)) return { label: 'Arhiva / emitovano', color: 'info' };
   if (
     video.processingMode === 'finalize' ||
     video.finalApprovalStatus === 'approved' ||
     video.contentType
   ) {
-    return { label: 'Edited final', color: 'success' };
+    return { label: 'Final spreman', color: 'success' };
   }
-  if (video.status === 'edited') return { label: 'Edited material', color: 'primary' };
-  return { label: 'Raw ingest', color: 'warning' };
+  if (video.status === 'edited') return { label: 'Smontiran materijal', color: 'primary' };
+  return { label: 'Sirovina / ingest', color: 'warning' };
 };
 
 const getProcessingColor = (status) => {
@@ -133,6 +141,7 @@ const VideoDetailsPage = () => {
   const { videoId } = useParams();
   const [searchParams] = useSearchParams();
   const { user } = useContext(UserContext);
+  const { startDownload } = useBackgroundDownloads();
   const [videoData, setVideoData] = useState(null);
   const [timecodes, setTimecodes] = useState([]);
   const [qcStatus, setQcStatus] = useState('pending');
@@ -204,21 +213,14 @@ const VideoDetailsPage = () => {
   }, []);
 
   const handleDownload = () => {
-    axios
-      .get(`/videos/download/${videoId}`, {
-        responseType: 'blob',
-      })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `video_${videoId}.mp4`);
-        document.body.appendChild(link);
-        link.click();
-        link.parentNode.removeChild(link);
-      })
+    startDownload({
+      kind: 'video-single',
+      payload: { videoId },
+      label: videoData?.originalFilename || videoData?.filename || `Video ${videoId}`,
+    })
       .catch((error) => {
         console.error('Error downloading video:', error);
+        setActionError(error.response?.data?.message || 'Video se ne moze skinuti.');
       });
   };
 
@@ -375,49 +377,32 @@ const VideoDetailsPage = () => {
 
       {videoData && (
         <>
-          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={2}
-              justifyContent="space-between"
-              alignItems={{ xs: 'flex-start', md: 'center' }}
-            >
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="h5" sx={{ fontWeight: 900 }} noWrap>
-                  {getTitle(videoData)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" noWrap>
-                  {[videoData.event || 'No event', videoData.program?.name, formatDate(videoData.tagDate || videoData.airDate || videoData.uploadDate)]
-                    .filter(Boolean)
-                    .join(' / ')}
-                </Typography>
-              </Box>
-
+          <WorkspaceHeader
+            eyebrow="Video Details"
+            title={getTitle(videoData)}
+            subtitle={[videoData.event || 'Bez eventa', videoData.program?.name, formatDateBs(videoData.tagDate || videoData.airDate || videoData.uploadDate)]
+              .filter(Boolean)
+              .join(' / ')}
+            chips={[
+              { label: 'Workflow', value: workflowStage.label, color: workflowStage.color },
+              { label: 'Materijal', value: formatLabel(videoData.status) },
+            ]}
+            actions={(
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip label={workflowStage.label} color={workflowStage.color} />
-                <Chip
-                  label={`Processing: ${formatLabel(videoData.processingStatus)}`}
-                  color={getProcessingColor(videoData.processingStatus)}
-                  variant="outlined"
-                />
-                <Chip label={`QC: ${formatLabel(videoData.qcStatus || 'pending')}`} variant="outlined" />
-                <Chip label={`Broadcast: ${formatLabel(videoData.broadcastStatus || 'not_ready')}`} variant="outlined" />
+                <StatusChip value={videoData.processingStatus} maps={processingLabels} prefix="Processing " variant="outlined" tone={getProcessingColor(videoData.processingStatus)} />
+                <StatusChip value={videoData.qcStatus || 'pending'} maps={qcLabels} prefix="QC " variant="outlined" />
+                <StatusChip value={videoData.broadcastStatus || 'not_ready'} maps={broadcastLabels} prefix="Broadcast " variant="outlined" />
                 {videoData.correctionStatus === 'needs_correction' && (
-                  <Chip label="Potrebna ispravka" color="error" />
+                  <StatusChip label="Potrebna ispravka" tone="error" />
                 )}
                 {canDownloadVideo && (
-                  <Button
-                    variant="contained"
-                    size="small"
-                    startIcon={<DownloadIcon />}
-                    onClick={handleDownload}
-                  >
+                  <Button variant="contained" size="small" startIcon={<DownloadIcon />} onClick={handleDownload}>
                     Download
                   </Button>
                 )}
               </Stack>
-            </Stack>
-          </Paper>
+            )}
+          />
 
           {isVideoProcessingActive(videoData) && (
             <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderRadius: 2 }}>

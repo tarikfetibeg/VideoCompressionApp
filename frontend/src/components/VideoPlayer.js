@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import axiosInstance from '../axiosConfig';
 import {
   Alert,
@@ -7,12 +8,16 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  FormControl,
   IconButton,
+  InputLabel,
   List,
   ListItem,
   ListItemButton,
   ListItemText,
   Paper,
+  Select,
+  MenuItem,
   Stack,
   TextField,
   Tooltip,
@@ -64,16 +69,38 @@ const getMarkerColor = (type) => {
 const sortByTimestamp = (timecodes) =>
   [...timecodes].sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
 
-const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = false, compact = false }) => {
-  const [videoBlobUrl, setVideoBlobUrl] = useState('');
+const resolveMediaUrl = (url) => {
+  if (!url || /^https?:\/\//i.test(url)) return url || '';
+  const baseURL = axiosInstance.defaults.baseURL || '/api';
+  if (/^https?:\/\//i.test(baseURL) && url.startsWith('/')) {
+    return `${new URL(baseURL).origin}${url}`;
+  }
+  return url;
+};
+
+const VideoPlayer = ({
+  videoId,
+  initialStart = 0,
+  onTimecodesChange,
+  onPlaybackPositionChange,
+  readOnly = false,
+  compact = false,
+}) => {
+  const [mediaTicket, setMediaTicket] = useState(null);
   const [timecodes, setTimecodes] = useState([]);
-  const [loadingVideo, setLoadingVideo] = useState(false);
+  const [loadingVideo, setLoadingVideo] = useState(true);
   const [videoError, setVideoError] = useState('');
   const [timecodeError, setTimecodeError] = useState('');
   const [markerNote, setMarkerNote] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [markerMessage, setMarkerMessage] = useState('');
+  const [quality, setQuality] = useState(-1);
+  const [qualityLevels, setQualityLevels] = useState([]);
+  const [buffering, setBuffering] = useState(false);
   const playerRef = useRef(null);
+  const hlsRef = useRef(null);
+  const resumeTimeRef = useRef(Number(initialStart) || 0);
+  const ticketRefreshAttemptsRef = useRef(0);
 
   const sortedTimecodes = useMemo(() => sortByTimestamp(timecodes), [timecodes]);
 
@@ -84,24 +111,26 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
   }, [onTimecodesChange, sortedTimecodes]);
 
   useEffect(() => {
-    let objectUrl = '';
-
-    const fetchVideo = async () => {
+    let cancelled = false;
+    const fetchMediaTicket = async () => {
       setLoadingVideo(true);
       setVideoError('');
 
       try {
-        const response = await axiosInstance.get(`/videos/preview/${videoId}`, {
-          responseType: 'blob',
-        });
-
-        objectUrl = URL.createObjectURL(response.data);
-        setVideoBlobUrl(objectUrl);
+        const response = await axiosInstance.post('/media/tickets', { videoId });
+        if (!cancelled) {
+          setMediaTicket({
+            ...response.data,
+            manifestUrl: resolveMediaUrl(response.data?.manifestUrl),
+            fallbackUrl: resolveMediaUrl(response.data?.fallbackUrl),
+          });
+        }
       } catch (error) {
-        console.error('Error fetching video preview:', error);
-        setVideoError('Preview could not be loaded.');
-      } finally {
-        setLoadingVideo(false);
+        if (!cancelled) {
+          console.error('Error creating media ticket:', error);
+          setVideoError(error.response?.data?.message || 'Preview se ne može pokrenuti.');
+          setLoadingVideo(false);
+        }
       }
     };
 
@@ -117,15 +146,125 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
       }
     };
 
-    fetchVideo();
+    fetchMediaTicket();
     fetchTimecodes();
 
     return () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      cancelled = true;
     };
   }, [videoId]);
+
+  useEffect(() => {
+    const videoElement = playerRef.current;
+    if (!videoElement || (!mediaTicket?.manifestUrl && !mediaTicket?.fallbackUrl)) return undefined;
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    setQualityLevels([]);
+    setQuality(-1);
+    setLoadingVideo(true);
+    setBuffering(false);
+
+    const restorePosition = () => {
+      const target = Number(resumeTimeRef.current || initialStart) || 0;
+      if (target > 0 && Number.isFinite(videoElement.duration)) {
+        videoElement.currentTime = Math.min(target, videoElement.duration || target);
+      }
+    };
+    const switchToMp4Fallback = () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (!mediaTicket.fallbackUrl) {
+        setLoadingVideo(false);
+        setVideoError('HLS stream je prekinut, a MP4 fallback nije dostupan.');
+        return;
+      }
+      videoElement.src = mediaTicket.fallbackUrl;
+      videoElement.load();
+    };
+
+    if (mediaTicket.hlsAvailable && mediaTicket.manifestUrl && Hls.isSupported()) {
+      const hls = new Hls({
+        startLevel: -1,
+        maxBufferLength: 30,
+        backBufferLength: 30,
+        enableWorker: true,
+      });
+      hlsRef.current = hls;
+      hls.attachMedia(videoElement);
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(mediaTicket.manifestUrl));
+      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+        setQualityLevels((data.levels || []).map((level, index) => ({
+          index,
+          height: level.height,
+          bitrate: level.bitrate,
+        })));
+        restorePosition();
+        setLoadingVideo(false);
+        ticketRefreshAttemptsRef.current = 0;
+      });
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+          return;
+        }
+        if (ticketRefreshAttemptsRef.current < 2) {
+          ticketRefreshAttemptsRef.current += 1;
+          resumeTimeRef.current = Number(videoElement.currentTime) || 0;
+          axiosInstance
+            .post('/media/tickets', { videoId })
+            .then((response) => setMediaTicket({
+              ...response.data,
+              manifestUrl: resolveMediaUrl(response.data?.manifestUrl),
+              fallbackUrl: resolveMediaUrl(response.data?.fallbackUrl),
+            }))
+            .catch(switchToMp4Fallback);
+          return;
+        }
+        switchToMp4Fallback();
+      });
+    } else if (
+      mediaTicket.hlsAvailable
+      && mediaTicket.manifestUrl
+      && videoElement.canPlayType('application/vnd.apple.mpegurl')
+    ) {
+      videoElement.src = mediaTicket.manifestUrl;
+      videoElement.load();
+    } else {
+      switchToMp4Fallback();
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      videoElement.removeAttribute('src');
+      videoElement.load();
+    };
+  }, [initialStart, mediaTicket, videoId]);
+
+  useEffect(() => {
+    if (!mediaTicket?.expiresAt) return undefined;
+    const refreshIn = Math.max(new Date(mediaTicket.expiresAt).getTime() - Date.now() - 60 * 1000, 1000);
+    const timeoutId = window.setTimeout(() => {
+      resumeTimeRef.current = Number(playerRef.current?.currentTime) || 0;
+      axiosInstance
+        .post('/media/tickets', { videoId })
+        .then((response) => setMediaTicket({
+          ...response.data,
+          manifestUrl: resolveMediaUrl(response.data?.manifestUrl),
+          fallbackUrl: resolveMediaUrl(response.data?.fallbackUrl),
+        }))
+        .catch(() => {});
+    }, refreshIn);
+    return () => window.clearTimeout(timeoutId);
+  }, [mediaTicket?.expiresAt, videoId]);
 
   const getPlayheadTime = () => {
     if (!playerRef.current) return 0;
@@ -138,6 +277,12 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
       setCurrentTime(Number(timestamp) || 0);
       playerRef.current.play().catch(() => {});
     }
+  };
+
+  const handleQualityChange = (event) => {
+    const nextLevel = Number(event.target.value);
+    setQuality(nextLevel);
+    if (hlsRef.current) hlsRef.current.currentLevel = nextLevel;
   };
 
   const handleAddMarker = (markerType) => {
@@ -196,12 +341,26 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
                 Preview
               </Typography>
               <Chip label={`Playhead ${formatTime(currentTime)}`} size="small" variant="outlined" />
+              {qualityLevels.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 115 }}>
+                  <InputLabel>Kvalitet</InputLabel>
+                  <Select value={quality} label="Kvalitet" onChange={handleQualityChange}>
+                    <MenuItem value={-1}>Auto</MenuItem>
+                    {qualityLevels.map((level) => (
+                      <MenuItem key={level.index} value={level.index}>
+                        {level.height || '?'}p
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
             </Stack>
 
-            {loadingVideo && (
+            {loadingVideo && !mediaTicket && (
               <Box
                 sx={{
-                  height: compact ? 240 : 300,
+                  width: '100%',
+                  aspectRatio: '16 / 9',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -215,38 +374,73 @@ const VideoPlayer = ({ videoId, initialStart = 0, onTimecodesChange, readOnly = 
 
             {videoError && <Alert severity="error">{videoError}</Alert>}
 
-            {!loadingVideo && !videoError && (
+            {mediaTicket && !videoError && (
               <Box
                 sx={{
+                  position: 'relative',
                   bgcolor: 'black',
                   borderRadius: 2,
                   overflow: 'hidden',
+                  width: '100%',
+                  aspectRatio: '16 / 9',
                 }}
               >
                 <video
                   ref={playerRef}
                   controls
-                  width="100%"
-                  height="auto"
-                  src={videoBlobUrl}
-                  onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                  preload="metadata"
+                  playsInline
+                  onTimeUpdate={(event) => {
+                    const nextTime = event.currentTarget.currentTime;
+                    setCurrentTime(nextTime);
+                    resumeTimeRef.current = nextTime;
+                    if (onPlaybackPositionChange) onPlaybackPositionChange(nextTime);
+                  }}
                   onLoadedMetadata={(event) => {
-                    const startTime = Number(initialStart) || 0;
+                    const startTime = Number(resumeTimeRef.current || initialStart) || 0;
                     event.currentTarget.currentTime = startTime;
                     setCurrentTime(startTime);
+                    setLoadingVideo(false);
                   }}
+                  onCanPlay={() => {
+                    setLoadingVideo(false);
+                    setBuffering(false);
+                  }}
+                  onWaiting={() => setBuffering(true)}
+                  onPlaying={() => setBuffering(false)}
                   onError={(event) => {
                     console.error('Video playback error:', event);
                     setVideoError('Browser cannot play this preview.');
                   }}
                   style={{
                     display: 'block',
-                    maxHeight: compact ? 420 : 'none',
+                    width: '100%',
+                    height: '100%',
                     objectFit: 'contain',
                     backgroundColor: '#000',
                   }}
                 />
+                {loadingVideo && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: 'rgba(0, 0, 0, 0.32)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <CircularProgress sx={{ color: 'common.white' }} />
+                  </Box>
+                )}
               </Box>
+            )}
+            {buffering && !videoError && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                Učitavam naredni video segment...
+              </Alert>
             )}
 
             <Paper variant="outlined" sx={{ mt: 2, p: compact ? 1.5 : 2, borderRadius: 2 }}>

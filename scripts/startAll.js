@@ -28,6 +28,16 @@ if (!useLocalQueue) {
     command: process.execPath,
     args: ['backend/workers/videoWorker.js'],
   });
+  processes.push({
+    name: 'hls-worker',
+    command: process.execPath,
+    args: ['backend/workers/hlsWorker.js'],
+  });
+  processes.push({
+    name: 'preview-worker',
+    command: process.execPath,
+    args: ['backend/workers/previewMaintenanceWorker.js'],
+  });
 }
 
 const children = [];
@@ -169,8 +179,8 @@ async function startAll() {
 
   console.log(
     useLocalQueue
-      ? `[system] Web app started on port ${webPort}; local video processing enabled.`
-      : `[system] Web app started on port ${webPort}; video worker started.`
+      ? `[system] Web app started on port ${webPort}; isolated local video/HLS queues enabled.`
+      : `[system] Web app started on port ${webPort}; video, HLS and preview workers started.`
   );
 }
 

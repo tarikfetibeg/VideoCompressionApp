@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -23,6 +23,7 @@ import {
   InputLabel,
   LinearProgress,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -35,10 +36,12 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import axiosInstance from '../../axiosConfig';
+import { useBackgroundDownloads } from '../../contexts/BackgroundDownloadContext';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
   hasActiveVideoProcessing,
 } from '../../utils/videoProcessing';
+import { getSearchParam } from '../../utils/searchParams';
 
 const formatBytes = (bytes) => {
   if (!bytes || Number.isNaN(Number(bytes))) return 'N/A';
@@ -71,6 +74,19 @@ const getPersonName = (person) => person?.username || 'N/A';
 const getContentTypeId = (video) => video.contentType?._id || '';
 const getContentTypeName = (video) => video.contentType?.name || video.finalCategory || 'Uncategorized';
 const getContentTypeSlug = (video) => video.contentType?.slug || video.finalCategory || '';
+const contentTypeAliasBySlug = {
+  prilog: ['prilog', 'video-report'],
+  insert: ['insert'],
+  spica: ['spica'],
+  promo: ['promo'],
+  marketing: ['marketing'],
+  grafika: ['grafika'],
+  ostalo: ['ostalo'],
+};
+const getContentTypeSlugAliases = (contentType) => {
+  const slug = String(contentType?.slug || '').trim().toLowerCase();
+  return contentTypeAliasBySlug[slug] || (slug ? [slug] : []);
+};
 
 const isArchiveVideo = (video) => ['aired', 'archived'].includes(video.broadcastStatus);
 const isFinalVideo = (video) =>
@@ -111,6 +127,7 @@ const shouldShowProcessingProgress = (video) =>
   ['queued', 'processing'].includes(video.processingStatus);
 
 const getEventName = (video) => video.event || 'No event';
+const videoWorkspacePageSize = 60;
 
 const getVideoTimestamp = (video) => {
   const value = video.tagDate || video.uploadDate || video.processingStartedAt || video.processingCompletedAt;
@@ -174,9 +191,36 @@ const buildEventGroups = (videos) => {
 };
 
 const VideoThumbnail = ({ videoId, title }) => {
+  const containerRef = useRef(null);
   const [src, setSrc] = useState('');
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return undefined;
+
+    if (!('IntersectionObserver' in window)) {
+      setVisible(true);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '180px' }
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return undefined;
     let objectUrl = '';
 
     axiosInstance
@@ -194,11 +238,12 @@ const VideoThumbnail = ({ videoId, title }) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [videoId]);
+  }, [videoId, visible]);
 
   if (!src) {
     return (
       <Box
+        ref={containerRef}
         sx={{
           height: 130,
           display: 'flex',
@@ -215,6 +260,7 @@ const VideoThumbnail = ({ videoId, title }) => {
 
   return (
     <CardMedia
+      ref={containerRef}
       component="img"
       height="130"
       image={src}
@@ -225,6 +271,7 @@ const VideoThumbnail = ({ videoId, title }) => {
 };
 
 const VideoManagement = () => {
+  const { startDownload } = useBackgroundDownloads();
   const [videos, setVideos] = useState([]);
   const [users, setUsers] = useState([]);
   const [contentTypes, setContentTypes] = useState([]);
@@ -235,31 +282,69 @@ const VideoManagement = () => {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [workflowFilter, setWorkflowFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [uploaderFilter, setUploaderFilter] = useState('all');
+  const [workspacePage, setWorkspacePage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({
+    total: 0,
+    totalPages: 1,
+    summary: {},
+  });
+  const [videosLoading, setVideosLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rebuildOpen, setRebuildOpen] = useState(false);
   const [expandedEvents, setExpandedEvents] = useState({});
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchVideos = useCallback(({ silent = false } = {}) => {
     if (!silent) {
       setMessage('');
       setErrorMessage('');
+      setVideosLoading(true);
     }
 
+    const workspaceParams = {
+      page: workspacePage,
+      limit: videoWorkspacePageSize,
+      q: getSearchParam(debouncedSearchTerm),
+      processingStatus: statusFilter !== 'all' ? statusFilter : undefined,
+      contentTypeId: categoryFilter !== 'all' && categoryFilter !== 'uncategorized' ? categoryFilter : undefined,
+      status: workflowFilter === 'raw' ? 'raw' : ['edited', 'final'].includes(workflowFilter) ? 'edited' : undefined,
+      library: workflowFilter === 'archive' ? 'archive' : undefined,
+    };
+
     axiosInstance
-      .get('/videos', { headers: { Accept: 'application/json' } })
+      .get('/videos/workspace', {
+        headers: { Accept: 'application/json' },
+        params: workspaceParams,
+      })
       .then((response) => {
-        setVideos(Array.isArray(response.data) ? response.data : []);
+        setVideos(Array.isArray(response.data?.items) ? response.data.items : []);
+        setWorkspaceMeta({
+          total: Number(response.data?.total) || 0,
+          totalPages: Number(response.data?.totalPages) || 1,
+          summary: response.data?.summary || {},
+        });
       })
       .catch((err) => {
         console.error('Error fetching videos:', err);
         if (!silent) {
-          setErrorMessage('Greška pri učitavanju videa.');
+          setErrorMessage('Greska pri ucitavanju videa.');
+        }
+      })
+      .finally(() => {
+        if (!silent) {
+          setVideosLoading(false);
         }
       });
-  }, []);
+  }, [categoryFilter, debouncedSearchTerm, statusFilter, workflowFilter, workspacePage]);
 
   useEffect(() => {
     fetchVideos();
@@ -267,6 +352,11 @@ const VideoManagement = () => {
     fetchUsers();
     fetchContentTypes();
   }, [fetchVideos]);
+
+  useEffect(() => {
+    setWorkspacePage(1);
+    setSelectedVideos([]);
+  }, [categoryFilter, debouncedSearchTerm, statusFilter, uploaderFilter, workflowFilter]);
 
   const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
 
@@ -281,9 +371,12 @@ const VideoManagement = () => {
   }, [fetchVideos, hasActiveProcessing]);
 
   const uploaderOptions = useMemo(() => {
-    const uploaders = videos.map(getUploaderName);
+    const uploaders = [
+      ...users.map((appUser) => appUser.username),
+      ...videos.map(getUploaderName),
+    ];
     return Array.from(new Set(uploaders)).sort();
-  }, [videos]);
+  }, [users, videos]);
 
   const contentTypeById = useMemo(() => {
     const entries = contentTypes.map((type) => [type._id, type]);
@@ -331,11 +424,12 @@ const VideoManagement = () => {
       const matchesWorkflow = matchesWorkflowFilter(video, workflowFilter);
 
       const selectedContentType = contentTypeById.get(categoryFilter);
+      const selectedContentTypeAliases = getContentTypeSlugAliases(selectedContentType);
       const matchesCategory =
         categoryFilter === 'all' ||
         (categoryFilter === 'uncategorized' && !getContentTypeId(video) && !video.finalCategory) ||
         getContentTypeId(video) === categoryFilter ||
-        (selectedContentType?.slug && selectedContentType.slug === getContentTypeSlug(video));
+        selectedContentTypeAliases.includes(getContentTypeSlug(video));
 
       const matchesUploader =
         uploaderFilter === 'all' || getUploaderName(video) === uploaderFilter;
@@ -369,13 +463,14 @@ const VideoManagement = () => {
   }, [eventGroups]);
 
   const stats = useMemo(() => {
-    const total = videos.length;
-    const raw = videos.filter((video) => video.status === 'raw').length;
-    const edited = videos.filter((video) => video.status === 'edited').length;
-    const archive = videos.filter(isArchiveVideo).length;
+    const summary = workspaceMeta.summary || {};
+    const total = workspaceMeta.total || videos.length;
+    const raw = summary.raw ?? videos.filter((video) => video.status === 'raw').length;
+    const edited = summary.edited ?? videos.filter((video) => video.status === 'edited').length;
+    const archive = (summary.aired ?? 0) + (summary.archived ?? 0) || videos.filter(isArchiveVideo).length;
     const uncategorized = videos.filter((video) => !getContentTypeId(video) && !video.finalCategory).length;
-    const processing = videos.filter(shouldShowProcessingProgress).length;
-    const failed = videos.filter((video) => video.processingStatus === 'failed').length;
+    const processing = (summary.queued ?? 0) + (summary.processing ?? 0) || videos.filter(shouldShowProcessingProgress).length;
+    const failed = summary.failed ?? videos.filter((video) => video.processingStatus === 'failed').length;
 
     return {
       total,
@@ -386,7 +481,7 @@ const VideoManagement = () => {
       processing,
       failed,
     };
-  }, [videos]);
+  }, [videos, workspaceMeta]);
 
   const handleSelectVideo = (videoId) => {
     setSelectedVideos((prev) =>
@@ -453,12 +548,12 @@ const VideoManagement = () => {
       .then(() => {
         setVideos((prev) => prev.filter((video) => video._id !== videoId));
         setSelectedVideos((prev) => prev.filter((id) => id !== videoId));
-        setMessage('Video je uspješno obrisan.');
+        setMessage('Video je uspjeÅ¡no obrisan.');
         setErrorMessage('');
       })
       .catch((err) => {
         console.error('Error deleting video:', err);
-        setErrorMessage('Greška pri brisanju videa.');
+        setErrorMessage('GreÅ¡ka pri brisanju videa.');
       });
   };
 
@@ -473,49 +568,31 @@ const VideoManagement = () => {
       })
       .catch((err) => {
         console.error('Error deleting videos:', err);
-        setErrorMessage('Greška pri brisanju odabranih videa.');
+        setErrorMessage('GreÅ¡ka pri brisanju odabranih videa.');
       });
   };
 
   const handleDownloadSingle = (video) => {
-    axiosInstance
-      .get(`/videos/download/${video._id}`, { responseType: 'blob' })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-
-        link.href = url;
-        link.setAttribute('download', video.originalFilename || video.filename || `video_${video._id}`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        window.URL.revokeObjectURL(url);
-      })
+    startDownload({
+      kind: 'video-single',
+      payload: { videoId: video._id },
+      label: video.originalFilename || video.filename || `Video ${video._id}`,
+    })
       .catch((error) => {
         console.error('Error downloading video:', error);
-        setErrorMessage('Greška pri skidanju videa.');
+        setErrorMessage(error.response?.data?.message || 'Greska pri skidanju videa.');
       });
   };
 
   const handleDownloadSelected = () => {
-    axiosInstance
-      .post('/videos/download', { videoIds: selectedVideos }, { responseType: 'blob' })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-
-        link.href = url;
-        link.setAttribute('download', `videos_${Date.now()}.zip`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        window.URL.revokeObjectURL(url);
-      })
+    startDownload({
+      kind: 'video-bulk',
+      payload: { videoIds: selectedVideos },
+      label: `Admin video ZIP (${selectedVideos.length})`,
+    })
       .catch((error) => {
         console.error('Error downloading selected videos:', error);
-        setErrorMessage('Greška pri skidanju odabranih videa.');
+        setErrorMessage(error.response?.data?.message || 'Greska pri skidanju odabranih videa.');
       });
   };
 
@@ -527,6 +604,25 @@ const VideoManagement = () => {
       })
       .catch((err) => {
         console.error('Error scanning raw orphan files:', err);
+      });
+  };
+
+  const handleRebuildSelected = () => {
+    setMessage('');
+    setErrorMessage('');
+    axiosInstance
+      .post('/admin/media-previews/rebuild', {
+        scope: 'selected',
+        videoIds: selectedVideos,
+        assetTypes: ['mp4', 'hls', 'thumbnail', 'scrub'],
+        limit: Math.min(selectedVideos.length, 50),
+      })
+      .then((response) => {
+        setMessage(response.data?.message || 'Odabrani previewi su poslani u rebuild.');
+        setRebuildOpen(false);
+      })
+      .catch((error) => {
+        setErrorMessage(error.response?.data?.message || 'Preview rebuild nije moguće pokrenuti.');
       });
   };
 
@@ -850,7 +946,10 @@ const VideoManagement = () => {
             Video Management
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Pregled sirovine, smontiranog materijala, arhive, kategorija i storage stanja.
+            Paginirani pregled sirovine, smontiranog materijala, arhive, kategorija i storage stanja.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Ucitano {filteredVideos.length} od {workspaceMeta.total} rezultata.
           </Typography>
         </Box>
 
@@ -889,6 +988,7 @@ const VideoManagement = () => {
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+      {videosLoading && <LinearProgress sx={{ mb: 2 }} />}
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={6} md={2}>
@@ -938,7 +1038,10 @@ const VideoManagement = () => {
               label="Search videos"
               fullWidth
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setWorkspacePage(1);
+                setSearchTerm(e.target.value);
+              }}
               placeholder="Filename, event, location, uploader..."
             />
           </Grid>
@@ -949,7 +1052,10 @@ const VideoManagement = () => {
               <Select
                 value={workflowFilter}
                 label="Workflow"
-                onChange={(e) => setWorkflowFilter(e.target.value)}
+                onChange={(e) => {
+                  setWorkspacePage(1);
+                  setWorkflowFilter(e.target.value);
+                }}
               >
                 <MenuItem value="all">All workflow</MenuItem>
                 <MenuItem value="raw">Sirovina / ingest</MenuItem>
@@ -967,7 +1073,10 @@ const VideoManagement = () => {
               <Select
                 value={statusFilter}
                 label="Processing"
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setWorkspacePage(1);
+                  setStatusFilter(e.target.value);
+                }}
               >
                 <MenuItem value="all">All processing</MenuItem>
                 <MenuItem value="uploaded">Uploaded</MenuItem>
@@ -985,7 +1094,10 @@ const VideoManagement = () => {
               <Select
                 value={categoryFilter}
                 label="Category"
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                onChange={(e) => {
+                  setWorkspacePage(1);
+                  setCategoryFilter(e.target.value);
+                }}
               >
                 <MenuItem value="all">All categories</MenuItem>
                 <MenuItem value="uncategorized">Uncategorized</MenuItem>
@@ -1004,7 +1116,10 @@ const VideoManagement = () => {
               <Select
                 value={uploaderFilter}
                 label="Uploader"
-                onChange={(e) => setUploaderFilter(e.target.value)}
+                onChange={(e) => {
+                  setWorkspacePage(1);
+                  setUploaderFilter(e.target.value);
+                }}
               >
                 <MenuItem value="all">All uploaders</MenuItem>
                 {uploaderOptions.map((uploader) => (
@@ -1036,6 +1151,13 @@ const VideoManagement = () => {
             </Typography>
             <Button variant="contained" onClick={handleDownloadSelected}>
               Download Selected
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<ReplayIcon />}
+              onClick={() => setRebuildOpen(true)}
+            >
+              Rebuild previewa
             </Button>
             <Button
               variant="outlined"
@@ -1146,6 +1268,19 @@ const VideoManagement = () => {
         </Stack>
       )}
 
+      {workspaceMeta.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ mt: 3 }}>
+          <Pagination
+            count={workspaceMeta.totalPages}
+            page={workspacePage}
+            onChange={(event, value) => setWorkspacePage(value)}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            Stranica {workspacePage} / {workspaceMeta.totalPages}
+          </Typography>
+        </Stack>
+      )}
+
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Confirm bulk delete</DialogTitle>
         <DialogContent>
@@ -1158,6 +1293,19 @@ const VideoManagement = () => {
           <Button color="error" variant="contained" onClick={handleBulkDelete}>
             Delete
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={rebuildOpen} onClose={() => setRebuildOpen(false)}>
+        <DialogTitle>Rebuild previewa za odabrane klipove</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            U background queue poslati MP4, HLS, thumbnail i scrub preview za {selectedVideos.length} odabranih klipova? Maksimalno 50 klipova po batchu.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRebuildOpen(false)}>Odustani</Button>
+          <Button variant="contained" onClick={handleRebuildSelected}>Pokreni rebuild</Button>
         </DialogActions>
       </Dialog>
     </Box>

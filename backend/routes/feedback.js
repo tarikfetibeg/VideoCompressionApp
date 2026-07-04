@@ -4,6 +4,7 @@ const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
+const { addTextSearchFilter, buildFeedbackSearchText } = require('../utils/searchText');
 
 const router = express.Router();
 
@@ -20,6 +21,16 @@ function normalizeEnum(value, allowedValues, fallback) {
   return allowedValues.includes(value) ? value : fallback;
 }
 
+function parseWorkspacePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '30', 10) || 30, 1), 150);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
 function buildFeedbackFilter(query, user) {
   const filter = {};
 
@@ -27,20 +38,19 @@ function buildFeedbackFilter(query, user) {
     filter.submittedBy = user.id;
   }
 
-  if (query.status && query.status !== 'all') filter.status = query.status;
+  if (query.status && query.status !== 'all') {
+    if (query.status === 'open') {
+      filter.status = { $in: ['new', 'reviewing', 'planned'] };
+    } else {
+      filter.status = query.status;
+    }
+  }
   if (query.type && query.type !== 'all') filter.type = query.type;
   if (query.priority && query.priority !== 'all') filter.priority = query.priority;
   if (query.area && query.area !== 'all') filter.area = query.area;
 
-  if (query.search) {
-    const searchRegex = new RegExp(String(query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$or = [
-      { title: searchRegex },
-      { description: searchRegex },
-      { adminComment: searchRegex },
-      { adminResponse: searchRegex },
-    ];
-  }
+  const search = query.q || query.search;
+  addTextSearchFilter(filter, search);
 
   return filter;
 }
@@ -54,6 +64,108 @@ function populateFeedback(query) {
     .populate('comments.author', 'username role');
 }
 
+function sanitizeFeedbackForRole(item, user) {
+  const output = typeof item.toObject === 'function' ? item.toObject() : { ...item };
+
+  if (user.role !== 'Admin') {
+    delete output.adminComment;
+    delete output.comments;
+    delete output.userAgent;
+  }
+
+  return output;
+}
+
+async function buildFeedbackWorkspaceSummary(filter, user) {
+  const userFilter = user.role === 'Admin' ? {} : { submittedBy: user.id };
+  const scopedFilter = { ...userFilter };
+
+  const [
+    total,
+    filtered,
+    newCount,
+    reviewing,
+    planned,
+    fixed,
+    rejected,
+    urgent,
+    high,
+  ] = await Promise.all([
+    Feedback.countDocuments(scopedFilter),
+    Feedback.countDocuments(filter),
+    Feedback.countDocuments({ ...scopedFilter, status: 'new' }),
+    Feedback.countDocuments({ ...scopedFilter, status: 'reviewing' }),
+    Feedback.countDocuments({ ...scopedFilter, status: 'planned' }),
+    Feedback.countDocuments({ ...scopedFilter, status: 'fixed' }),
+    Feedback.countDocuments({ ...scopedFilter, status: 'rejected' }),
+    Feedback.countDocuments({ ...scopedFilter, priority: 'urgent' }),
+    Feedback.countDocuments({ ...scopedFilter, priority: 'high' }),
+  ]);
+
+  return {
+    total,
+    filtered,
+    new: newCount,
+    reviewing,
+    planned,
+    fixed,
+    rejected,
+    urgent,
+    high,
+  };
+}
+
+async function buildFeedbackWorkspaceFacets(filter) {
+  const [statuses, priorities, areas, types] = await Promise.all([
+    Feedback.aggregate([{ $match: filter }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Feedback.aggregate([{ $match: filter }, { $group: { _id: '$priority', count: { $sum: 1 } } }]),
+    Feedback.aggregate([{ $match: filter }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
+    Feedback.aggregate([{ $match: filter }, { $group: { _id: '$type', count: { $sum: 1 } } }]),
+  ]);
+
+  const normalizeFacet = (items) => items.map((item) => ({
+    value: item._id || 'none',
+    count: item.count,
+  }));
+
+  return {
+    statuses: normalizeFacet(statuses),
+    priorities: normalizeFacet(priorities),
+    areas: normalizeFacet(areas),
+    types: normalizeFacet(types),
+  };
+}
+
+router.get('/workspace', async (req, res) => {
+  try {
+    const { page, limit, skip } = parseWorkspacePagination(req.query);
+    const filter = buildFeedbackFilter(req.query, req.user);
+
+    const [total, feedback, summary, facets] = await Promise.all([
+      Feedback.countDocuments(filter),
+      populateFeedback(Feedback.find(filter))
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      buildFeedbackWorkspaceSummary(filter, req.user),
+      buildFeedbackWorkspaceFacets(filter),
+    ]);
+
+    res.json({
+      items: feedback.map((item) => sanitizeFeedbackForRole(item, req.user)),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary,
+      facets,
+    });
+  } catch (error) {
+    console.error('Error fetching feedback workspace:', error);
+    res.status(500).json({ message: 'Error fetching feedback workspace' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
@@ -61,17 +173,7 @@ router.get('/', async (req, res) => {
       .sort({ priority: -1, updatedAt: -1 })
       .limit(limit);
 
-    if (req.user.role !== 'Admin') {
-      return res.json(feedback.map((item) => {
-        const output = item.toObject();
-        delete output.adminComment;
-        delete output.comments;
-        delete output.userAgent;
-        return output;
-      }));
-    }
-
-    res.json(feedback);
+    res.json(feedback.map((item) => sanitizeFeedbackForRole(item, req.user)));
   } catch (error) {
     console.error('Error fetching feedback:', error);
     res.status(500).json({ message: 'Error fetching feedback' });
@@ -130,7 +232,7 @@ router.patch('/:feedbackId', authorize(['Admin']), async (req, res) => {
   try {
     const { status, priority, assignedTo, adminComment, adminResponse } = req.body;
     const existingFeedback = await Feedback.findById(req.params.feedbackId)
-      .select('adminSeenAt adminResponse status');
+      .select('+searchText');
 
     if (!existingFeedback) return res.status(404).json({ message: 'Feedback not found.' });
 
@@ -180,6 +282,11 @@ router.patch('/:feedbackId', authorize(['Admin']), async (req, res) => {
       update.adminSeenAt = now;
       update.adminSeenBy = req.user.id;
     }
+
+    update.searchText = buildFeedbackSearchText({
+      ...existingFeedback.toObject(),
+      ...update,
+    });
 
     const feedback = await populateFeedback(Feedback.findByIdAndUpdate(
       existingFeedback._id,

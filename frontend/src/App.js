@@ -7,8 +7,10 @@ import {
 } from 'react-router-dom';
 import { UserContext } from './contexts/UserContext';
 import { BackgroundUploadProvider } from './contexts/BackgroundUploadContext';
+import { BackgroundDownloadProvider } from './contexts/BackgroundDownloadContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import PrivateRoute from './components/PrivateRoute';
-import Header from './components/Header';
+import AppShell from './components/layout/AppShell';
 
 // Import Pages
 import LoginPage from './pages/LoginPage';
@@ -28,9 +30,11 @@ function App() {
 
   return (
     <BackgroundUploadProvider>
-      <Router>
-        <Header />
-        <Routes>
+      <BackgroundDownloadProvider>
+        <Router>
+          <NotificationProvider>
+            <AppShell>
+              <Routes>
         {/* Public Routes */}
         <Route
           path="/login"
@@ -86,7 +90,7 @@ function App() {
         <Route
           path="/editor-dashboard"
           element={
-            <PrivateRoute roles={['Editor', 'VideoEditor', 'Producer', 'Admin']}>
+            <PrivateRoute roles={['Editor', 'VideoEditor', 'Admin']}>
               <EditorDashboard />
             </PrivateRoute>
           }
@@ -102,7 +106,7 @@ function App() {
         <Route
           path="/realizator-dashboard"
           element={
-            <PrivateRoute roles={['Realizator', 'Producer', 'Admin']}>
+            <PrivateRoute roles={['Realizator', 'Admin']}>
               <RealizatorDashboard />
             </PrivateRoute>
           }
@@ -136,7 +140,7 @@ function App() {
         <Route
           path="/video-details/:videoId"
           element={
-            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Archivist', 'Admin']}>
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin']}>
               <VideoDetailsPage />
             </PrivateRoute>
           }
@@ -144,8 +148,11 @@ function App() {
 
         {/* Not Found */}
         <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Router>
+              </Routes>
+            </AppShell>
+          </NotificationProvider>
+        </Router>
+      </BackgroundDownloadProvider>
     </BackgroundUploadProvider>
   );
 }

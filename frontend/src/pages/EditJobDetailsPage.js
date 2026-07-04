@@ -16,6 +16,8 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -39,8 +41,14 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import axiosInstance from '../axiosConfig';
 import BriefImportButton from '../components/jobs/BriefImportButton';
+import { StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
 import { ACCEPTED_VIDEO_FILE_TYPES } from '../constants/videoFormats';
 import { UserContext } from '../contexts/UserContext';
+import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
+import { useNotifications } from '../contexts/NotificationContext';
+import { jobStatusLabels, priorityLabels } from '../utils/uiLabels';
+import { getSearchParam } from '../utils/searchParams';
 
 const statusOptions = [
   'submitted',
@@ -103,25 +111,6 @@ const formatDuration = (seconds) => {
 
 const getClipName = (video) => video.originalFilename || video.filename || `Video ${video._id}`;
 
-const getResponseFilename = (response, fallbackName) => {
-  const disposition = response.headers?.['content-disposition'] || '';
-  const match = disposition.match(/filename="?([^"]+)"?/i);
-  return match?.[1] || fallbackName;
-};
-
-const downloadBlobResponse = (response, fallbackName) => {
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.setAttribute('download', getResponseFilename(response, fallbackName));
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  window.URL.revokeObjectURL(url);
-};
-
 const getRequestErrorMessage = (error, fallback) => error.response?.data?.message || fallback;
 
 const getDownloadErrorMessage = async (error, fallback) => {
@@ -183,6 +172,8 @@ const OffAudioPlayer = ({ jobId, offFile }) => {
 const EditJobDetailsPage = () => {
   const { jobId } = useParams();
   const { user } = useContext(UserContext);
+  const { startDownload } = useBackgroundDownloads();
+  const { markJobRead } = useNotifications();
   const [job, setJob] = useState(null);
   const [status, setStatus] = useState('');
   const [comment, setComment] = useState('');
@@ -197,7 +188,13 @@ const EditJobDetailsPage = () => {
   const [selectedAdditionalVideoIds, setSelectedAdditionalVideoIds] = useState([]);
   const [additionalClipNotes, setAdditionalClipNotes] = useState({});
   const [materialSearch, setMaterialSearch] = useState('');
+  const [debouncedMaterialSearch, setDebouncedMaterialSearch] = useState('');
+  const [materialSourceTab, setMaterialSourceTab] = useState('library');
   const [materialLoading, setMaterialLoading] = useState(false);
+  const [jobUploadFiles, setJobUploadFiles] = useState([]);
+  const [jobUploadNotes, setJobUploadNotes] = useState({});
+  const [jobUploadProgress, setJobUploadProgress] = useState(0);
+  const [jobUploadLoading, setJobUploadLoading] = useState(false);
   const [updateSaving, setUpdateSaving] = useState(false);
   const [segmentActionLoading, setSegmentActionLoading] = useState('');
   const [replacementSegmentId, setReplacementSegmentId] = useState('');
@@ -239,6 +236,7 @@ const EditJobDetailsPage = () => {
     [sortedSegments]
   );
   const primaryEvent = sortedSegments.find((segment) => segment.video?.event)?.video?.event || '';
+  const primaryLocation = sortedSegments.find((segment) => segment.video?.location)?.video?.location || '';
   const primaryDate = getDateInputValue(sortedSegments.find((segment) => segment.video?.tagDate)?.video?.tagDate);
   const filteredAdditionalVideos = useMemo(() => {
     const search = materialSearch.trim().toLowerCase();
@@ -284,27 +282,56 @@ const EditJobDetailsPage = () => {
       });
   }, [jobId]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedMaterialSearch(materialSearch), 300);
+    return () => window.clearTimeout(timer);
+  }, [materialSearch]);
+
   const fetchAvailableVideos = useCallback(() => {
     if (!canReporterUpdateJob) return;
 
     setMaterialLoading(true);
-    axiosInstance
-      .get('/videos', {
+    const q = getSearchParam(debouncedMaterialSearch);
+
+    Promise.all([
+      axiosInstance.get('/videos/workspace', {
         params: {
-          ...(primaryEvent ? { event: primaryEvent } : {}),
-          ...(primaryDate ? { date: primaryDate } : {}),
+          limit: 100,
+          sortBy: 'uploadDate',
+          sortOrder: 'desc',
+          q,
         },
         headers: { Accept: 'application/json' },
-      })
-      .then((response) => {
-        setAvailableVideos(Array.isArray(response.data) ? response.data : []);
+      }),
+      axiosInstance.get('/videos/workspace', {
+        params: {
+          scope: 'station',
+          library: 'archive',
+          limit: 100,
+          sortBy: 'uploadDate',
+          sortOrder: 'desc',
+          q,
+        },
+        headers: { Accept: 'application/json' },
+      }),
+    ])
+      .then(([ownResponse, archiveResponse]) => {
+        const ownItems = Array.isArray(ownResponse.data?.items) ? ownResponse.data.items : [];
+        const archiveItems = Array.isArray(archiveResponse.data?.items) ? archiveResponse.data.items : [];
+        const merged = new Map();
+
+        [...ownItems, ...archiveItems].forEach((video) => {
+          if (video?._id) merged.set(video._id, video);
+        });
+
+        setAvailableVideos(Array.from(merged.values()));
       })
       .catch((error) => {
         console.error('Error fetching additional job material:', error);
-        setErrorMessage(error.response?.data?.message || 'Additional material could not be loaded.');
+        setErrorMessage(error.response?.data?.message || 'Dodatni materijal se ne može učitati.');
       })
       .finally(() => setMaterialLoading(false));
-  }, [canReporterUpdateJob, primaryEvent, primaryDate]);
+  }, [canReporterUpdateJob, debouncedMaterialSearch]);
 
   const fetchBroadcastSettings = useCallback(() => {
     Promise.all([
@@ -338,6 +365,10 @@ const EditJobDetailsPage = () => {
   useEffect(() => {
     fetchJob();
   }, [fetchJob]);
+
+  useEffect(() => {
+    markJobRead(jobId);
+  }, [jobId, markJobRead]);
 
   useEffect(() => {
     fetchBroadcastSettings();
@@ -382,15 +413,12 @@ const EditJobDetailsPage = () => {
   };
 
   const requestPackageDownload = useCallback((scope = 'all') =>
-    axiosInstance
-      .get(`/edit-jobs/${jobId}/download-package`, {
-        params: { scope },
-        responseType: 'blob',
-      })
-      .then((response) => {
-        downloadBlobResponse(response, `edit_job_${jobId}_${scope === 'missing' ? 'new_files' : 'package'}.zip`);
-      }),
-  [jobId]);
+    startDownload({
+      kind: 'edit-package',
+      payload: { jobId, scope },
+      label: scope === 'missing' ? `Novi fajlovi joba ${jobId}` : `Edit paket ${jobId}`,
+    }),
+  [jobId, startDownload]);
 
   const handleDownloadPackage = (scope = 'all') => {
     setPackageLoading(true);
@@ -410,11 +438,11 @@ const EditJobDetailsPage = () => {
   };
 
   const handleDownloadOffFile = (offFile) => {
-    axiosInstance
-      .get(`/edit-jobs/${jobId}/off-files/${offFile._id}`, { responseType: 'blob' })
-      .then((response) => {
-        downloadBlobResponse(response, offFile.originalName || `off_${offFile._id}`);
-      })
+    startDownload({
+      kind: 'edit-off-file',
+      payload: { jobId, fileId: offFile._id },
+      label: offFile.originalName || `OFF ${offFile._id}`,
+    })
       .catch((error) => {
         console.error('Error downloading OFF audio:', error);
         setErrorMessage(getRequestErrorMessage(error, 'OFF audio could not be downloaded.'));
@@ -439,6 +467,77 @@ const EditJobDetailsPage = () => {
 
   const removeUpdateOffFile = (indexToRemove) => {
     setUpdateOffFiles((current) => current.filter((file, index) => index !== indexToRemove));
+  };
+
+  const handleJobMaterialFileSelection = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length > 0) {
+      setJobUploadFiles((current) => [...current, ...files]);
+    }
+    event.target.value = '';
+  };
+
+  const removeJobUploadFile = (indexToRemove) => {
+    setJobUploadFiles((current) => current.filter((file, index) => index !== indexToRemove));
+    setJobUploadNotes((current) => {
+      const next = { ...current };
+      delete next[indexToRemove];
+      return Object.fromEntries(
+        Object.entries(next).map(([key, value]) => {
+          const index = Number(key);
+          return [index > indexToRemove ? index - 1 : index, value];
+        })
+      );
+    });
+  };
+
+  const updateJobUploadNote = (index, value) => {
+    setJobUploadNotes((current) => ({
+      ...current,
+      [index]: value,
+    }));
+  };
+
+  const handleUploadJobMaterial = () => {
+    if (jobUploadFiles.length === 0) {
+      setErrorMessage('Odaberi barem jedan video fajl za dodavanje u job.');
+      return;
+    }
+
+    const formData = new FormData();
+    jobUploadFiles.forEach((file) => {
+      formData.append('videos', file, file.name);
+    });
+    formData.append('event', primaryEvent || job.title || '');
+    formData.append('location', primaryLocation || '');
+    formData.append('date', primaryDate || getDateInputValue(new Date()));
+    formData.append('notes', JSON.stringify(jobUploadFiles.map((file, index) => jobUploadNotes[index] || '')));
+
+    setJobUploadLoading(true);
+    setJobUploadProgress(0);
+    setMessage('');
+    setErrorMessage('');
+
+    axiosInstance
+      .post(`/edit-jobs/${jobId}/material-upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const total = progressEvent.total || jobUploadFiles.reduce((sum, file) => sum + file.size, 0) || 1;
+          setJobUploadProgress(Math.round((progressEvent.loaded * 100) / total));
+        },
+      })
+      .then((response) => {
+        updateJobFromResponse(response, response.data?.message || 'Materijal je dodan u job.');
+        setJobUploadFiles([]);
+        setJobUploadNotes({});
+        setJobUploadProgress(0);
+        fetchAvailableVideos();
+      })
+      .catch((error) => {
+        console.error('Error uploading job material:', error);
+        setErrorMessage(getRequestErrorMessage(error, 'Materijal se ne može dodati u job.'));
+      })
+      .finally(() => setJobUploadLoading(false));
   };
 
   const toggleAdditionalVideo = (videoId) => {
@@ -694,12 +793,12 @@ const EditJobDetailsPage = () => {
     axiosInstance
       .post(`/edit-jobs/${jobId}/comments`, { body: comment })
       .then((response) => {
-        updateJobFromResponse(response, 'Comment added.');
+        updateJobFromResponse(response, 'Komentar je dodan.');
         setComment('');
       })
       .catch((error) => {
         console.error('Error adding comment:', error);
-        setErrorMessage(error.response?.data?.message || 'Comment could not be added.');
+        setErrorMessage(error.response?.data?.message || 'Komentar nije moguće dodati.');
       });
   };
 
@@ -717,41 +816,39 @@ const EditJobDetailsPage = () => {
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
       {job.viewerMeta?.hasUnreadChanges && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Reporter added {job.viewerMeta.unreadChangeCount} new update(s) since your last view.
+          {user?.role === 'Reporter'
+            ? `Montaža je dodala ${job.viewerMeta.unreadChangeCount} novih komentara ili izmjena od tvog zadnjeg pregleda.`
+            : `Reporter je dodao ${job.viewerMeta.unreadChangeCount} novih izmjena od tvog zadnjeg pregleda.`}
         </Alert>
       )}
 
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            {job.title}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Reporter: {job.reporter?.username || 'Unknown'} / Deadline: {formatDate(job.deadline)}
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Chip label={formatLabel(job.status)} color="primary" />
-          <Chip label={formatLabel(job.priority)} variant="outlined" />
-          <Chip label={`${job.segments?.length || 0} segments`} variant="outlined" />
-          {downloadMeta?.hasMissingFiles && (
-            <Chip
-              label={`${downloadMeta.missingSegmentCount + downloadMeta.missingOffFileCount} new files`}
-              color="warning"
-              variant="outlined"
-            />
-          )}
-          {job.viewerMeta?.hasUnreadChanges && (
-            <Chip label="New updates" color="warning" />
-          )}
-        </Stack>
-      </Stack>
+      <WorkspaceHeader
+        eyebrow="Edit Job Details"
+        title={job.title}
+        subtitle={`Reporter: ${job.reporter?.username || 'N/A'} / Rok: ${formatDate(job.deadline)}`}
+        chips={[
+          { label: 'Status', value: jobStatusLabels[job.status] || formatLabel(job.status), color: 'primary' },
+          { label: 'Prioritet', value: priorityLabels[job.priority] || formatLabel(job.priority) },
+          { label: 'Segmenti', value: job.segments?.length || 0 },
+        ]}
+        actions={(
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {downloadMeta?.hasMissingFiles && (
+              <StatusChip
+                label={`${downloadMeta.missingSegmentCount + downloadMeta.missingOffFileCount} novih fajlova`}
+                tone="warning"
+                variant="outlined"
+              />
+            )}
+            {job.viewerMeta?.hasUnreadChanges && (
+              <StatusChip label="Nove izmjene" tone="warning" />
+            )}
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchJob}>
+              Osvjezi
+            </Button>
+          </Stack>
+        )}
+      />
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} md={8}>
@@ -1114,10 +1211,10 @@ const EditJobDetailsPage = () => {
             >
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                  Update job
+                  Dopuna joba
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Add missing material, update the brief, or send new OFF audio to production.
+                  Dodaj materijal, osvježi brief ili pošalji novi OFF audio produkciji.
                 </Typography>
               </Box>
               <Button
@@ -1126,7 +1223,7 @@ const EditJobDetailsPage = () => {
                 onClick={fetchAvailableVideos}
                 disabled={materialLoading}
               >
-                Refresh material
+                Osvježi materijal
               </Button>
             </Stack>
 
@@ -1165,15 +1262,15 @@ const EditJobDetailsPage = () => {
                   <AudiotrackIcon color="action" />
                   <Box>
                     <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                      Add OFF audio
+                      Dodaj OFF audio
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {updateOffFiles.length} new file(s) selected
+                      {updateOffFiles.length} novi(h) fajl(ova) odabrano
                     </Typography>
                   </Box>
                 </Stack>
                 <Button component="label" variant="outlined" startIcon={<AudiotrackIcon />}>
-                  Add OFF
+                  Dodaj OFF
                   <input
                     hidden
                     type="file"
@@ -1198,7 +1295,7 @@ const EditJobDetailsPage = () => {
                             {formatBytes(file.size)}
                           </Typography>
                         </Box>
-                        <Tooltip title="Remove OFF file">
+                        <Tooltip title="Ukloni OFF fajl">
                           <IconButton size="small" onClick={() => removeUpdateOffFile(index)}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
@@ -1210,111 +1307,233 @@ const EditJobDetailsPage = () => {
               )}
             </Paper>
 
-            <Stack spacing={1}>
-              <Stack
-                direction={{ xs: 'column', md: 'row' }}
-                spacing={1}
-                justifyContent="space-between"
-                alignItems={{ xs: 'stretch', md: 'center' }}
+            <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Tabs
+                value={materialSourceTab}
+                onChange={(event, value) => setMaterialSourceTab(value)}
+                variant="scrollable"
+                scrollButtons="auto"
+                sx={{ px: 1.5, borderBottom: 1, borderColor: 'divider' }}
               >
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    {replacementSegment ? 'Choose replacement clip' : 'Add missing clips / inserts'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {replacementSegment
-                      ? `Replacing: ${replacementSegment.title || replacementSegment.video?.originalFilename || replacementSegment.video?.filename || 'selected segment'}`
-                      : `${selectedAdditionalVideos.length} clip(s) selected`}
-                  </Typography>
-                </Box>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                  {replacementSegment && (
-                    <>
-                      <Button
+                <Tab value="library" label="Iz materijala/arhive" />
+                <Tab value="upload" label="Sa kompjutera" />
+              </Tabs>
+
+              {materialSourceTab === 'library' && (
+                <Stack spacing={1.5} sx={{ p: 1.5 }}>
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'stretch', md: 'center' }}
+                  >
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                        {replacementSegment ? 'Odaberi zamjenski klip' : 'Dodaj klipove / inserte'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {replacementSegment
+                          ? `Zamjena za: ${replacementSegment.title || replacementSegment.video?.originalFilename || replacementSegment.video?.filename || 'odabrani segment'}`
+                          : `${selectedAdditionalVideos.length} klip(ova) odabrano`}
+                      </Typography>
+                    </Box>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                      {replacementSegment && (
+                        <>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<SwapHorizIcon />}
+                            onClick={handleReplaceSegment}
+                            disabled={segmentActionLoading === `replace-${replacementSegment._id}` || selectedAdditionalVideos.length !== 1}
+                          >
+                            Zamijeni klip
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={cancelReplaceSegment}>
+                            Odustani
+                          </Button>
+                        </>
+                      )}
+                      <TextField
                         size="small"
-                        variant="contained"
-                        startIcon={<SwapHorizIcon />}
-                        onClick={handleReplaceSegment}
-                        disabled={segmentActionLoading === `replace-${replacementSegment._id}` || selectedAdditionalVideos.length !== 1}
-                      >
-                        Replace clip
-                      </Button>
-                      <Button size="small" variant="outlined" onClick={cancelReplaceSegment}>
-                        Cancel
-                      </Button>
-                    </>
-                  )}
-                  <TextField
-                    size="small"
-                    label="Search material"
-                    value={materialSearch}
-                    onChange={(event) => setMaterialSearch(event.target.value)}
-                    sx={{ minWidth: { md: 280 } }}
-                  />
-                </Stack>
-              </Stack>
+                        label="Pretraga materijala"
+                        value={materialSearch}
+                        onChange={(event) => setMaterialSearch(event.target.value)}
+                        sx={{ minWidth: { md: 280 } }}
+                      />
+                    </Stack>
+                  </Stack>
 
-              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 340 }}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell padding="checkbox">Use</TableCell>
-                      <TableCell>Clip</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Duration</TableCell>
-                      <TableCell>Note</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {filteredAdditionalVideos.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5}>
-                          <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-                            {materialLoading ? 'Loading material...' : 'No additional clips found for this job event.'}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredAdditionalVideos.map((video) => {
-                        const selected = selectedAdditionalVideoIds.includes(video._id);
-
-                        return (
-                          <TableRow key={video._id} hover selected={selected}>
-                            <TableCell padding="checkbox">
-                              <Checkbox checked={selected} onChange={() => toggleAdditionalVideo(video._id)} />
-                            </TableCell>
-                            <TableCell sx={{ minWidth: 220 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
-                                {getClipName(video)}
+                  <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, maxHeight: 340 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell padding="checkbox">Koristi</TableCell>
+                          <TableCell>Klip</TableCell>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Trajanje</TableCell>
+                          <TableCell>Napomena</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {filteredAdditionalVideos.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5}>
+                              <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                                {materialLoading ? 'Učitavam materijal...' : 'Nema dodatnih klipova za odabranu pretragu.'}
                               </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {video.event || 'No event'}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Chip label={video.processingStatus || 'N/A'} size="small" />
-                            </TableCell>
-                            <TableCell>{formatDuration(video.duration)}</TableCell>
-                            <TableCell sx={{ minWidth: 220 }}>
-                              <TextField
-                                size="small"
-                                value={additionalClipNotes[video._id] || ''}
-                                onChange={(event) => updateAdditionalClipNote(video._id, event.target.value)}
-                                fullWidth
-                                disabled={!selected}
-                              />
                             </TableCell>
                           </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Stack>
+                        ) : (
+                          filteredAdditionalVideos.map((video) => {
+                            const selected = selectedAdditionalVideoIds.includes(video._id);
+
+                            return (
+                              <TableRow key={video._id} hover selected={selected}>
+                                <TableCell padding="checkbox">
+                                  <Checkbox checked={selected} onChange={() => toggleAdditionalVideo(video._id)} />
+                                </TableCell>
+                                <TableCell sx={{ minWidth: { xs: 260, md: 360 } }}>
+                                  <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                                    <VideoThumbnailPreview
+                                      videoId={video._id}
+                                      title={getClipName(video)}
+                                      width={112}
+                                      height={63}
+                                      enableScrubPreview
+                                    />
+                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                                        {getClipName(video)}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary" noWrap component="div">
+                                        {video.event || 'Bez eventa'}
+                                      </Typography>
+                                    </Box>
+                                    <Tooltip title="Otvori detalje">
+                                      <IconButton
+                                        size="small"
+                                        component={Link}
+                                        to={`/video-details/${video._id}`}
+                                      >
+                                        <OpenInNewIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                </TableCell>
+                                <TableCell>
+                                  <Chip label={formatLabel(video.processingStatus || 'N/A')} size="small" />
+                                </TableCell>
+                                <TableCell>{formatDuration(video.duration)}</TableCell>
+                                <TableCell sx={{ minWidth: 220 }}>
+                                  <TextField
+                                    size="small"
+                                    value={additionalClipNotes[video._id] || ''}
+                                    onChange={(event) => updateAdditionalClipNote(video._id, event.target.value)}
+                                    fullWidth
+                                    disabled={!selected}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Stack>
+              )}
+
+              {materialSourceTab === 'upload' && (
+                <Stack spacing={1.5} sx={{ p: 1.5 }}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.5}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'stretch', sm: 'center' }}
+                  >
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                        Direktno dodaj video fajlove u job
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Novi fajlovi će montažeru biti označeni kao novi/missing materijal.
+                      </Typography>
+                    </Box>
+                    <Button component="label" variant="outlined" startIcon={<CloudUploadIcon />} disabled={jobUploadLoading}>
+                      Odaberi video
+                      <input
+                        hidden
+                        type="file"
+                        multiple
+                        accept={ACCEPTED_VIDEO_FILE_TYPES}
+                        onChange={handleJobMaterialFileSelection}
+                      />
+                    </Button>
+                  </Stack>
+
+                  {jobUploadFiles.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      Nema odabranih video fajlova.
+                    </Typography>
+                  ) : (
+                    <Stack spacing={1}>
+                      {jobUploadFiles.map((file, index) => (
+                        <Paper key={`${file.name}-${file.lastModified}-${index}`} variant="outlined" sx={{ p: 1, borderRadius: 1 }}>
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                                {file.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {formatBytes(file.size)}
+                              </Typography>
+                            </Box>
+                            <TextField
+                              size="small"
+                              label="Napomena"
+                              value={jobUploadNotes[index] || ''}
+                              onChange={(event) => updateJobUploadNote(index, event.target.value)}
+                              sx={{ minWidth: { sm: 260 } }}
+                              disabled={jobUploadLoading}
+                            />
+                            <Tooltip title="Ukloni fajl">
+                              <span>
+                                <IconButton size="small" onClick={() => removeJobUploadFile(index)} disabled={jobUploadLoading}>
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Stack>
+                        </Paper>
+                      ))}
+                    </Stack>
+                  )}
+
+                  {jobUploadLoading && (
+                    <Box>
+                      <LinearProgress variant="determinate" value={jobUploadProgress} />
+                      <Typography variant="caption" color="text.secondary">
+                        Upload {jobUploadProgress}%
+                      </Typography>
+                    </Box>
+                  )}
+
+                  <Button
+                    variant="contained"
+                    startIcon={<CloudUploadIcon />}
+                    onClick={handleUploadJobMaterial}
+                    disabled={jobUploadLoading || jobUploadFiles.length === 0}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    {jobUploadLoading ? 'Dodajem materijal...' : 'Uploaduj i dodaj u job'}
+                  </Button>
+                </Stack>
+              )}
+            </Paper>
 
             <TextField
-              label="Update note"
+              label="Napomena uz izmjenu"
               value={updateComment}
               onChange={(event) => setUpdateComment(event.target.value)}
               multiline
@@ -1325,10 +1544,10 @@ const EditJobDetailsPage = () => {
             <Button
               variant="contained"
               onClick={handleReporterUpdate}
-              disabled={updateSaving || Boolean(replacementSegment)}
+              disabled={updateSaving || Boolean(replacementSegment) || jobUploadLoading}
               sx={{ alignSelf: 'flex-start' }}
             >
-              {replacementSegment ? 'Finish replacement first' : (updateSaving ? 'Sending update...' : 'Send update to production')}
+              {replacementSegment ? 'Završi zamjenu klipa' : (updateSaving ? 'Šaljem izmjenu...' : 'Pošalji izmjenu produkciji')}
             </Button>
           </Stack>
         </Paper>
@@ -1336,7 +1555,7 @@ const EditJobDetailsPage = () => {
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 3 }}>
         <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
-          Requested segments
+          Sirovine za montažu
         </Typography>
 
         <TableContainer>
@@ -1344,24 +1563,53 @@ const EditJobDetailsPage = () => {
             <TableHead>
               <TableRow>
                 <TableCell>#</TableCell>
-                <TableCell>Clip</TableCell>
-                <TableCell>Range</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Notes</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell>Materijal</TableCell>
+                <TableCell>Raspon</TableCell>
+                <TableCell>Tip</TableCell>
+                <TableCell>Napomena</TableCell>
+                <TableCell align="right">Akcije</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {sortedSegments.map((segment, index) => (
                 <TableRow key={segment._id || index} hover selected={segment._id === replacementSegmentId}>
                   <TableCell>{index + 1}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                      {segment.video?.originalFilename || segment.video?.filename || 'Unknown clip'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {[segment.video?.event || 'No event', segment.video?.location].filter(Boolean).join(' / ')}
-                    </Typography>
+                  <TableCell sx={{ minWidth: 280 }}>
+                    <Stack direction="row" spacing={1.25} alignItems="center">
+                      {segment.video?._id ? (
+                        <VideoThumbnailPreview
+                          videoId={segment.video._id}
+                          title={segment.video.originalFilename || segment.video.filename || 'Video materijal'}
+                          width={96}
+                          height={54}
+                          enableScrubPreview
+                        />
+                      ) : (
+                        <Box
+                          sx={{
+                            width: 96,
+                            height: 54,
+                            flex: '0 0 96px',
+                            display: 'grid',
+                            placeItems: 'center',
+                            bgcolor: 'action.hover',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 1,
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary">Bez slike</Typography>
+                        </Box>
+                      )}
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                          {segment.video?.originalFilename || segment.video?.filename || 'Nepoznat klip'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" component="div" noWrap>
+                          {[segment.video?.event || 'Bez eventa', segment.video?.location].filter(Boolean).join(' / ')}
+                        </Typography>
+                      </Box>
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     {formatTime(segment.startTime)}
@@ -1372,7 +1620,7 @@ const EditJobDetailsPage = () => {
                   <TableCell>
                     <Chip label={formatLabel(segment.type)} size="small" />
                   </TableCell>
-                  <TableCell>{segment.notes || segment.title || 'No notes'}</TableCell>
+                  <TableCell>{segment.notes || segment.title || 'Bez napomene'}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                       {segment.video?._id && (
@@ -1447,23 +1695,23 @@ const EditJobDetailsPage = () => {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+      <Paper id="comments" variant="outlined" sx={{ p: 2, borderRadius: 2, scrollMarginTop: 150 }}>
         <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
-          Job comments
+          Komentari
         </Typography>
         <Stack spacing={1.5}>
           {(job.comments || []).map((jobComment) => (
             <Box key={jobComment._id}>
               <Typography variant="body2">{jobComment.body}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {jobComment.author?.username || 'Unknown'} / {formatDate(jobComment.createdAt)}
+                {jobComment.author?.username || 'Nepoznat korisnik'} / {formatDate(jobComment.createdAt)}
               </Typography>
               <Divider sx={{ mt: 1 }} />
             </Box>
           ))}
 
           <TextField
-            label="Add comment"
+            label="Dodaj komentar"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             multiline
@@ -1471,7 +1719,7 @@ const EditJobDetailsPage = () => {
             fullWidth
           />
           <Button variant="contained" onClick={handleAddComment}>
-            Add Comment
+            Pošalji komentar
           </Button>
         </Stack>
       </Paper>

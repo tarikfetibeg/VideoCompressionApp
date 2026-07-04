@@ -7,17 +7,203 @@ const path = require('path');
 const fs = require('fs');
 const { enqueueVideoProcessing } = require('../queues/videoQueue');
 const { getQueueErrorMessage } = require('../utils/queueErrors');
+const { addVideoPrefixSearchFilter } = require('../utils/searchText');
+const { addContentTypeFallbackFilter } = require('../utils/contentTypeFilters');
+const { applyApprovedArchiveEligibility } = require('../utils/archiveEligibility');
+const { setDownloadHeaders } = require('../utils/downloadHeaders');
+const { streamSingleVideo, streamBulkVideos } = require('../services/downloadService');
+const { removeHlsPreviewFolder } = require('../services/hlsPreviewService');
+const { sendFileWithRange } = require('../utils/mediaStreaming');
+const {
+  getScrubPreviewFolderForVideo,
+  hasUsableScrubPreview,
+  removeScrubPreviewFolderForVideo,
+  resolveScrubPreviewFramePath,
+} = require('../services/videoProcessingService');
 
 const router = express.Router();
 
 const allowedVideoRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Archivist', 'Admin'];
+const allowedMediaPreviewRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'];
 const allowedQcRoles = ['Editor', 'VideoEditor', 'Producer', 'Admin'];
 const allowedApprovalRoles = ['Producer', 'Admin'];
 const allowedQcStatuses = ['pending', 'passed', 'failed'];
 const allowedBroadcastStatusUpdates = ['approved_for_air', 'aired', 'archived'];
 const allowedTimecodeRoles = ['Editor', 'VideoEditor', 'Producer', 'Reporter', 'Admin'];
+const allowedArchiveReviewRequestRoles = ['Editor', 'VideoEditor', 'Admin'];
 const allowedTimecodeTypes = ['marker', 'cut', 'in', 'out', 'note'];
-const directIngestArchiveCategories = ['prilog', 'insert'];
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parsePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '50', 10) || 50, 1), 200);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function buildSort(query = {}) {
+  const sortBy = String(query.sortBy || 'uploadDate');
+  const sortOrder = String(query.sortOrder || 'desc') === 'asc' ? 1 : -1;
+  const sortFields = {
+    uploadDate: 'uploadDate',
+    tagDate: 'tagDate',
+    name: 'originalFilename',
+    event: 'event',
+    processing: 'processingStatus',
+    qc: 'qcStatus',
+    broadcast: 'broadcastStatus',
+  };
+  const field = sortFields[sortBy] || 'uploadDate';
+  return { [field]: sortOrder, uploadDate: -1, createdAt: -1 };
+}
+
+function applyArchiveFilter(filter) {
+  applyApprovedArchiveEligibility(filter);
+}
+
+async function buildVideoWorkspaceFilter(query = {}, user) {
+  const {
+    event,
+    location,
+    date,
+    scope,
+    library,
+    contentTypeId,
+    status,
+    processingStatus,
+    qcStatus,
+    broadcastStatus,
+    uploader,
+    q,
+  } = query;
+  const filter = {};
+
+  if (event && event !== 'all') {
+    filter.event = new RegExp(escapeRegex(event), 'i');
+  }
+
+  if (location && location !== 'all') {
+    filter.location = new RegExp(escapeRegex(location), 'i');
+  }
+
+  if (library === 'archive') {
+    applyArchiveFilter(filter);
+  }
+
+  await addContentTypeFallbackFilter(filter, contentTypeId);
+
+  if (status && status !== 'all') {
+    filter.status = status;
+  }
+
+  if (processingStatus && processingStatus !== 'all') {
+    filter.processingStatus = processingStatus;
+  }
+
+  if (qcStatus && qcStatus !== 'all') {
+    filter.qcStatus = qcStatus;
+  }
+
+  if (broadcastStatus && broadcastStatus !== 'all') {
+    filter.broadcastStatus = broadcastStatus;
+  }
+
+  if (uploader && uploader !== 'all') {
+    filter.uploader = uploader;
+  }
+
+  if (date) {
+    const startOfDay = new Date(`${date}T00:00:00.000Z`);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
+
+    if (!Number.isNaN(startOfDay.getTime())) {
+      filter.tagDate = {
+        $gte: startOfDay,
+        $lt: endOfDay,
+      };
+    }
+  }
+
+  const search = String(q || '').trim();
+  addVideoPrefixSearchFilter(filter, search);
+
+  if (user?.role === 'Reporter' && scope !== 'station') {
+    filter.uploader = user.id;
+  }
+
+  return filter;
+}
+
+function populateVideoList(query) {
+  return query
+    .populate('uploader', 'username role')
+    .populate('reporter', 'username role')
+    .populate('editor', 'username role')
+    .populate('qaResponsible', 'username role')
+    .populate('correctionReportedBy', 'username role')
+    .populate('archiveReviewedBy', 'username role')
+    .populate('archiveTagsUpdatedBy', 'username role')
+    .populate('program')
+    .populate('contentType');
+}
+
+async function buildVideoSummary(filter) {
+  const [
+    total,
+    raw,
+    edited,
+    queued,
+    processing,
+    completed,
+    failed,
+    qcPending,
+    qcPassed,
+    qcFailed,
+    approved,
+    aired,
+    archived,
+    needsCorrection,
+  ] = await Promise.all([
+    Video.countDocuments(filter),
+    Video.countDocuments({ ...filter, status: 'raw' }),
+    Video.countDocuments({ ...filter, status: 'edited' }),
+    Video.countDocuments({ ...filter, processingStatus: 'queued' }),
+    Video.countDocuments({ ...filter, processingStatus: 'processing' }),
+    Video.countDocuments({ ...filter, processingStatus: 'completed' }),
+    Video.countDocuments({ ...filter, processingStatus: 'failed' }),
+    Video.countDocuments({ ...filter, qcStatus: 'pending' }),
+    Video.countDocuments({ ...filter, qcStatus: 'passed' }),
+    Video.countDocuments({ ...filter, qcStatus: 'failed' }),
+    Video.countDocuments({ ...filter, broadcastStatus: 'approved_for_air' }),
+    Video.countDocuments({ ...filter, broadcastStatus: 'aired' }),
+    Video.countDocuments({ ...filter, broadcastStatus: 'archived' }),
+    Video.countDocuments({ ...filter, correctionStatus: 'needs_correction' }),
+  ]);
+
+  return {
+    total,
+    raw,
+    edited,
+    queued,
+    processing,
+    completed,
+    failed,
+    qcPending,
+    qcPassed,
+    qcFailed,
+    approved,
+    aired,
+    archived,
+    needsCorrection,
+  };
+}
 
 function getUploaderId(video) {
   if (!video || !video.uploader) return null;
@@ -29,9 +215,9 @@ function getUploaderId(video) {
   return video.uploader.toString();
 }
 
-function userCanReadVideo(user, video) {
+function userCanReadVideo(user, video, allowedRoles = allowedVideoRoles) {
   if (!user || !video) return false;
-  return allowedVideoRoles.includes(user.role);
+  return allowedRoles.includes(user.role);
 }
 
 function userCanManageVideo(user, video) {
@@ -78,46 +264,41 @@ function deleteFileIfExists(filePath) {
   }
 }
 
-function sendVideoFile(req, res, videoPath, contentType = 'video/mp4') {
-  const stat = fs.statSync(videoPath);
-  const total = stat.size;
-  const range = req.headers.range;
+router.get(
+  '/workspace',
+  authenticateToken,
+  authorize(allowedVideoRoles),
+  async (req, res) => {
+    try {
+      const { page, limit, skip } = parsePagination(req.query);
+      const filter = await buildVideoWorkspaceFilter(req.query, req.user);
+      const sort = buildSort(req.query);
 
-  if (!range) {
-    res.writeHead(200, {
-      'Content-Length': total,
-      'Content-Type': contentType,
-      'Accept-Ranges': 'bytes',
-    });
+      const [total, items, summary] = await Promise.all([
+        Video.countDocuments(filter),
+        populateVideoList(
+          Video.find(filter)
+            .sort(sort)
+            .skip(skip)
+            .limit(limit)
+        ),
+        buildVideoSummary(filter),
+      ]);
 
-    fs.createReadStream(videoPath).pipe(res);
-    return;
+      res.json({
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.max(Math.ceil(total / limit), 1),
+        summary,
+      });
+    } catch (error) {
+      console.error('Error retrieving video workspace:', error);
+      res.status(500).json({ message: 'Error retrieving video workspace' });
+    }
   }
-
-  const parts = range.replace(/bytes=/, '').split('-');
-  const start = parseInt(parts[0], 10);
-  const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
-
-  if (Number.isNaN(start) || Number.isNaN(end) || start >= total || end >= total) {
-    res.writeHead(416, {
-      'Content-Range': `bytes */${total}`,
-    });
-    res.end();
-    return;
-  }
-
-  const chunkSize = end - start + 1;
-  const file = fs.createReadStream(videoPath, { start, end });
-
-  res.writeHead(206, {
-    'Content-Range': `bytes ${start}-${end}/${total}`,
-    'Accept-Ranges': 'bytes',
-    'Content-Length': chunkSize,
-    'Content-Type': contentType,
-  });
-
-  file.pipe(res);
-}
+);
 
 router.get(
   '/',
@@ -132,22 +313,10 @@ router.get(
     }
 
     if (library === 'archive') {
-      filter.status = 'edited';
-      filter.processingStatus = 'completed';
-      filter.$or = [
-        { broadcastStatus: { $in: ['aired', 'archived'] } },
-        {
-          broadcastStatus: 'approved_for_air',
-          finalApprovalStatus: 'approved',
-          program: null,
-          finalCategory: { $in: directIngestArchiveCategories },
-        },
-      ];
+      applyArchiveFilter(filter);
     }
 
-    if (contentTypeId && contentTypeId !== 'all') {
-      filter.contentType = contentTypeId;
-    }
+    await addContentTypeFallbackFilter(filter, contentTypeId);
 
     if (date) {
       const startOfDay = new Date(`${date}T00:00:00.000Z`);
@@ -167,16 +336,7 @@ router.get(
     }
 
     try {
-      const videos = await Video.find(filter)
-        .populate('uploader', 'username role')
-        .populate('reporter', 'username role')
-        .populate('editor', 'username role')
-        .populate('qaResponsible', 'username role')
-        .populate('correctionReportedBy', 'username role')
-        .populate('archiveReviewedBy', 'username role')
-        .populate('archiveTagsUpdatedBy', 'username role')
-        .populate('program')
-        .populate('contentType');
+      const videos = await populateVideoList(Video.find(filter));
       res.json(videos);
     } catch (err) {
       console.error('Error retrieving videos:', err);
@@ -203,6 +363,8 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
     ].filter(Boolean)));
 
     pathsToDelete.forEach(deleteFileIfExists);
+    removeScrubPreviewFolderForVideo(video);
+    removeHlsPreviewFolder(video._id);
 
     await Video.findByIdAndDelete(req.params.videoId);
 
@@ -285,7 +447,7 @@ router.get('/preview/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
 
-  if (!allowedVideoRoles.includes(user.role)) {
+  if (!allowedMediaPreviewRoles.includes(user.role)) {
     return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
   }
 
@@ -293,7 +455,7 @@ router.get('/preview/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanReadVideo(user, video)) {
+    if (!userCanReadVideo(user, video, allowedMediaPreviewRoles)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -303,7 +465,7 @@ router.get('/preview/:videoId', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Preview file not found on server' });
     }
 
-    return sendVideoFile(req, res, previewPath, 'video/mp4');
+    return sendFileWithRange(req, res, previewPath, 'video/mp4');
   } catch (error) {
     console.error('Error streaming preview:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -314,7 +476,7 @@ router.get('/thumbnail/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
 
-  if (!allowedVideoRoles.includes(user.role)) {
+  if (!allowedMediaPreviewRoles.includes(user.role)) {
     return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
   }
 
@@ -322,7 +484,7 @@ router.get('/thumbnail/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanReadVideo(user, video)) {
+    if (!userCanReadVideo(user, video, allowedMediaPreviewRoles)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -344,11 +506,81 @@ router.get('/thumbnail/:videoId', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/scrub-preview/:videoId/manifest', authenticateToken, async (req, res) => {
+  const { videoId } = req.params;
+  const user = req.user;
+
+  if (!allowedMediaPreviewRoles.includes(user.role)) {
+    return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+  }
+
+  try {
+    const video = await Video.findById(videoId).select('scrubPreview uploader');
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    if (!userCanReadVideo(user, video, allowedMediaPreviewRoles)) {
+      return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+    }
+
+    const available = hasUsableScrubPreview(video);
+    const metadata = video.scrubPreview || {};
+
+    res.json({
+      available,
+      frameCount: available ? Number(metadata.frameCount) || 0 : 0,
+      frameWidth: Number(metadata.frameWidth) || 320,
+      frameHeight: Number(metadata.frameHeight) || 180,
+      duration: Number(metadata.duration) || null,
+      version: metadata.version || null,
+      createdAt: metadata.createdAt || null,
+      error: available ? '' : metadata.error || '',
+    });
+  } catch (error) {
+    console.error('Error serving scrub preview manifest:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+router.get('/scrub-preview/:videoId/frame/:frameIndex', authenticateToken, async (req, res) => {
+  const { videoId, frameIndex } = req.params;
+  const user = req.user;
+
+  if (!allowedMediaPreviewRoles.includes(user.role)) {
+    return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+  }
+
+  try {
+    const video = await Video.findById(videoId).select('scrubPreview uploader');
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    if (!userCanReadVideo(user, video, allowedMediaPreviewRoles)) {
+      return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+    }
+
+    const framePath = resolveScrubPreviewFramePath(video, Number(frameIndex));
+
+    if (!framePath) {
+      return res.status(404).json({ message: 'Scrub preview frame not found on server' });
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'private, max-age=3600',
+      'X-Scrub-Preview-Folder': path.basename(getScrubPreviewFolderForVideo(video)),
+    });
+
+    fs.createReadStream(framePath).pipe(res);
+  } catch (error) {
+    console.error('Error serving scrub preview frame:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 router.get('/stream/:videoId', authenticateToken, async (req, res) => {
   const { videoId } = req.params;
   const user = req.user;
 
-  if (!allowedVideoRoles.includes(user.role)) {
+  if (!allowedMediaPreviewRoles.includes(user.role)) {
     return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
   }
 
@@ -356,7 +588,7 @@ router.get('/stream/:videoId', authenticateToken, async (req, res) => {
     const video = await Video.findById(videoId);
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    if (!userCanReadVideo(user, video)) {
+    if (!userCanReadVideo(user, video, allowedMediaPreviewRoles)) {
       return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
     }
 
@@ -366,7 +598,7 @@ router.get('/stream/:videoId', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Video file not found on server' });
     }
 
-    return sendVideoFile(req, res, videoPath, 'video/mp4');
+    return sendFileWithRange(req, res, videoPath, 'video/mp4');
   } catch (error) {
     console.error('Error streaming video:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -448,6 +680,64 @@ router.delete(
     } catch (error) {
       console.error('Failed to delete timecode:', error);
       res.status(500).json({ message: 'Failed to delete marker' });
+    }
+  }
+);
+
+router.patch(
+  '/:videoId/archive-review-request',
+  authenticateToken,
+  authorize(allowedArchiveReviewRequestRoles),
+  async (req, res) => {
+    const { videoId } = req.params;
+    const requestNote = String(req.body?.notes || '').trim() ||
+      'Montaza je oznacila da kategorija materijala treba arhivsku provjeru.';
+
+    try {
+      const video = await Video.findById(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+
+      if (!userCanManageVideo(req.user, video)) {
+        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
+      }
+
+      if (video.status !== 'edited' || video.processingStatus !== 'completed') {
+        return res.status(400).json({
+          message: 'Samo zavrsen/finalizovan materijal moze ici arhivi na provjeru kategorije.',
+        });
+      }
+
+      const previousStatus = video.archiveReviewStatus || 'unreviewed';
+      const previousNotes = String(video.archiveReviewNotes || '').trim();
+      const nextNote = `Kategorija za provjeru: ${requestNote}`;
+
+      video.archiveReviewStatus = 'needs_metadata';
+      video.archiveReviewNotes = previousNotes ? `${previousNotes}\n${nextNote}` : nextNote;
+      video.archiveReviewedBy = null;
+      video.archiveReviewedAt = null;
+
+      await video.save();
+
+      await AuditLog.create({
+        action: 'Request Archive Category Review',
+        performedBy: req.user.id,
+        details: {
+          videoId: video._id,
+          filename: video.filename,
+          previousStatus,
+          status: video.archiveReviewStatus,
+          notes: requestNote,
+        },
+      });
+
+      const populatedVideo = await populateVideoList(Video.findById(video._id));
+      res.json({
+        message: 'Materijal je poslan arhivi na provjeru kategorije.',
+        video: populatedVideo,
+      });
+    } catch (error) {
+      console.error('Failed to request archive category review:', error);
+      res.status(500).json({ message: 'Provjera kategorije se ne moze poslati arhivi.' });
     }
   }
 );
@@ -586,33 +876,17 @@ router.get(
   authenticateToken,
   authorize(allowedVideoRoles),
   async (req, res) => {
-    const { videoId } = req.params;
-
     try {
-      const video = await Video.findById(videoId);
-      if (!video) return res.status(404).json({ message: 'Video not found' });
-
-      if (!userCanDownloadVideo(req.user, video)) {
-        return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
-      }
-
-      const videoPath = resolveExistingPath(video.compressedPath, video.filepath);
-
-      if (!videoPath) {
-        return res.status(404).json({ message: 'Video file not found on server' });
-      }
-
-      res.download(videoPath, video.originalFilename || video.filename, (err) => {
-        if (err) {
-          console.error('Error sending file:', err);
-          if (!res.headersSent) {
-            res.status(500).json({ message: 'Error downloading video' });
-          }
-        }
+      await streamSingleVideo({
+        user: req.user,
+        payload: { videoId: req.params.videoId },
+        res,
       });
     } catch (err) {
       console.error('Error downloading video:', err);
-      res.status(500).json({ message: 'Error downloading video' });
+      if (!res.headersSent) {
+        res.status(err.statusCode || 500).json({ message: err.message || 'Error downloading video' });
+      }
     }
   }
 );
@@ -620,7 +894,7 @@ router.get(
 router.get(
   '/:videoId/timecodes',
   authenticateToken,
-  authorize(allowedVideoRoles),
+  authorize(allowedMediaPreviewRoles),
   async (req, res) => {
     const { videoId } = req.params;
 
@@ -628,7 +902,7 @@ router.get(
       const video = await Video.findById(videoId).select('timecodes uploader');
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
-      if (!userCanReadVideo(req.user, video)) {
+      if (!userCanReadVideo(req.user, video, allowedMediaPreviewRoles)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 
@@ -645,47 +919,25 @@ router.post(
   authenticateToken,
   authorize(allowedVideoRoles),
   async (req, res) => {
-    const { videoIds } = req.body;
-
-    if (!Array.isArray(videoIds) || videoIds.length === 0) {
-      return res.status(400).json({ message: 'No videos selected' });
-    }
-
-    const archiver = require('archiver');
-    const zip = archiver('zip');
-    const timestamp = Date.now();
-    const zipFilename = `videos_${timestamp}.zip`;
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename=${zipFilename}`);
-
-    zip.on('error', (err) => {
-      console.error('ZIP archive error:', err);
+    try {
+      await streamBulkVideos({
+        user: req.user,
+        payload: { videoIds: req.body.videoIds },
+        res,
+      });
+    } catch (err) {
+      console.error('Error downloading videos:', err);
       if (!res.headersSent) {
-        res.status(500).json({ message: 'Error creating ZIP archive' });
-      }
-    });
-
-    zip.pipe(res);
-
-    for (const videoId of videoIds) {
-      const video = await Video.findById(videoId);
-      if (!video || !userCanDownloadVideo(req.user, video)) continue;
-
-      const videoPath = resolveExistingPath(video.compressedPath, video.filepath);
-      if (videoPath) {
-        zip.file(videoPath, { name: video.originalFilename || video.filename });
+        res.status(err.statusCode || 500).json({ message: err.message || 'Error creating ZIP archive' });
       }
     }
-
-    zip.finalize();
   }
 );
 
 router.get(
   '/details/:videoId',
   authenticateToken,
-  authorize(allowedVideoRoles),
+  authorize(allowedMediaPreviewRoles),
   async (req, res) => {
     try {
       const video = await Video.findById(req.params.videoId)
@@ -704,7 +956,7 @@ router.get(
         return res.status(404).json({ message: 'Video not found' });
       }
 
-      if (!userCanReadVideo(req.user, video)) {
+      if (!userCanReadVideo(req.user, video, allowedMediaPreviewRoles)) {
         return res.status(403).json({ message: 'Forbidden: You do not have access to this video.' });
       }
 

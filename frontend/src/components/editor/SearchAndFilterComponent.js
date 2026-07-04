@@ -1,45 +1,42 @@
 import React from 'react';
 import {
-  Box,
   Button,
   FormControl,
   Grid,
   InputLabel,
   MenuItem,
-  Paper,
   Select,
-  Stack,
   TextField,
-  Typography,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
+import { FilterBar } from '../common/WorkspaceChrome';
 
 const processingOptions = [
-  { value: 'all', label: 'All processing' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' },
+  { value: 'all', label: 'Sva obrada' },
+  { value: 'queued', label: 'Čeka obradu' },
+  { value: 'processing', label: 'Obrada u toku' },
+  { value: 'completed', label: 'Spremno' },
+  { value: 'failed', label: 'Greška' },
 ];
 
 const qcOptions = [
-  { value: 'all', label: 'All QC' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'passed', label: 'Passed' },
-  { value: 'failed', label: 'Failed' },
+  { value: 'all', label: 'Svi QC statusi' },
+  { value: 'pending', label: 'Čeka QC' },
+  { value: 'passed', label: 'QC prošao' },
+  { value: 'failed', label: 'QC problem' },
 ];
 
 const broadcastOptions = [
-  { value: 'all', label: 'All broadcast' },
-  { value: 'not_ready', label: 'Not ready' },
-  { value: 'qc_pending', label: 'QC pending' },
-  { value: 'qc_failed', label: 'QC failed' },
-  { value: 'ready_for_approval', label: 'Ready' },
-  { value: 'approved_for_air', label: 'Approved' },
-  { value: 'aired', label: 'Aired' },
-  { value: 'archived', label: 'Archived' },
+  { value: 'all', label: 'Svi air statusi' },
+  { value: 'not_ready', label: 'Nije spremno' },
+  { value: 'qc_pending', label: 'Čeka QC' },
+  { value: 'qc_failed', label: 'QC problem' },
+  { value: 'ready_for_approval', label: 'Spremno za odobrenje' },
+  { value: 'approved_for_air', label: 'Odobreno za eter' },
+  { value: 'aired', label: 'Emitovano' },
+  { value: 'archived', label: 'Arhivirano' },
 ];
 
 const SearchAndFilterComponent = ({
@@ -57,31 +54,19 @@ const SearchAndFilterComponent = ({
   };
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        sx={{ mb: 2 }}
-      >
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            Work Filter
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {resultCount} visible items
-          </Typography>
-        </Box>
+    <FilterBar
+      title="Radni filter"
+      summary={`${resultCount} vidljivih materijala`}
+      actions={(
         <Button startIcon={<ClearIcon />} variant="outlined" onClick={resetFilters}>
-          Clear
+          Očisti
         </Button>
-      </Stack>
-
+      )}
+    >
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
           <TextField
-            label="Search"
+            label="Pretraga"
             fullWidth
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
@@ -107,7 +92,7 @@ const SearchAndFilterComponent = ({
             options={options.locations}
             value={filters.location}
             onInputChange={(event, newValue) => updateFilter('location', newValue || '')}
-            renderInput={(params) => <TextField {...params} label="Location" />}
+            renderInput={(params) => <TextField {...params} label="Lokacija" />}
           />
         </Grid>
 
@@ -123,7 +108,7 @@ const SearchAndFilterComponent = ({
 
         <Grid item xs={12} sm={6} md={2}>
           <TextField
-            label="Date"
+            label="Datum"
             type="date"
             fullWidth
             InputLabelProps={{ shrink: true }}
@@ -134,25 +119,43 @@ const SearchAndFilterComponent = ({
 
         <Grid item xs={12} sm={6} md={2}>
           <FormControl fullWidth>
-            <InputLabel>Material</InputLabel>
+            <InputLabel>Kategorija</InputLabel>
             <Select
-              value={filters.status}
-              label="Material"
-              onChange={(e) => updateFilter('status', e.target.value)}
+              value={filters.contentTypeId || 'all'}
+              label="Kategorija"
+              onChange={(e) => updateFilter('contentTypeId', e.target.value)}
             >
-              <MenuItem value="all">All material</MenuItem>
-              <MenuItem value="raw">Raw</MenuItem>
-              <MenuItem value="edited">Edited</MenuItem>
+              <MenuItem value="all">Sve kategorije</MenuItem>
+              {(options.contentTypes || []).map((type) => (
+                <MenuItem key={type._id} value={type._id}>
+                  {type.name || type.slug || 'Bez naziva'}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </Grid>
 
         <Grid item xs={12} sm={6} md={2}>
           <FormControl fullWidth>
-            <InputLabel>Processing</InputLabel>
+            <InputLabel>Materijal</InputLabel>
+            <Select
+              value={filters.status}
+              label="Materijal"
+              onChange={(e) => updateFilter('status', e.target.value)}
+            >
+              <MenuItem value="all">Sav materijal</MenuItem>
+              <MenuItem value="raw">Sirovina</MenuItem>
+              <MenuItem value="edited">Final / montaža</MenuItem>
+            </Select>
+          </FormControl>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={2}>
+          <FormControl fullWidth>
+            <InputLabel>Obrada</InputLabel>
             <Select
               value={filters.processingStatus}
-              label="Processing"
+              label="Obrada"
               onChange={(e) => updateFilter('processingStatus', e.target.value)}
             >
               {processingOptions.map((option) => (
@@ -183,10 +186,10 @@ const SearchAndFilterComponent = ({
 
         <Grid item xs={12} sm={6} md={3}>
           <FormControl fullWidth>
-            <InputLabel>Broadcast</InputLabel>
+            <InputLabel>Air status</InputLabel>
             <Select
               value={filters.broadcastStatus}
-              label="Broadcast"
+              label="Air status"
               onChange={(e) => updateFilter('broadcastStatus', e.target.value)}
             >
               {broadcastOptions.map((option) => (
@@ -198,7 +201,7 @@ const SearchAndFilterComponent = ({
           </FormControl>
         </Grid>
       </Grid>
-    </Paper>
+    </FilterBar>
   );
 };
 

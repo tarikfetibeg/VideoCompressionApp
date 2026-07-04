@@ -5,6 +5,9 @@ const BroadcastContentTypeSchema = new mongoose.Schema({
   slug: { type: String, required: true, trim: true, unique: true },
   description: { type: String },
   active: { type: Boolean, default: true },
+  autoExpireJobs: { type: Boolean, default: true },
+  jobSlaHours: { type: Number, min: 1, max: 720, default: 72 },
+  jobGraceHours: { type: Number, min: 0, max: 168, default: 4 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

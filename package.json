@@ -2,7 +2,7 @@
   "name": "videocompressionapp",
   "version": "1.0.0",
   "engines": {
-    "node": "16.x"
+    "node": "20.x"
   },
   "scripts": {
     "start": "node backend/app.js",
@@ -10,7 +10,17 @@
     "start:dev": "cross-env NODE_ENV=development node backend/app.js",
     "start:prod": "cross-env NODE_ENV=production node backend/app.js",
     "worker:video": "node backend/workers/videoWorker.js",
+    "worker:hls": "node backend/workers/hlsWorker.js",
+    "worker:preview": "node backend/workers/previewMaintenanceWorker.js",
     "admin:create": "node backend/scripts/createAdmin.js",
+    "indexes:create": "node backend/scripts/createIndexes.js",
+    "indexes:explain": "node backend/scripts/explainIndexes.js",
+    "searchtext:backfill": "node backend/scripts/backfillSearchText.js",
+    "searchprefixes:backfill": "node backend/scripts/backfillSearchPrefixes.js",
+    "jobs:lifecycle-backfill": "node backend/scripts/backfillEditJobLifecycle.js",
+    "corrections:backfill": "node backend/scripts/backfillCorrectionRequests.js",
+    "contenttypes:backfill": "node backend/scripts/backfillVideoContentTypes.js",
+    "hls:benchmark": "node backend/scripts/benchmarkHls.js",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend"
   },
   "dependencies": {

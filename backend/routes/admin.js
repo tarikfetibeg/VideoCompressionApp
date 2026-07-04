@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 const Video = require('../models/Video');
@@ -19,6 +20,37 @@ const authorize = require('../middleware/authorize');
 const { defaultContentTypes } = require('../config/broadcastDefaults');
 const { cleanupExpiredRawFiles } = require('../services/rawRetentionService');
 const { findRawOrphans, importRawOrphans } = require('../services/rawOrphanService');
+const {
+  buildScrubPreviewForVideo,
+  hasUsableScrubPreview,
+  removeScrubPreviewFolderForVideo,
+} = require('../services/videoProcessingService');
+const {
+  hasReadyHlsPreview,
+  removeHlsPreviewFolder,
+} = require('../services/hlsPreviewService');
+const { enqueueHlsPreview } = require('../queues/hlsQueue');
+const {
+  getFfmpegCapabilities,
+  runNvencProbe,
+} = require('../services/ffmpegCapabilityService');
+const {
+  cleanupEligiblePreviews,
+  scanPreviewRetention,
+} = require('../services/previewRetentionService');
+const {
+  getStorageOverview,
+  getSettings: getStorageSettings,
+  refreshStorageOverview,
+  updateStorageSettings,
+} = require('../services/storageOverviewService');
+const {
+  applyProfileVersions,
+  getEffectiveMediaSettings,
+  getMediaSettings,
+  normalizeMediaSettingsUpdate,
+} = require('../services/mediaProfileService');
+const { enqueuePreviewMaintenance } = require('../queues/previewMaintenanceQueue');
 const { paths, ensureFolderExists } = require('../utils/storagePaths');
 
 const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'];
@@ -52,6 +84,16 @@ function formatFileSize(bytes) {
   return Number(bytes) || 0;
 }
 
+function parseWorkspacePagination(query = {}) {
+  const page = Math.max(parseInt(query.page || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit || '50', 10) || 50, 1), 200);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
 function classifyAuditSeverity(action = '') {
   const value = String(action).toLowerCase();
   if (/(delete|failed|reject|cleanup|remove|reset|orphan|replace)/.test(value)) return 'critical';
@@ -67,6 +109,79 @@ function inferAuditEntity(details = {}) {
   if (details.feedbackId) return { type: 'feedback', id: details.feedbackId };
   if (details.userId) return { type: 'user', id: details.userId };
   return null;
+}
+
+function buildAuditLogFilter(query = {}) {
+  const {
+    action,
+    userId,
+    dateFrom,
+    dateTo,
+  } = query;
+  const filter = {};
+
+  if (action && action !== 'all') {
+    filter.action = action;
+  }
+
+  if (userId && userId !== 'all') {
+    filter.performedBy = userId;
+  }
+
+  if (dateFrom || dateTo) {
+    filter.timestamp = {};
+    if (dateFrom) filter.timestamp.$gte = new Date(dateFrom);
+    if (dateTo) filter.timestamp.$lte = new Date(dateTo);
+  }
+
+  return filter;
+}
+
+function enhanceAuditLog(log) {
+  return {
+    ...log,
+    severity: classifyAuditSeverity(log.action),
+    entity: inferAuditEntity(log.details),
+  };
+}
+
+function filterEnhancedAuditLogs(logs, query = {}) {
+  const role = query.role || 'all';
+  const severity = query.severity || 'all';
+  const rawSearchTerm = String(query.q || query.search || '').trim().toLowerCase();
+  const searchTerm = rawSearchTerm.length >= 2 ? rawSearchTerm : '';
+
+  return logs.filter((log) => {
+    const matchesRole = !role || role === 'all' || log.performedBy?.role === role;
+    const matchesSeverity = !severity || severity === 'all' || log.severity === severity;
+    const matchesSearch = !searchTerm || [
+      log.action,
+      log.performedBy?.username,
+      log.performedBy?.role,
+      JSON.stringify(log.details || {}),
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(searchTerm));
+
+    return matchesRole && matchesSeverity && matchesSearch;
+  });
+}
+
+function summarizeAuditLogs(logs) {
+  return logs.reduce((summary, log) => {
+    summary.total += 1;
+    summary[log.severity] = (summary[log.severity] || 0) + 1;
+    if (log.entity?.type) {
+      summary.entities[log.entity.type] = (summary.entities[log.entity.type] || 0) + 1;
+    }
+    return summary;
+  }, {
+    total: 0,
+    critical: 0,
+    warning: 0,
+    info: 0,
+    entities: {},
+  });
 }
 
 async function listRawManifestFiles() {
@@ -113,10 +228,218 @@ async function listRawManifestFiles() {
   return manifests.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
 }
 
+function parseScrubPreviewLimit(value, fallback = 10, max = 50) {
+  return Math.min(Math.max(parseInt(value, 10) || fallback, 1), max);
+}
+
+function parseScrubPreviewMaxScan(value, fallback = 1000, max = 5000) {
+  return Math.min(Math.max(parseInt(value, 10) || fallback, 100), max);
+}
+
+function videoHasScrubPreviewSource(video) {
+  return [video?.previewPath, video?.compressedPath, video?.filepath]
+    .filter(Boolean)
+    .some((candidatePath) => fs.existsSync(path.resolve(candidatePath)));
+}
+
+async function getScrubPreviewInventory(maxScan = 5000) {
+  const [totalCompleted, videos] = await Promise.all([
+    Video.countDocuments({ processingStatus: 'completed' }),
+    Video.find({ processingStatus: 'completed' })
+      .select('filename originalFilename finalTitle previewPath compressedPath filepath scrubPreview uploadDate')
+      .sort({ uploadDate: -1 })
+      .limit(maxScan),
+  ]);
+
+  const summary = {
+    totalCompleted,
+    scanned: videos.length,
+    withPreview: 0,
+    missingPreview: 0,
+    errored: 0,
+    sourceMissing: 0,
+    maxScan,
+  };
+
+  videos.forEach((video) => {
+    const available = hasUsableScrubPreview(video);
+    if (available) {
+      summary.withPreview += 1;
+    } else {
+      summary.missingPreview += 1;
+    }
+
+    if (video.scrubPreview?.error) {
+      summary.errored += 1;
+    }
+
+    if (!videoHasScrubPreviewSource(video)) {
+      summary.sourceMissing += 1;
+    }
+  });
+
+  return summary;
+}
+
+async function getHlsPreviewInventory(maxScan = 5000) {
+  const [totalCompleted, videos] = await Promise.all([
+    Video.countDocuments({ processingStatus: 'completed' }),
+    Video.find({ processingStatus: 'completed' })
+      .select('filename originalFilename finalTitle previewPath compressedPath filepath hlsPreview uploadDate')
+      .sort({ uploadDate: -1 })
+      .limit(maxScan),
+  ]);
+  const summary = {
+    totalCompleted,
+    scanned: videos.length,
+    ready: 0,
+    missing: 0,
+    queued: 0,
+    processing: 0,
+    failed: 0,
+    rebuildFailed: 0,
+    sourceMissing: 0,
+    totalBytes: 0,
+    nvencReady: 0,
+    cpuReady: 0,
+    cpuFallbacks: 0,
+    averageProcessingMs: 0,
+    maxScan,
+  };
+  let totalProcessingMs = 0;
+  let timedBuilds = 0;
+  videos.forEach((video) => {
+    const status = video.hlsPreview?.status || 'missing';
+    if (hasReadyHlsPreview(video)) summary.ready += 1;
+    else if (status === 'queued') summary.queued += 1;
+    else if (status === 'processing') summary.processing += 1;
+    else if (status === 'failed') summary.failed += 1;
+    else summary.missing += 1;
+    if (video.hlsPreview?.buildStatus === 'failed') summary.rebuildFailed += 1;
+    summary.totalBytes += Number(video.hlsPreview?.size || 0);
+    if (video.hlsPreview?.encoderUsed === 'h264_nvenc') summary.nvencReady += 1;
+    if (video.hlsPreview?.encoderUsed === 'libx264') summary.cpuReady += 1;
+    if (video.hlsPreview?.cpuFallbackUsed) summary.cpuFallbacks += 1;
+    if (Number(video.hlsPreview?.processingMs) > 0) {
+      totalProcessingMs += Number(video.hlsPreview.processingMs);
+      timedBuilds += 1;
+    }
+    if (!videoHasScrubPreviewSource(video)) summary.sourceMissing += 1;
+  });
+  summary.averageProcessingMs = timedBuilds > 0
+    ? Math.round(totalProcessingMs / timedBuilds)
+    : 0;
+  return summary;
+}
+
+function getPreviewAssetState(video, assetType, settings) {
+  if (assetType === 'mp4') {
+    if (video.mp4Preview?.error) return 'failed';
+    const available = (
+      video.mp4Preview?.encoderUsed === 'source'
+      || (video.previewPath && fs.existsSync(path.resolve(video.previewPath)))
+    );
+    if (!available) return 'missing';
+    return Number(video.mp4Preview?.profileVersion) === Number(settings.mp4PreviewProfileVersion)
+      ? 'ready'
+      : 'outdated';
+  }
+  if (assetType === 'thumbnail') {
+    if (video.thumbnail?.error) return 'failed';
+    if (!video.thumbnailPath || !fs.existsSync(path.resolve(video.thumbnailPath))) return 'missing';
+    return Number(video.thumbnail?.profileVersion) === Number(settings.thumbnailProfileVersion)
+      ? 'ready'
+      : 'outdated';
+  }
+  if (assetType === 'scrub') {
+    if (video.scrubPreview?.error) return 'failed';
+    if (!hasUsableScrubPreview(video)) return 'missing';
+    return Number(video.scrubPreview?.profileVersion) === Number(settings.scrubProfileVersion)
+      ? 'ready'
+      : 'outdated';
+  }
+  if (assetType === 'hls') {
+    if (video.hlsPreview?.buildStatus === 'failed' || video.hlsPreview?.status === 'failed') return 'failed';
+    if (!hasReadyHlsPreview(video)) return 'missing';
+    return Number(video.hlsPreview?.profileVersion) === Number(settings.hlsProfileVersion)
+      ? 'ready'
+      : 'outdated';
+  }
+  return 'missing';
+}
+
+async function getMediaPreviewInventory(maxScan = 5000) {
+  const [settings, totalCompleted, videos] = await Promise.all([
+    getMediaSettings(),
+    Video.countDocuments({ processingStatus: 'completed' }),
+    Video.find({ processingStatus: 'completed' })
+      .select([
+        '_id',
+        'previewPath',
+        'thumbnailPath',
+        'mp4Preview',
+        'thumbnail',
+        'scrubPreview',
+        'hlsPreview',
+        'previewMaintenance',
+        'uploadDate',
+      ].join(' '))
+      .sort({ uploadDate: -1 })
+      .limit(maxScan),
+  ]);
+  const assets = {};
+  ['mp4', 'hls', 'thumbnail', 'scrub'].forEach((assetType) => {
+    assets[assetType] = { ready: 0, missing: 0, outdated: 0, failed: 0 };
+  });
+  let processing = 0;
+  let queued = 0;
+  videos.forEach((video) => {
+    Object.keys(assets).forEach((assetType) => {
+      assets[assetType][getPreviewAssetState(video, assetType, settings)] += 1;
+    });
+    if (
+      video.previewMaintenance?.status === 'processing'
+      || video.hlsPreview?.buildStatus === 'processing'
+    ) processing += 1;
+    if (
+      video.previewMaintenance?.status === 'queued'
+      || video.hlsPreview?.buildStatus === 'queued'
+    ) queued += 1;
+  });
+  return {
+    totalCompleted,
+    scanned: videos.length,
+    maxScan,
+    assets,
+    processing,
+    queued,
+    profileVersions: {
+      mp4: settings.mp4PreviewProfileVersion,
+      hls: settings.hlsProfileVersion,
+      thumbnail: settings.thumbnailProfileVersion,
+      scrub: settings.scrubProfileVersion,
+    },
+  };
+}
+
 async function ensureDefaultContentTypes() {
   const count = await BroadcastContentType.countDocuments();
-  if (count > 0) return;
-  await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
+  if (count === 0) {
+    await BroadcastContentType.insertMany(defaultContentTypes.map((type) => ({ ...type, active: true })));
+    return;
+  }
+  await Promise.all(defaultContentTypes.map((type) =>
+    BroadcastContentType.updateOne(
+      { slug: type.slug, jobSlaHours: { $exists: false } },
+      {
+        $set: {
+          jobSlaHours: type.jobSlaHours,
+          jobGraceHours: type.jobGraceHours,
+          autoExpireJobs: true,
+        },
+      }
+    )
+  ));
 }
 
 function deleteFileIfExists(filePath) {
@@ -129,49 +452,7 @@ function deleteFileIfExists(filePath) {
 }
 
 function normalizeFfmpegSettingsUpdate(update) {
-  const normalized = { ...update };
-
-  if (Object.prototype.hasOwnProperty.call(normalized, 'rawRetentionDays')) {
-    const rawRetentionDays = Number(normalized.rawRetentionDays);
-
-    if (
-      !Number.isInteger(rawRetentionDays) ||
-      rawRetentionDays < 0 ||
-      rawRetentionDays > 365
-    ) {
-      const error = new Error('rawRetentionDays must be an integer between 0 and 365.');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    normalized.rawRetentionDays = rawRetentionDays;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(normalized, 'bitrate')) {
-    const bitrate = Number(normalized.bitrate);
-
-    if (!Number.isFinite(bitrate) || bitrate <= 0) {
-      const error = new Error('bitrate must be a positive number.');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    normalized.bitrate = bitrate;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(normalized, 'framerate')) {
-    const framerate = Number(normalized.framerate);
-
-    if (!Number.isFinite(framerate) || framerate <= 0) {
-      const error = new Error('framerate must be a positive number.');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    normalized.framerate = framerate;
-  }
-
-  return normalized;
+  return normalizeMediaSettingsUpdate(update);
 }
 
 /* --- Public Endpoint for FFmpeg Default Settings ---
@@ -195,6 +476,269 @@ router.get('/ffmpeg-settings-default', authenticateToken, async (req, res) => {
 /* --- Protect all subsequent routes with Admin role --- */
 router.use(authenticateToken);
 router.use(authorize(['Admin']));
+
+/* ----- Storage capacity and inventory ----- */
+
+router.get('/storage/overview', async (req, res) => {
+  try {
+    res.json(await getStorageOverview());
+  } catch (error) {
+    console.error('Storage overview failed:', error);
+    res.status(500).json({ message: 'Storage pregled nije moguće učitati.' });
+  }
+});
+
+router.post('/storage/overview/refresh', async (req, res) => {
+  try {
+    const refresh = refreshStorageOverview();
+    await AuditLog.create({
+      action: 'Refresh Storage Overview',
+      performedBy: req.user.id,
+      details: { started: refresh.started },
+    });
+    res.status(202).json({
+      message: refresh.started
+        ? 'Storage scan je pokrenut u pozadini.'
+        : 'Storage scan je već u toku.',
+      started: refresh.started,
+    });
+  } catch (error) {
+    console.error('Storage refresh failed:', error);
+    res.status(500).json({ message: 'Storage scan nije moguće pokrenuti.' });
+  }
+});
+
+router.get('/storage/settings', async (req, res) => {
+  try {
+    res.json(await getStorageSettings());
+  } catch (error) {
+    console.error('Storage settings load failed:', error);
+    res.status(500).json({ message: 'Storage pragove nije moguće učitati.' });
+  }
+});
+
+router.put('/storage/settings', async (req, res) => {
+  try {
+    const settings = await updateStorageSettings(req.body || {});
+    await AuditLog.create({
+      action: 'Update Storage Alert Settings',
+      performedBy: req.user.id,
+      details: {
+        warningFreePercent: settings.warningFreePercent,
+        criticalFreePercent: settings.criticalFreePercent,
+      },
+    });
+    res.json({ message: 'Storage pragovi su sačuvani.', settings });
+  } catch (error) {
+    console.error('Storage settings update failed:', error);
+    res.status(error.statusCode || 500).json({
+      message: error.statusCode ? error.message : 'Storage pragove nije moguće sačuvati.',
+    });
+  }
+});
+
+/* ----- FFmpeg / NVENC Capability ----- */
+
+router.get('/ffmpeg-capabilities', async (req, res) => {
+  try {
+    const [capabilities, settings] = await Promise.all([
+      getFfmpegCapabilities(),
+      FfmpegSettings.findOne({}).lean(),
+    ]);
+    res.json({
+      ...capabilities,
+      configuredEncoder: settings?.hlsEncoder || 'libx264',
+      configuredPreset: settings?.hlsNvencPreset || 'p5',
+      savedProbe: settings?.nvencProbe || null,
+    });
+  } catch (error) {
+    console.error('FFmpeg capability check failed:', error);
+    res.status(500).json({ message: 'FFmpeg capability podatke nije moguće učitati.' });
+  }
+});
+
+router.post('/ffmpeg-capabilities/probe', async (req, res) => {
+  try {
+    const preset = ['p2', 'p3', 'p4', 'p5', 'p6'].includes(req.body?.preset)
+      ? req.body.preset
+      : 'p5';
+    const result = await runNvencProbe({ preset });
+    let settings = await FfmpegSettings.findOne({});
+    if (!settings) settings = new FfmpegSettings();
+    settings.nvencProbe = {
+      ok: result.ok,
+      checkedAt: result.checkedAt,
+      ffmpegVersion: result.ffmpegVersion,
+      gpuName: result.gpuName,
+      driverVersion: result.driverVersion,
+      error: result.error,
+    };
+    await settings.save();
+    await AuditLog.create({
+      action: 'Probe FFmpeg NVENC Capability',
+      performedBy: req.user.id,
+      details: {
+        ok: result.ok,
+        preset,
+        processingMs: result.processingMs,
+        gpuName: result.gpuName,
+        driverVersion: result.driverVersion,
+        error: result.error,
+      },
+    });
+    res.status(result.ok ? 200 : 422).json(result);
+  } catch (error) {
+    console.error('NVENC probe failed:', error);
+    res.status(500).json({ message: 'NVENC probe nije moguće završiti.' });
+  }
+});
+
+/* ----- Conditional MP4 Preview Retention ----- */
+
+router.post('/preview-retention/scan', async (req, res) => {
+  try {
+    const result = await scanPreviewRetention({
+      limit: req.body?.limit,
+      videoIds: req.body?.videoIds,
+    });
+    res.json({
+      message: `${result.eligibleCount} preview fajlova ispunjava sigurnosne uslove.`,
+      result,
+    });
+  } catch (error) {
+    console.error('Preview retention scan failed:', error);
+    res.status(500).json({ message: 'Preview dry-run nije moguće završiti.' });
+  }
+});
+
+router.post('/preview-retention/cleanup', async (req, res) => {
+  try {
+    const result = await cleanupEligiblePreviews({
+      limit: req.body?.limit,
+      videoIds: req.body?.videoIds,
+    });
+    await AuditLog.create({
+      action: 'Cleanup Redundant MP4 Previews',
+      performedBy: req.user.id,
+      details: {
+        scanned: result.scanned,
+        deleted: result.deleted,
+        skipped: result.skipped,
+        reclaimedBytes: result.reclaimedBytes,
+      },
+    });
+    res.json({
+      message: `Obrisano ${result.deleted.length} redundantnih MP4 preview fajlova.`,
+      result,
+    });
+  } catch (error) {
+    console.error('Preview retention cleanup failed:', error);
+    res.status(500).json({ message: 'Preview cleanup nije moguće završiti.' });
+  }
+});
+
+/* ----- Versioned media preview maintenance ----- */
+
+router.get('/media-previews/summary', async (req, res) => {
+  try {
+    const maxScan = parseScrubPreviewMaxScan(req.query.maxScan);
+    res.json(await getMediaPreviewInventory(maxScan));
+  } catch (error) {
+    console.error('Media preview summary failed:', error);
+    res.status(500).json({ message: 'Media preview pregled nije moguće učitati.' });
+  }
+});
+
+router.post('/media-previews/rebuild', async (req, res) => {
+  try {
+    const assetTypes = Array.from(new Set(Array.isArray(req.body?.assetTypes) ? req.body.assetTypes : []))
+      .filter((assetType) => ['mp4', 'hls', 'thumbnail', 'scrub'].includes(assetType));
+    const scope = ['selected', 'missing', 'outdated'].includes(req.body?.scope)
+      ? req.body.scope
+      : 'outdated';
+    const limit = Math.min(Math.max(parseInt(req.body?.limit, 10) || 10, 1), 50);
+    if (assetTypes.length === 0) {
+      return res.status(400).json({ message: 'Odaberi najmanje jedan preview tip.' });
+    }
+
+    let query = { processingStatus: 'completed' };
+    if (scope === 'selected') {
+      const videoIds = Array.isArray(req.body?.videoIds)
+        ? req.body.videoIds.filter((id) => mongoose.isValidObjectId(id)).slice(0, 50)
+        : [];
+      if (videoIds.length === 0) {
+        return res.status(400).json({ message: 'Selected rebuild zahtijeva validne video ID-eve.' });
+      }
+      query = { ...query, _id: { $in: videoIds } };
+    }
+
+    const [settings, videos] = await Promise.all([
+      getMediaSettings(),
+      Video.find(query)
+        .select([
+          '_id',
+          'filename',
+          'originalFilename',
+          'previewPath',
+          'compressedPath',
+          'filepath',
+          'rawPath',
+          'thumbnailPath',
+          'mp4Preview',
+          'thumbnail',
+          'scrubPreview',
+          'hlsPreview',
+          'uploadDate',
+        ].join(' '))
+        .sort({ uploadDate: -1 })
+        .limit(scope === 'selected' ? 50 : 5000),
+    ]);
+
+    const queued = [];
+    const skipped = [];
+    for (const video of videos) {
+      if (queued.length >= limit) break;
+      const requestedForVideo = scope === 'selected'
+        ? assetTypes
+        : assetTypes.filter((assetType) => getPreviewAssetState(video, assetType, settings) === scope);
+      if (requestedForVideo.length === 0) continue;
+      if (!videoHasScrubPreviewSource(video)) {
+        skipped.push({ videoId: video._id, reason: 'source_missing' });
+        continue;
+      }
+
+      const nonHlsTypes = requestedForVideo.filter((assetType) => assetType !== 'hls');
+      const jobs = {};
+      if (nonHlsTypes.length > 0) {
+        const job = await enqueuePreviewMaintenance(video._id, nonHlsTypes);
+        jobs.previewJobId = job.id;
+      }
+      if (requestedForVideo.includes('hls')) {
+        const job = await enqueueHlsPreview(video._id, { force: true });
+        jobs.hlsJobId = job.id;
+      }
+      queued.push({
+        videoId: video._id,
+        filename: video.originalFilename || video.filename,
+        assetTypes: requestedForVideo,
+        jobs,
+      });
+    }
+
+    await AuditLog.create({
+      action: 'Queue Media Preview Rebuild',
+      performedBy: req.user.id,
+      details: { scope, limit, assetTypes, queued, skipped },
+    });
+    res.status(202).json({
+      message: `${queued.length} klipova je poslano u preview rebuild.`,
+      result: { scope, assetTypes, queued, skipped },
+    });
+  } catch (error) {
+    console.error('Media preview rebuild failed:', error);
+    res.status(500).json({ message: 'Preview rebuild nije moguće pokrenuti.' });
+  }
+});
 
 /* ----- Raw Retention Cleanup ----- */
 
@@ -288,9 +832,10 @@ router.get('/overview-metrics', async (req, res) => {
       rawManifests,
       jobsWithUpdates,
       showsChangedAfterDownload,
+      storageOverview,
     ] = await Promise.all([
       Video.countDocuments({ processingStatus: 'failed' }),
-      Feedback.countDocuments({ status: { $in: ['new', 'reviewing'] } }),
+      Feedback.countDocuments({ status: { $in: ['new', 'reviewing', 'planned'] } }),
       AuditLog.countDocuments({
         action: { $regex: /(delete|failed|reject|cleanup|remove|reset|orphan|replace)/i },
       }),
@@ -299,7 +844,12 @@ router.get('/overview-metrics', async (req, res) => {
       listRawManifestFiles(),
       EditJob.countDocuments({ 'changeLog.0': { $exists: true } }),
       ShowDay.countDocuments({ 'downloadStates.0': { $exists: true } }),
+      getStorageOverview({ refreshIfStale: false }),
     ]);
+    const storageVolume = (storageOverview.volumes || [])
+      .find((volume) => String(volume.role).includes('storage'))
+      || storageOverview.volumes?.[0]
+      || {};
 
     res.json({
       failedProcessing,
@@ -310,6 +860,12 @@ router.get('/overview-metrics', async (req, res) => {
       rawManifestOrphans: rawManifests.filter((manifest) => manifest.orphan).length,
       jobsWithUpdates,
       showsChangedAfterDownload,
+      diskFreeBytes: storageVolume.freeBytes || 0,
+      diskTotalBytes: storageVolume.totalBytes || 0,
+      diskFreePercent: storageVolume.freePercent || 0,
+      diskStatus: storageVolume.status || 'unknown',
+      mediaStorageBytes: storageOverview.groups?.media?.bytes || 0,
+      applicationStorageBytes: storageOverview.groups?.application?.bytes || 0,
     });
   } catch (err) {
     console.error('Error loading admin overview metrics:', err);
@@ -497,6 +1053,155 @@ router.post('/raw-manifests/cleanup-orphans', async (req, res) => {
   }
 });
 
+/* ----- Scrub Preview Maintenance ----- */
+
+router.get('/scrub-previews/summary', async (req, res) => {
+  try {
+    const maxScan = parseScrubPreviewMaxScan(req.query.maxScan);
+    const summary = await getScrubPreviewInventory(maxScan);
+    res.json(summary);
+  } catch (err) {
+    console.error('Error loading scrub preview summary:', err);
+    res.status(500).json({ message: 'Error loading scrub preview summary' });
+  }
+});
+
+router.post('/scrub-previews/build-missing', async (req, res) => {
+  const limit = parseScrubPreviewLimit(req.body?.limit);
+  const maxScan = parseScrubPreviewMaxScan(req.body?.maxScan);
+
+  try {
+    const videos = await Video.find({ processingStatus: 'completed' })
+      .select('filename originalFilename finalTitle previewPath compressedPath filepath duration scrubPreview uploadDate')
+      .sort({ uploadDate: -1 })
+      .limit(maxScan);
+
+    const result = {
+      limit,
+      maxScan,
+      scanned: 0,
+      processedMissing: 0,
+      skippedExisting: 0,
+      built: [],
+      skipped: [],
+      failed: [],
+    };
+
+    for (const video of videos) {
+      result.scanned += 1;
+
+      if (hasUsableScrubPreview(video)) {
+        result.skippedExisting += 1;
+        continue;
+      }
+
+      if (result.processedMissing >= limit) {
+        continue;
+      }
+
+      result.processedMissing += 1;
+      const buildResult = await buildScrubPreviewForVideo(video, { force: false });
+      const item = {
+        videoId: video._id,
+        filename: video.originalFilename || video.finalTitle || video.filename,
+        reason: buildResult.reason || buildResult.status,
+        frameCount: buildResult.frameCount || 0,
+      };
+
+      if (buildResult.status === 'built') {
+        result.built.push(item);
+      } else if (buildResult.status === 'failed') {
+        result.failed.push(item);
+      } else {
+        result.skipped.push(item);
+      }
+    }
+
+    await AuditLog.create({
+      action: 'Build Missing Scrub Previews',
+      performedBy: req.user.id,
+      details: {
+        limit,
+        maxScan,
+        scanned: result.scanned,
+        built: result.built.length,
+        skippedExisting: result.skippedExisting,
+        skipped: result.skipped.length,
+        failed: result.failed.length,
+      },
+    });
+
+    res.json({
+      message: `Built ${result.built.length} scrub preview(s).`,
+      result,
+      summary: await getScrubPreviewInventory(maxScan),
+    });
+  } catch (err) {
+    console.error('Error building scrub previews:', err);
+    res.status(500).json({ message: 'Error building scrub previews' });
+  }
+});
+
+/* ----- HLS Preview Maintenance ----- */
+
+router.get('/hls-previews/summary', async (req, res) => {
+  try {
+    const maxScan = parseScrubPreviewMaxScan(req.query.maxScan);
+    res.json(await getHlsPreviewInventory(maxScan));
+  } catch (error) {
+    console.error('Error loading HLS preview summary:', error);
+    res.status(500).json({ message: 'HLS preview summary nije moguće učitati.' });
+  }
+});
+
+router.post('/hls-previews/build-missing', async (req, res) => {
+  try {
+    const limit = parseScrubPreviewLimit(req.body?.limit, 5, 20);
+    const maxScan = parseScrubPreviewMaxScan(req.body?.maxScan);
+    const retryFailed = req.body?.retryFailed === true;
+    const statusFilter = retryFailed
+      ? { $in: ['missing', 'failed', null] }
+      : { $in: ['missing', null] };
+    const videos = await Video.find({
+      processingStatus: 'completed',
+      $or: [
+        { 'hlsPreview.status': statusFilter },
+        ...(retryFailed ? [{ 'hlsPreview.buildStatus': 'failed' }] : []),
+        { hlsPreview: { $exists: false } },
+      ],
+    })
+      .select('_id filename originalFilename finalTitle previewPath compressedPath filepath hlsPreview')
+      .sort({ uploadDate: -1 })
+      .limit(maxScan);
+    const queued = [];
+    const skipped = [];
+
+    for (const video of videos) {
+      if (queued.length >= limit) break;
+      if (!videoHasScrubPreviewSource(video)) {
+        skipped.push({ videoId: video._id, reason: 'source_missing' });
+        continue;
+      }
+      const job = await enqueueHlsPreview(video._id, { force: retryFailed });
+      queued.push({ videoId: video._id, queueJobId: job.id });
+    }
+
+    await AuditLog.create({
+      action: 'Build Missing HLS Previews',
+      performedBy: req.user.id,
+      details: { limit, retryFailed, queued, skipped },
+    });
+    res.status(202).json({
+      message: `${queued.length} HLS preview taskova je poslano u obradu.`,
+      result: { queued, skipped },
+      summary: await getHlsPreviewInventory(maxScan),
+    });
+  } catch (error) {
+    console.error('Error queueing HLS previews:', error);
+    res.status(500).json({ message: 'HLS preview taskove nije moguće pokrenuti.' });
+  }
+});
+
 /* ----- User Management ----- */
 
 router.get('/users', async (req, res) => {
@@ -638,6 +1343,8 @@ router.delete('/videos/:id', async (req, res) => {
     ].filter(Boolean)));
 
     pathsToDelete.forEach(deleteFileIfExists);
+    removeScrubPreviewFolderForVideo(video);
+    removeHlsPreviewFolder(video._id);
 
     await Video.findByIdAndDelete(req.params.id);
 
@@ -849,7 +1556,15 @@ router.get('/broadcast-content-types', async (req, res) => {
 });
 
 router.post('/broadcast-content-types', async (req, res) => {
-  const { name, slug, description = '', active = true } = req.body;
+  const {
+    name,
+    slug,
+    description = '',
+    active = true,
+    autoExpireJobs = true,
+    jobSlaHours = 72,
+    jobGraceHours = 4,
+  } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ message: 'Content type name is required.' });
@@ -861,6 +1576,9 @@ router.post('/broadcast-content-types', async (req, res) => {
       slug: createSlug(slug || name),
       description,
       active: active !== false,
+      autoExpireJobs: autoExpireJobs !== false,
+      jobSlaHours: Math.min(Math.max(Number(jobSlaHours) || 72, 1), 720),
+      jobGraceHours: Math.min(Math.max(Number(jobGraceHours) || 0, 0), 168),
     });
 
     await AuditLog.create({
@@ -877,7 +1595,15 @@ router.post('/broadcast-content-types', async (req, res) => {
 });
 
 router.put('/broadcast-content-types/:id', async (req, res) => {
-  const { name, slug, description = '', active = true } = req.body;
+  const {
+    name,
+    slug,
+    description = '',
+    active = true,
+    autoExpireJobs = true,
+    jobSlaHours = 72,
+    jobGraceHours = 4,
+  } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ message: 'Content type name is required.' });
@@ -891,6 +1617,9 @@ router.put('/broadcast-content-types/:id', async (req, res) => {
         slug: createSlug(slug || name),
         description,
         active: active !== false,
+        autoExpireJobs: autoExpireJobs !== false,
+        jobSlaHours: Math.min(Math.max(Number(jobSlaHours) || 72, 1), 720),
+        jobGraceHours: Math.min(Math.max(Number(jobGraceHours) || 0, 0), 168),
       },
       { new: true }
     );
@@ -927,9 +1656,18 @@ router.get('/ffmpeg-settings', async (req, res) => {
 
 router.put('/ffmpeg-settings', async (req, res) => {
   try {
-    const update = normalizeFfmpegSettingsUpdate(req.body);
-
     let settings = await FfmpegSettings.findOne({});
+    const previousSettings = getEffectiveMediaSettings(settings);
+    const normalized = normalizeFfmpegSettingsUpdate(req.body);
+    const { update, changedGroups } = applyProfileVersions(settings, normalized);
+    const requestsNvenc = update.hlsEncoder === 'h264_nvenc'
+      || update.mp4PreviewEncoder === 'h264_nvenc'
+      || ['h264_nvenc', 'hevc_nvenc'].includes(update.codec);
+    if (requestsNvenc && settings?.nvencProbe?.ok !== true) {
+      return res.status(409).json({
+        message: 'Prije uključivanja NVENC HLS-a pokreni uspješan Admin capability probe.',
+      });
+    }
 
     if (!settings) {
       settings = await FfmpegSettings.create(update);
@@ -937,17 +1675,31 @@ router.put('/ffmpeg-settings', async (req, res) => {
       settings = await FfmpegSettings.findByIdAndUpdate(
         settings._id,
         update,
-        { new: true }
+        { new: true, runValidators: true }
       );
     }
 
     await AuditLog.create({
       action: 'Update FFmpeg Settings',
       performedBy: req.user.id,
-      details: update,
+      details: {
+        changedGroups,
+        changes: Object.fromEntries(
+          Object.entries(update)
+            .filter(([field]) => !field.endsWith('ProfileVersion'))
+            .map(([field, value]) => [
+              field,
+              { from: previousSettings[field], to: value },
+            ])
+        ),
+      },
     });
 
-    res.json({ message: 'FFmpeg settings updated successfully', settings });
+    res.json({
+      message: 'FFmpeg i media profile postavke su sačuvane.',
+      settings,
+      changedGroups,
+    });
   } catch (err) {
     console.error('Error updating FFmpeg settings:', err);
 
@@ -961,33 +1713,43 @@ router.put('/ffmpeg-settings', async (req, res) => {
 
 /* ----- Audit Logs Endpoint ----- */
 
+router.get('/audit-logs/workspace', async (req, res) => {
+  try {
+    const { page, limit, skip } = parseWorkspacePagination(req.query);
+    const filter = buildAuditLogFilter(req.query);
+    const maxScan = Math.min(Math.max(parseInt(req.query.maxScan, 10) || 5000, 500), 10000);
+
+    const rawLogs = await AuditLog.find(filter)
+      .populate('performedBy', 'username role')
+      .sort({ timestamp: -1 })
+      .limit(maxScan)
+      .lean();
+
+    const filteredLogs = filterEnhancedAuditLogs(rawLogs.map(enhanceAuditLog), req.query);
+    const total = filteredLogs.length;
+
+    res.json({
+      items: filteredLogs.slice(skip, skip + limit),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+      summary: summarizeAuditLogs(filteredLogs),
+      facets: {
+        scanned: rawLogs.length,
+        maxScan,
+      },
+    });
+  } catch (err) {
+    console.error('Error retrieving audit log workspace:', err);
+    res.status(500).json({ message: 'Error retrieving audit log workspace' });
+  }
+});
+
 router.get('/audit-logs', async (req, res) => {
   try {
-    const {
-      action,
-      userId,
-      role,
-      severity,
-      dateFrom,
-      dateTo,
-      search,
-    } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 1000);
-    const filter = {};
-
-    if (action && action !== 'all') {
-      filter.action = { $regex: String(action).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
-    }
-
-    if (userId && userId !== 'all') {
-      filter.performedBy = userId;
-    }
-
-    if (dateFrom || dateTo) {
-      filter.timestamp = {};
-      if (dateFrom) filter.timestamp.$gte = new Date(dateFrom);
-      if (dateTo) filter.timestamp.$lte = new Date(dateTo);
-    }
+    const filter = buildAuditLogFilter(req.query);
 
     const logs = await AuditLog.find(filter)
       .populate('performedBy', 'username role')
@@ -995,32 +1757,54 @@ router.get('/audit-logs', async (req, res) => {
       .limit(limit)
       .lean();
 
-    const searchTerm = String(search || '').trim().toLowerCase();
-    const enhancedLogs = logs
-      .map((log) => ({
-        ...log,
-        severity: classifyAuditSeverity(log.action),
-        entity: inferAuditEntity(log.details),
-      }))
-      .filter((log) => {
-        const matchesRole = !role || role === 'all' || log.performedBy?.role === role;
-        const matchesSeverity = !severity || severity === 'all' || log.severity === severity;
-        const matchesSearch = !searchTerm || [
-          log.action,
-          log.performedBy?.username,
-          log.performedBy?.role,
-          JSON.stringify(log.details || {}),
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(searchTerm));
-
-        return matchesRole && matchesSeverity && matchesSearch;
-      });
+    const enhancedLogs = filterEnhancedAuditLogs(logs.map(enhanceAuditLog), req.query);
 
     res.json(enhancedLogs);
   } catch (err) {
     console.error('Error retrieving audit logs:', err);
     res.status(500).json({ message: 'Error retrieving audit logs' });
+  }
+});
+
+router.delete('/audit-logs', async (req, res) => {
+  try {
+    const query = req.body || {};
+    const filter = buildAuditLogFilter(query);
+    const maxScan = Math.min(Math.max(parseInt(query.maxScan, 10) || 10000, 100), 20000);
+
+    const rawLogs = await AuditLog.find(filter)
+      .populate('performedBy', 'username role')
+      .sort({ timestamp: -1 })
+      .limit(maxScan)
+      .lean();
+
+    const matchingLogs = filterEnhancedAuditLogs(rawLogs.map(enhanceAuditLog), query)
+      .filter((log) => log.action !== 'Delete Audit Logs');
+    const logIds = matchingLogs.map((log) => log._id);
+
+    if (logIds.length === 0) {
+      return res.json({ message: 'No audit logs matched the selected filters.', deletedCount: 0 });
+    }
+
+    const result = await AuditLog.deleteMany({ _id: { $in: logIds } });
+
+    await AuditLog.create({
+      action: 'Delete Audit Logs',
+      performedBy: req.user.id,
+      details: {
+        deletedCount: result.deletedCount || 0,
+        filters: query,
+        scanned: rawLogs.length,
+      },
+    });
+
+    res.json({
+      message: `Deleted ${result.deletedCount || 0} audit log(s).`,
+      deletedCount: result.deletedCount || 0,
+    });
+  } catch (err) {
+    console.error('Error deleting audit logs:', err);
+    res.status(500).json({ message: 'Error deleting audit logs' });
   }
 });
 

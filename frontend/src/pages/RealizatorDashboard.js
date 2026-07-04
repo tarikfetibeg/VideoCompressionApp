@@ -8,6 +8,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
+  Drawer,
   FormControl,
   Grid,
   InputLabel,
@@ -29,9 +31,16 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import { Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
+import VideoPlayer from '../components/VideoPlayer';
+import { WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
+import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
 
 const getTodayInputValue = () => {
   const today = new Date();
@@ -90,42 +99,8 @@ const formatBytes = (bytes) => {
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 };
 
-const getResponseFilename = (response, fallbackName) => {
-  const disposition = response.headers?.['content-disposition'] || '';
-  const match = disposition.match(/filename="?([^"]+)"?/i);
-  return match?.[1] || fallbackName;
-};
-
-const downloadBlobResponse = (response, fallbackName) => {
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.setAttribute('download', getResponseFilename(response, fallbackName));
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  window.URL.revokeObjectURL(url);
-};
-
-const getDownloadErrorMessage = async (error, fallback) => {
-  const data = error.response?.data;
-
-  if (data instanceof Blob) {
-    try {
-      const text = await data.text();
-      const parsed = JSON.parse(text);
-      return parsed.message || fallback;
-    } catch (parseError) {
-      return fallback;
-    }
-  }
-
-  return data?.message || fallback;
-};
-
 const RealizatorDashboard = () => {
+  const { startDownload } = useBackgroundDownloads();
   const [programs, setPrograms] = useState([]);
   const [selectedProgramId, setSelectedProgramId] = useState('');
   const [selectedDate, setSelectedDate] = useState(getTodayInputValue);
@@ -140,6 +115,8 @@ const RealizatorDashboard = () => {
   const [reportTarget, setReportTarget] = useState(null);
   const [reportNote, setReportNote] = useState('');
   const [reportingIssue, setReportingIssue] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState(null);
+  const [previewTimestamp, setPreviewTimestamp] = useState(0);
   const [reorderingItemId, setReorderingItemId] = useState('');
   const [draggingItemId, setDraggingItemId] = useState('');
   const [dragOverItemId, setDragOverItemId] = useState('');
@@ -214,27 +191,23 @@ const RealizatorDashboard = () => {
     if (!showDay?._id) return;
 
     setDownloading(true);
-    setDownloadPhase('preparing');
+    setDownloadPhase('ticket');
     setDownloadedBytes(0);
     setMessage('');
     setErrorMessage('');
 
-    axiosInstance
-      .get(`/broadcast/show-day/${showDay._id}/download-package`, {
-        responseType: 'blob',
-        onDownloadProgress: (progressEvent) => {
-          setDownloadPhase('receiving');
-          setDownloadedBytes(progressEvent.loaded || 0);
-        },
-      })
-      .then((response) => {
-        downloadBlobResponse(response, `show_${selectedDate}_air_package.zip`);
-        setMessage('Air package download started.');
+    startDownload({
+      kind: 'air-package',
+      payload: { showDayId: showDay._id },
+      label: `Air package ${selectedDate}`,
+    })
+      .then(() => {
+        setMessage('Air package je poslan u download manager.');
         loadShowDay();
       })
-      .catch(async (error) => {
+      .catch((error) => {
         console.error('Error downloading air package:', error);
-        setErrorMessage(await getDownloadErrorMessage(error, 'Air package could not be downloaded.'));
+        setErrorMessage(error.response?.data?.message || 'Air package could not be downloaded.');
       })
       .finally(() => {
         setDownloading(false);
@@ -444,6 +417,7 @@ const RealizatorDashboard = () => {
     axiosInstance
       .post(`/broadcast/show-day/${showDay._id}/items/${reportTarget._id}/report-error`, {
         note: reportNote,
+        timestamp: previewTarget?._id === reportTarget._id ? previewTimestamp : 0,
       })
       .then((response) => {
         setShowDay(response.data.showDay);
@@ -460,24 +434,28 @@ const RealizatorDashboard = () => {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ xs: 'stretch', md: 'center' }}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Realizator Desk
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Download the current air package and watch last-minute rundown changes.
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1}>
+      <WorkspaceHeader
+        eyebrow="Kontrola pred eter"
+        title="Realizator Desk"
+        subtitle="Download aktuelnog air paketa, pregled posljednjih izmjena i potvrda emitovanja."
+        chips={[
+          { label: `${activeItems.length} stavki`, color: 'primary' },
+          {
+            label: showDay?.downloadState?.hasChangesSinceDownload
+              ? `${changedItems.length || showDay.downloadState.changeCountSinceDownload} izmjena nakon downloada`
+              : 'Nema novih izmjena',
+            color: showDay?.downloadState?.hasChangesSinceDownload ? 'warning' : 'default',
+          },
+          {
+            label: showDay?.archiveConfirmedAt ? 'Emitovanje potvrđeno' : 'Nije potvrđeno',
+            color: showDay?.archiveConfirmedAt ? 'success' : 'default',
+            variant: showDay?.archiveConfirmedAt ? 'filled' : 'outlined',
+          },
+        ]}
+        actions={(
+          <>
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={refresh} disabled={loading}>
-            Refresh
+            Osvježi
           </Button>
           <Button
             variant="contained"
@@ -485,7 +463,7 @@ const RealizatorDashboard = () => {
             onClick={downloadPackage}
             disabled={!showDay || activeItems.length === 0 || downloading}
           >
-            {downloading ? 'Preparing ZIP...' : 'Download air package'}
+            {downloading ? 'Priprema ZIP...' : 'Skini air paket'}
           </Button>
           <Button
             variant="outlined"
@@ -495,13 +473,14 @@ const RealizatorDashboard = () => {
             disabled={!showDay || activeItems.length === 0 || markingAired}
           >
             {markingAired
-              ? 'Confirming...'
+              ? 'Potvrđujem...'
               : showDay?.archiveConfirmedAt
-                ? 'Confirm aired again'
-                : 'Confirm aired'}
+                ? 'Ponovo potvrdi eter'
+                : 'Potvrdi eter'}
           </Button>
-        </Stack>
-      </Stack>
+          </>
+        )}
+      />
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
@@ -637,26 +616,35 @@ const RealizatorDashboard = () => {
                           </Stack>
                         </TableCell>
                         <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                            <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                              {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
-                            </Typography>
-                            {item.changedSinceDownload && <Chip label="Changed since download" color="warning" size="small" />}
-                            {item.video?.correctionStatus === 'needs_correction' && (
-                              <Chip label="Potrebna ispravka" color="error" size="small" />
-                            )}
+                          <Stack direction="row" spacing={1} alignItems="flex-start">
+                            <VideoThumbnailPreview
+                              videoId={item.video?._id}
+                              title={item.title || item.video?.finalTitle || item.video?.originalFilename}
+                              enableScrubPreview
+                            />
+                            <Box sx={{ minWidth: 0 }}>
+                              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>
+                                  {item.title || item.video?.finalTitle || item.video?.originalFilename || 'Untitled'}
+                                </Typography>
+                                {item.changedSinceDownload && <Chip label="Changed since download" color="warning" size="small" />}
+                                {item.video?.correctionStatus === 'needs_correction' && (
+                                  <Chip label="Potrebna ispravka" color="error" size="small" />
+                                )}
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary">
+                                Reporter: {getPersonName(item.video?.reporter)} / Editor: {getPersonName(item.video?.editor)}
+                              </Typography>
+                              {item.video?.correctionStatus === 'needs_correction' && (
+                                <Typography variant="caption" color="error" sx={{ display: 'block' }}>
+                                  {item.video?.correctionNote || 'Clip is tagged for correction.'}
+                                  {item.video?.correctionReportedBy?.username
+                                    ? ` / ${item.video.correctionReportedBy.username}`
+                                    : ''}
+                                </Typography>
+                              )}
+                            </Box>
                           </Stack>
-                          <Typography variant="caption" color="text.secondary">
-                            Reporter: {getPersonName(item.video?.reporter)} / Editor: {getPersonName(item.video?.editor)}
-                          </Typography>
-                          {item.video?.correctionStatus === 'needs_correction' && (
-                            <Typography variant="caption" color="error" sx={{ display: 'block' }}>
-                              {item.video?.correctionNote || 'Clip is tagged for correction.'}
-                              {item.video?.correctionReportedBy?.username
-                                ? ` / ${item.video.correctionReportedBy.username}`
-                                : ''}
-                            </Typography>
-                          )}
                         </TableCell>
                         <TableCell>
                           <Chip
@@ -671,15 +659,28 @@ const RealizatorDashboard = () => {
                         </TableCell>
                         <TableCell>{getPersonName(item.video?.qaResponsible)}</TableCell>
                         <TableCell align="right">
-                          <Button
-                            size="small"
-                            variant={item.video?.correctionStatus === 'needs_correction' ? 'contained' : 'outlined'}
-                            color="warning"
-                            startIcon={<ReportProblemIcon />}
-                            onClick={() => openReportDialog(item)}
-                          >
-                            {item.video?.correctionStatus === 'needs_correction' ? 'Update' : 'Report'}
-                          </Button>
+                          <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<VisibilityIcon />}
+                              onClick={() => {
+                                setPreviewTarget(item);
+                                setPreviewTimestamp(0);
+                              }}
+                            >
+                              Pregled
+                            </Button>
+                            <Button
+                              size="small"
+                              variant={item.video?.correctionStatus === 'needs_correction' ? 'contained' : 'outlined'}
+                              color="warning"
+                              startIcon={<ReportProblemIcon />}
+                              onClick={() => openReportDialog(item)}
+                            >
+                              {item.video?.correctionStatus === 'needs_correction' ? 'Ažuriraj' : 'Prijavi'}
+                            </Button>
+                          </Stack>
                         </TableCell>
                       </TableRow>
                     ))
@@ -716,12 +717,78 @@ const RealizatorDashboard = () => {
         </Grid>
       </Grid>
 
+      <Drawer
+        anchor="right"
+        open={Boolean(previewTarget)}
+        onClose={() => setPreviewTarget(null)}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', md: 760 },
+            p: { xs: 1.5, md: 2.5 },
+          },
+        }}
+      >
+        {previewTarget && (
+          <Stack spacing={2}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="h6" sx={{ fontWeight: 850 }}>
+                  {previewTarget.title || previewTarget.video?.finalTitle || previewTarget.video?.originalFilename || 'Video pregled'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Reporter: {getPersonName(previewTarget.video?.reporter)} / Montažer: {getPersonName(previewTarget.video?.editor)}
+                </Typography>
+              </Box>
+              <Button onClick={() => setPreviewTarget(null)}>Zatvori</Button>
+            </Stack>
+
+            <VideoPlayer
+              videoId={previewTarget.video?._id}
+              readOnly
+              compact
+              onPlaybackPositionChange={setPreviewTimestamp}
+            />
+
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip label={previewTarget.contentType?.name || 'Bez kategorije'} variant="outlined" />
+              <Chip label={`QC ${formatLabel(previewTarget.video?.qcStatus)}`} variant="outlined" />
+              <Chip label={formatLabel(previewTarget.video?.broadcastStatus)} variant="outlined" />
+              <Chip label={`Playhead ${previewTimestamp.toFixed(2)}s`} variant="outlined" />
+            </Stack>
+            <Divider />
+            {previewTarget.video?.correctionStatus === 'needs_correction' && (
+              <Alert severity="error">
+                {previewTarget.video?.correctionNote || 'Za klip je potrebna ispravka.'}
+              </Alert>
+            )}
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <Button
+                variant="contained"
+                color="warning"
+                startIcon={<ReportProblemIcon />}
+                onClick={() => openReportDialog(previewTarget)}
+              >
+                Prijavi grešku na trenutnom vremenu
+              </Button>
+              <Button
+                component={Link}
+                to={`/video-details/${previewTarget.video?._id}?start=${Math.floor(previewTimestamp)}`}
+                variant="outlined"
+                startIcon={<OpenInNewIcon />}
+              >
+                Otvori puni pregled
+              </Button>
+            </Stack>
+          </Stack>
+        )}
+      </Drawer>
+
       <Dialog open={Boolean(reportTarget)} onClose={closeReportDialog} fullWidth maxWidth="sm">
         <DialogTitle>Prijavi grešku klipa</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Alert severity="warning">
-              Klip će biti označen kao <strong>Potrebna ispravka</strong> i ta oznaka ostaje na video zapisu.
+              Klip će biti označen kao <strong>Potrebna ispravka</strong>, a Producent i odgovorni montažer dobijaju correction zadatak.
             </Alert>
             <Typography variant="body2" sx={{ fontWeight: 800 }}>
               {reportTarget?.title || reportTarget?.video?.finalTitle || reportTarget?.video?.originalFilename || 'Untitled'}
@@ -730,7 +797,7 @@ const RealizatorDashboard = () => {
               label="Opis greške"
               value={reportNote}
               onChange={(event) => setReportNote(event.target.value)}
-              placeholder="Npr. krivi kadar, loš ton, pogrešna verzija, fali grafika..."
+              placeholder="Npr. krivi kadar, loš ton, pogrešna verzija, nedostaje grafika..."
               multiline
               minRows={3}
               fullWidth
@@ -739,7 +806,7 @@ const RealizatorDashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeReportDialog} disabled={reportingIssue}>
-            Cancel
+            Odustani
           </Button>
           <Button
             variant="contained"
@@ -748,7 +815,7 @@ const RealizatorDashboard = () => {
             onClick={submitCorrectionReport}
             disabled={reportingIssue}
           >
-            {reportingIssue ? 'Saving...' : 'Tag Potrebna ispravka'}
+            {reportingIssue ? 'Spremam...' : `Prijavi na ${previewTimestamp.toFixed(2)}s`}
           </Button>
         </DialogActions>
       </Dialog>

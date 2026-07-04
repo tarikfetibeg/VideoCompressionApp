@@ -4,16 +4,14 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Grid,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Pagination,
   Paper,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -21,6 +19,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -29,42 +28,62 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axiosInstance from '../../axiosConfig';
+import {
+  ConfirmDialog,
+  EmptyState,
+  FilterBar,
+  KpiStrip,
+  StatusChip,
+} from '../common/WorkspaceChrome';
+import {
+  formatDateTimeBs,
+  jobStatusLabels,
+  priorityLabels,
+} from '../../utils/uiLabels';
+import { getSearchParam } from '../../utils/searchParams';
 
-const statusColor = {
-  draft: 'default',
-  submitted: 'primary',
-  claimed: 'info',
-  in_edit: 'warning',
-  needs_info: 'error',
-  ready_for_qc: 'secondary',
-  approved: 'success',
-  aired: 'success',
-  archived: 'default',
+const defaultFilters = {
+  q: '',
+  status: 'all',
+  workspaceState: 'active',
 };
 
-const priorityColor = {
-  low: 'default',
-  normal: 'primary',
-  high: 'warning',
-  urgent: 'error',
+const workspaceStateLabels = {
+  active: 'Aktivan',
+  expired: 'Istekao',
+  closed: 'Zatvoren',
+  cancelled: 'Otkazan',
 };
 
-const formatLabel = (value) => String(value || 'N/A').replace(/_/g, ' ');
+const deadlineStateLabels = {
+  no_deadline: 'Bez roka',
+  on_time: 'U roku',
+  due_soon: 'Rok uskoro',
+  overdue: 'Kasni',
+  expired: 'Istekao',
+};
 
 const formatDate = (value) => {
-  if (!value) return 'No deadline';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'No deadline';
-  return date.toLocaleString();
+  if (!value) return 'Bez roka';
+  return formatDateTimeBs(value);
 };
 
 const EditJobBoard = ({ refreshToken = 0 }) => {
   const [jobs, setJobs] = useState([]);
+  const [filters, setFilters] = useState(defaultFilters);
+  const [debouncedFilters, setDebouncedFilters] = useState(defaultFilters);
+  const [page, setPage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({ total: 0, totalPages: 1, summary: {} });
   const [loading, setLoading] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [jobToDelete, setJobToDelete] = useState(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedFilters(filters), 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [filters]);
 
   const fetchJobs = useCallback(() => {
     setLoading(true);
@@ -72,16 +91,31 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
     setErrorMessage('');
 
     axiosInstance
-      .get('/edit-jobs')
+      .get('/edit-jobs/workspace', {
+        params: {
+          q: getSearchParam(debouncedFilters.q),
+          status: debouncedFilters.status !== 'all' ? debouncedFilters.status : undefined,
+          workspaceState: debouncedFilters.workspaceState,
+          includeClosed: debouncedFilters.workspaceState === 'all' ? 'true' : undefined,
+          page,
+          limit: 50,
+        },
+      })
       .then((response) => {
-        setJobs(Array.isArray(response.data) ? response.data : []);
+        const data = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.items)
+            ? response.data.items
+            : [];
+        setJobs(data);
+        setWorkspaceMeta(Array.isArray(response.data) ? { total: data.length, totalPages: 1, summary: {} } : response.data || {});
       })
       .catch((error) => {
         console.error('Error fetching edit jobs:', error);
-        setErrorMessage('Edit jobs could not be loaded.');
+        setErrorMessage('Edit jobovi se ne mogu učitati.');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [debouncedFilters, page]);
 
   useEffect(() => {
     fetchJobs();
@@ -100,6 +134,7 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
         setJobs((current) => current.filter((job) => job._id !== jobToDelete._id));
         setMessage(`Job "${jobToDelete.title}" je obrisan.`);
         setJobToDelete(null);
+        fetchJobs();
       })
       .catch((error) => {
         console.error('Error deleting edit job:', error);
@@ -110,62 +145,90 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
 
   const stats = useMemo(
     () => ({
-      total: jobs.length,
-      submitted: jobs.filter((job) => ['submitted', 'draft'].includes(job.status)).length,
-      inEdit: jobs.filter((job) => ['claimed', 'in_edit'].includes(job.status)).length,
-      needsInfo: jobs.filter((job) => job.status === 'needs_info').length,
-      ready: jobs.filter((job) => ['ready_for_qc', 'approved'].includes(job.status)).length,
-      updates: jobs.filter((job) => job.viewerMeta?.hasUnreadChanges).length,
-      newFiles: jobs.filter((job) => job.downloadMeta?.hasMissingFiles).length,
+      total: workspaceMeta.summary?.total ?? workspaceMeta.total ?? jobs.length,
+      submitted: workspaceMeta.summary?.submitted ?? jobs.filter((job) => ['submitted', 'draft'].includes(job.status)).length,
+      inEdit: workspaceMeta.summary?.inEdit ?? jobs.filter((job) => ['claimed', 'in_edit'].includes(job.status)).length,
+      needsInfo: workspaceMeta.summary?.needsInfo ?? jobs.filter((job) => job.status === 'needs_info').length,
+      ready: workspaceMeta.summary?.ready ?? jobs.filter((job) => ['ready_for_qc', 'approved'].includes(job.status)).length,
+      updates: workspaceMeta.summary?.unreadUpdates ?? jobs.filter((job) => job.viewerMeta?.hasUnreadChanges).length,
+      newFiles: workspaceMeta.summary?.missingFiles ?? jobs.filter((job) => job.downloadMeta?.hasMissingFiles).length,
+      corrections: workspaceMeta.summary?.corrections ?? jobs.filter((job) => job.jobKind === 'correction').length,
     }),
-    [jobs]
+    [jobs, workspaceMeta]
   );
 
   return (
     <Box>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        justifyContent="space-between"
-        sx={{ mb: 2 }}
+      <FilterBar
+        title="Edit jobovi"
+        summary="Briefovi reportera, OFF fajlovi, odabrani klipovi i status montaže."
+        actions={(
+          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={fetchJobs} disabled={loading}>
+            Osvježi jobove
+          </Button>
+        )}
       >
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            Edit Jobs
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Reporter briefs, selected clip ranges, and production status.
-          </Typography>
-        </Box>
-        <Button startIcon={<RefreshIcon />} variant="outlined" onClick={fetchJobs} disabled={loading}>
-          Refresh Jobs
-        </Button>
-      </Stack>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+          <TextField
+            label="Pretraga"
+            value={filters.q}
+            onChange={(event) => {
+              setFilters((current) => ({ ...current, q: event.target.value }));
+              setPage(1);
+            }}
+            fullWidth
+          />
+          <FormControl sx={{ minWidth: { xs: '100%', md: 220 } }}>
+            <InputLabel>Status</InputLabel>
+            <Select
+              value={filters.status}
+              label="Status"
+              onChange={(event) => {
+                setFilters((current) => ({ ...current, status: event.target.value }));
+                setPage(1);
+              }}
+            >
+              <MenuItem value="all">Svi statusi</MenuItem>
+              {Object.entries(jobStatusLabels).map(([value, label]) => (
+                <MenuItem key={value} value={value}>
+                  {label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ minWidth: { xs: '100%', md: 200 } }}>
+            <InputLabel>Radni prostor</InputLabel>
+            <Select
+              value={filters.workspaceState}
+              label="Radni prostor"
+              onChange={(event) => {
+                setFilters((current) => ({ ...current, workspaceState: event.target.value }));
+                setPage(1);
+              }}
+            >
+              <MenuItem value="active">Aktivni jobovi</MenuItem>
+              <MenuItem value="history">Historija</MenuItem>
+              <MenuItem value="all">Sve</MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
+      </FilterBar>
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={2}>
-          <JobStat label="Total" value={stats.total} />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <JobStat label="New" value={stats.submitted} tone="primary.main" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <JobStat label="In edit" value={stats.inEdit} tone="warning.main" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <JobStat label="Needs info" value={stats.needsInfo} tone="error.main" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <JobStat label="Ready" value={stats.ready} tone="success.main" />
-        </Grid>
-        <Grid item xs={6} md={2}>
-          <JobStat label="Updates/files" value={`${stats.updates}/${stats.newFiles}`} tone="warning.main" />
-        </Grid>
-      </Grid>
+      <KpiStrip
+        dense
+        items={[
+          { label: 'Ukupno', value: stats.total },
+          { label: 'Novo', value: stats.submitted, color: 'primary.main' },
+          { label: 'U montaži', value: stats.inEdit, color: 'warning.main' },
+          { label: 'Treba dopuna', value: stats.needsInfo, color: 'error.main' },
+          { label: 'Spremno', value: stats.ready, color: 'success.main' },
+          { label: 'Izmjene/fajlovi', value: `${stats.updates}/${stats.newFiles}`, color: 'warning.main' },
+          { label: 'Ispravke', value: stats.corrections, color: 'error.main' },
+        ]}
+      />
 
       {loading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
@@ -174,15 +237,11 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
       )}
 
       {!loading && jobs.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 4, borderRadius: 2, textAlign: 'center' }}>
-          <AssignmentTurnedInIcon color="disabled" />
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            No edit jobs yet
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Reporters can create jobs from video details after marking useful segments.
-          </Typography>
-        </Paper>
+        <EmptyState
+          icon={<AssignmentTurnedInIcon color="disabled" />}
+          title="Nema edit jobova"
+          description="Reporter može kreirati job iz Event Workspacea ili iz Video Details markera."
+        />
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
           <Table size="small">
@@ -191,10 +250,10 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
                 <TableCell>Job</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Reporter</TableCell>
-                <TableCell>Editor</TableCell>
-                <TableCell>Segments</TableCell>
-                <TableCell>Deadline</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell>Montaža</TableCell>
+                <TableCell>Klipovi</TableCell>
+                <TableCell>Rok</TableCell>
+                <TableCell align="right">Akcije</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -205,53 +264,64 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
                       {job.title}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {job.program || 'No program'} / {job.description || 'No brief'}
+                      {job.program || 'Bez programa'} / {job.description || 'Bez briefa'}
                     </Typography>
                     <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
                       {job.viewerMeta?.hasUnreadChanges && (
-                        <Chip
-                          label={`${job.viewerMeta.unreadChangeCount} update(s)`}
-                          size="small"
-                          color="warning"
-                        />
+                        <StatusChip label={`${job.viewerMeta.unreadChangeCount} izmjena`} tone="warning" />
                       )}
                       {job.downloadMeta?.hasMissingFiles && (
-                        <Chip
-                          label={`${job.downloadMeta.missingSegmentCount + job.downloadMeta.missingOffFileCount} new file(s)`}
-                          size="small"
-                          color="warning"
+                        <StatusChip
+                          label={`${job.downloadMeta.missingSegmentCount + job.downloadMeta.missingOffFileCount} novi fajl`}
+                          tone="warning"
                           variant="outlined"
                         />
                       )}
-                      {job.scriptText && <Chip label="Brief text" size="small" variant="outlined" />}
+                      {job.scriptText && <StatusChip label="Brief tekst" variant="outlined" />}
                       {(job.offFiles?.length || 0) > 0 && (
-                        <Chip label={`${job.offFiles.length} OFF`} size="small" variant="outlined" />
+                        <StatusChip label={`${job.offFiles.length} OFF`} variant="outlined" />
+                      )}
+                      {job.jobKind === 'correction' && (
+                        <StatusChip label="Correction job" tone="error" />
+                      )}
+                      {job.contentType?.name && (
+                        <StatusChip label={job.contentType.name} variant="outlined" />
                       )}
                     </Stack>
                   </TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                      <Chip label={formatLabel(job.status)} color={statusColor[job.status] || 'default'} size="small" />
-                      <Chip
-                        label={formatLabel(job.priority)}
-                        color={priorityColor[job.priority] || 'default'}
-                        size="small"
+                      <StatusChip value={job.status} maps={jobStatusLabels} />
+                      <StatusChip value={job.priority} maps={priorityLabels} variant="outlined" />
+                      <StatusChip
+                        value={job.workspaceState || 'active'}
+                        maps={workspaceStateLabels}
                         variant="outlined"
                       />
                     </Stack>
                   </TableCell>
-                  <TableCell>{job.reporter?.username || 'Unknown'}</TableCell>
-                  <TableCell>{job.assignedEditor?.username || 'Unassigned'}</TableCell>
+                  <TableCell>{job.reporter?.username || 'Nepoznato'}</TableCell>
+                  <TableCell>{job.assignedEditor?.username || 'Nije dodijeljeno'}</TableCell>
                   <TableCell>{job.segments?.length || 0}</TableCell>
-                  <TableCell>{formatDate(job.deadline)}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2">{formatDate(job.deadline)}</Typography>
+                      <StatusChip
+                        value={job.deadlineState || 'no_deadline'}
+                        maps={deadlineStateLabels}
+                        tone={['overdue', 'expired'].includes(job.deadlineState) ? 'error' : job.deadlineState === 'due_soon' ? 'warning' : 'default'}
+                        variant="outlined"
+                      />
+                    </Stack>
+                  </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                      <Tooltip title="Open job">
+                      <Tooltip title="Otvori job">
                         <IconButton component={Link} to={`/edit-jobs/${job._id}`} size="small">
                           <OpenInNewIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Delete job">
+                      <Tooltip title="Obriši job">
                         <IconButton size="small" color="error" onClick={() => setJobToDelete(job)}>
                           <DeleteOutlineIcon fontSize="small" />
                         </IconButton>
@@ -265,34 +335,29 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
         </TableContainer>
       )}
 
-      <Dialog open={Boolean(jobToDelete)} onClose={() => setJobToDelete(null)}>
-        <DialogTitle>Delete edit job</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Da li si siguran da zelis obrisati job "{jobToDelete?.title}"? Ova akcija brise job,
-            pripadajuce OFF fajlove i komunikaciju vezanu za taj job.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setJobToDelete(null)} disabled={deleteBusy}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={handleDeleteJob} disabled={deleteBusy}>
-            {deleteBusy ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {workspaceMeta.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ mt: 2 }}>
+          <Pagination
+            page={page}
+            count={workspaceMeta.totalPages}
+            onChange={(event, value) => setPage(value)}
+            color="primary"
+          />
+        </Stack>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(jobToDelete)}
+        title="Obriši edit job"
+        description={`Da li si siguran da želiš obrisati job "${jobToDelete?.title || ''}"? Ova akcija briše job, pripadajuće OFF fajlove i komunikaciju vezanu za taj job.`}
+        confirmLabel="Obriši"
+        confirmColor="error"
+        busy={deleteBusy}
+        onClose={() => setJobToDelete(null)}
+        onConfirm={handleDeleteJob}
+      />
     </Box>
   );
 };
-
-const JobStat = ({ label, value, tone = 'text.primary' }) => (
-  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-      {label}
-    </Typography>
-    <Typography variant="h5" sx={{ fontWeight: 800, color: tone }}>
-      {value}
-    </Typography>
-  </Paper>
-);
 
 export default EditJobBoard;

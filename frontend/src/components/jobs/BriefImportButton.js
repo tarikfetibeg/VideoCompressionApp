@@ -37,13 +37,13 @@ const BriefImportButton = ({ onImported, disabled = false }) => {
         onImported(importedText, response.data?.filename || file.name);
         setMessage(
           warnings.length > 0
-            ? `Brief imported with ${warnings.length} warning(s).`
-            : `Brief imported from ${response.data?.filename || file.name}.`
+            ? `Brief importovan sa ${warnings.length} upozorenja.`
+            : `Brief importovan iz fajla ${response.data?.filename || file.name}.`
         );
       })
       .catch((error) => {
         console.error('Error importing brief:', error);
-        setErrorMessage(error.response?.data?.message || 'Brief could not be imported.');
+        setErrorMessage(error.response?.data?.message || 'Brief nije importovan.');
       })
       .finally(() => setImporting(false));
   };
@@ -57,7 +57,7 @@ const BriefImportButton = ({ onImported, disabled = false }) => {
           startIcon={<UploadFileIcon />}
           disabled={disabled || importing}
         >
-          {importing ? 'Importing...' : 'Import brief'}
+          {importing ? 'Import...' : 'Import brief'}
           <input
             hidden
             type="file"

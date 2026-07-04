@@ -34,6 +34,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArticleIcon from '@mui/icons-material/Article';
 import TodayIcon from '@mui/icons-material/Today';
+import TuneIcon from '@mui/icons-material/Tune';
 import axiosInstance from '../../axiosConfig';
 import BriefImportButton from './BriefImportButton';
 import {
@@ -43,10 +44,10 @@ import {
 } from '../../utils/videoProcessing';
 
 const priorityOptions = [
-  { value: 'low', label: 'Low' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'high', label: 'High' },
-  { value: 'urgent', label: 'Urgent' },
+  { value: 'low', label: 'Nizak' },
+  { value: 'normal', label: 'Normalan' },
+  { value: 'high', label: 'Visok' },
+  { value: 'urgent', label: 'Hitno' },
 ];
 
 const statusColor = {
@@ -71,9 +72,9 @@ const normalizeDate = (value) => {
 };
 
 const formatDate = (value) => {
-  if (!value) return 'No date';
+  if (!value) return 'Bez datuma';
   const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return 'No date';
+  if (Number.isNaN(date.getTime())) return 'Bez datuma';
   return date.toLocaleDateString();
 };
 
@@ -106,7 +107,7 @@ const buildGroups = (videos) => {
 
   videos.forEach((video) => {
     const dateKey = normalizeDate(video.tagDate || video.uploadDate) || 'no-date';
-    const eventName = video.event || 'No event';
+    const eventName = video.event || 'Bez eventa';
     const groupKey = `${dateKey}::${eventName}`;
 
     if (!groups.has(groupKey)) {
@@ -142,6 +143,7 @@ const buildGroups = (videos) => {
 const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   const [videos, setVideos] = useState([]);
   const [programOptions, setProgramOptions] = useState([]);
+  const [contentTypeOptions, setContentTypeOptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dateFilter, setDateFilter] = useState(getTodayInputValue);
   const [eventFilter, setEventFilter] = useState('all');
@@ -154,9 +156,11 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   const [scriptText, setScriptText] = useState('');
   const [offFiles, setOffFiles] = useState([]);
   const [program, setProgram] = useState('');
+  const [contentTypeId, setContentTypeId] = useState('');
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState('normal');
   const [comment, setComment] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [createdJobId, setCreatedJobId] = useState('');
@@ -178,7 +182,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
       .catch((error) => {
         console.error('Error fetching reporter videos:', error);
         if (!silent) {
-          setErrorMessage('Clips could not be loaded.');
+          setErrorMessage('Klipovi se ne mogu učitati.');
         }
       })
       .finally(() => {
@@ -203,6 +207,19 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
       });
   }, []);
 
+  useEffect(() => {
+    axiosInstance
+      .get('/broadcast/content-types')
+      .then((response) => {
+        const options = Array.isArray(response.data) ? response.data : [];
+        setContentTypeOptions(options);
+        setContentTypeId((current) => current || options.find((item) => item.slug === 'prilog')?._id || options[0]?._id || '');
+      })
+      .catch((error) => {
+        console.error('Error fetching content types:', error);
+      });
+  }, []);
+
   const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
 
   useEffect(() => {
@@ -224,7 +241,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
     const search = searchTerm.trim().toLowerCase();
 
     return videos.filter((video) => {
-      const matchesEvent = eventFilter === 'all' || (video.event || 'No event') === eventFilter;
+      const matchesEvent = eventFilter === 'all' || (video.event || 'Bez eventa') === eventFilter;
       const matchesSearch =
         !search ||
         [video.originalFilename, video.filename, video.event, video.processingStatus]
@@ -336,12 +353,12 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
     setCreatedJobId('');
 
     if (!title.trim()) {
-      setErrorMessage('Job title is required.');
+      setErrorMessage('Naziv joba je obavezan.');
       return;
     }
 
     if (selectedVideos.length === 0) {
-      setErrorMessage('Select at least one clip.');
+      setErrorMessage('Odaberi barem jedan klip.');
       return;
     }
 
@@ -361,6 +378,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
     formData.append('description', description);
     formData.append('scriptText', scriptText);
     formData.append('program', program);
+    formData.append('contentTypeId', contentTypeId);
     formData.append('deadline', deadline);
     formData.append('priority', priority);
     formData.append('comment', comment);
@@ -372,7 +390,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
     axiosInstance
       .post('/edit-jobs', formData)
       .then((response) => {
-        setMessage('Edit job sent to production.');
+        setMessage('Edit job je poslan produkciji.');
         setCreatedJobId(response.data.job?._id || '');
         setComment('');
 
@@ -382,7 +400,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
       })
       .catch((error) => {
         console.error('Error creating grouped edit job:', error);
-        setErrorMessage(error.response?.data?.message || 'Edit job could not be created.');
+        setErrorMessage(error.response?.data?.message || 'Edit job se ne može kreirati.');
       });
   };
 
@@ -397,10 +415,10 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
         >
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              Event Workspace
+              Event radni prostor
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {activeGroup ? `${activeGroup.event} / ${formatDate(activeGroup.dateKey)}` : 'No active group'}
+              {activeGroup ? `${activeGroup.event} / ${formatDate(activeGroup.dateKey)}` : 'Nema aktivne grupe'}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -409,10 +427,10 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
               startIcon={<TodayIcon />}
               onClick={() => setDateFilter(getTodayInputValue())}
             >
-              Today
+              Danas
             </Button>
             <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchVideos} disabled={loading}>
-              Refresh
+              Osvježi
             </Button>
           </Stack>
         </Stack>
@@ -420,7 +438,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
         {message && <Alert severity="success">{message}</Alert>}
         {createdJobId && (
           <Button component={Link} to={`/edit-jobs/${createdJobId}`} variant="outlined" sx={{ alignSelf: 'flex-start' }}>
-            Open created job
+            Otvori kreirani job
           </Button>
         )}
         {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
@@ -428,7 +446,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
         <Grid container spacing={1.5}>
           <Grid item xs={12} md={3}>
             <TextField
-              label="Date"
+              label="Datum"
               type="date"
               value={dateFilter}
               onChange={(event) => setDateFilter(event.target.value)}
@@ -440,7 +458,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
             <FormControl fullWidth>
               <InputLabel>Event</InputLabel>
               <Select value={eventFilter} label="Event" onChange={(event) => setEventFilter(event.target.value)}>
-                <MenuItem value="all">All events</MenuItem>
+                <MenuItem value="all">Svi eventi</MenuItem>
                 {eventOptions.map((eventName) => (
                   <MenuItem key={eventName} value={eventName}>
                     {eventName}
@@ -451,7 +469,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
           </Grid>
           <Grid item xs={12} md={5}>
             <TextField
-              label="Search clips"
+              label="Pretraga klipova"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               fullWidth
@@ -471,7 +489,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                   <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, textAlign: 'center' }}>
                     <EventIcon color="disabled" />
                     <Typography variant="body2" color="text.secondary">
-                      No clips for selected filters.
+                      Nema klipova za odabrane filtere.
                     </Typography>
                   </Paper>
                 ) : (
@@ -501,10 +519,10 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                               {formatDate(group.dateKey)}
                             </Typography>
                           </Box>
-                          <Chip label={`${group.videos.length} clips`} size="small" />
+                          <Chip label={`${group.videos.length} klipova`} size="small" />
                         </Stack>
                         <Typography variant="caption" color="text.secondary">
-                          {readyCount}/{group.videos.length} ready
+                          {readyCount}/{group.videos.length} spremno
                         </Typography>
                       </Paper>
                     );
@@ -517,30 +535,30 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
               <Stack spacing={2}>
                 <Grid container spacing={1}>
                   <Grid item xs={6} md={3}>
-                    <WorkspaceStat label="Clips" value={activeStats.total} />
+                    <WorkspaceStat label="Klipovi" value={activeStats.total} />
                   </Grid>
                   <Grid item xs={6} md={3}>
-                    <WorkspaceStat label="Ready" value={activeStats.ready} tone="success.main" />
+                    <WorkspaceStat label="Spremno" value={activeStats.ready} tone="success.main" />
                   </Grid>
                   <Grid item xs={6} md={3}>
-                    <WorkspaceStat label="Working" value={activeStats.working} tone="warning.main" />
+                    <WorkspaceStat label="Obrada" value={activeStats.working} tone="warning.main" />
                   </Grid>
                   <Grid item xs={6} md={3}>
-                    <WorkspaceStat label="Failed" value={activeStats.failed} tone="error.main" />
+                    <WorkspaceStat label="Greška" value={activeStats.failed} tone="error.main" />
                   </Grid>
                 </Grid>
 
                 <Grid container spacing={1.5}>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={8}>
                     <TextField
-                      label="Job title"
+                      label="Naziv joba"
                       value={title}
                       onChange={(event) => setTitle(event.target.value)}
                       fullWidth
                       required
                     />
                   </Grid>
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} md={3} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <FormControl fullWidth>
                       <InputLabel>Program</InputLabel>
                       <Select
@@ -548,7 +566,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                         label="Program"
                         onChange={(event) => setProgram(event.target.value)}
                       >
-                        <MenuItem value="">Select program</MenuItem>
+                        <MenuItem value="">Odaberi program</MenuItem>
                         {programOptions.map((programOption) => (
                           <MenuItem key={programOption._id} value={programOption.name}>
                             {programOption.name}{programOption.defaultTime ? ` / ${programOption.defaultTime}` : ''}
@@ -557,10 +575,39 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                       </Select>
                     </FormControl>
                   </Grid>
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth required>
+                      <InputLabel>Kategorija</InputLabel>
+                      <Select
+                        value={contentTypeId}
+                        label="Kategorija"
+                        onChange={(event) => setContentTypeId(event.target.value)}
+                      >
+                        {contentTypeOptions.map((option) => (
+                          <MenuItem key={option._id} value={option._id}>
+                            {option.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Button
+                      variant="text"
+                      startIcon={<TuneIcon />}
+                      onClick={() => setAdvancedOpen((current) => !current)}
+                    >
+                      {advancedOpen ? 'Sakrij dodatne opcije' : 'Dodatne opcije'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={12} md={3} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <FormControl fullWidth>
-                      <InputLabel>Priority</InputLabel>
-                      <Select value={priority} label="Priority" onChange={(event) => setPriority(event.target.value)}>
+                      <InputLabel>Prioritet</InputLabel>
+                      <Select
+                        value={priority}
+                        label="Prioritet"
+                        onChange={(event) => setPriority(event.target.value)}
+                      >
                         {priorityOptions.map((option) => (
                           <MenuItem key={option.value} value={option.value}>
                             {option.label}
@@ -569,9 +616,9 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                       </Select>
                     </FormControl>
                   </Grid>
-                  <Grid item xs={12} md={4}>
+                  <Grid item xs={12} md={3} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <TextField
-                      label="Deadline"
+                      label="Rok"
                       type="datetime-local"
                       value={deadline}
                       onChange={(event) => setDeadline(event.target.value)}
@@ -579,17 +626,17 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                       InputLabelProps={{ shrink: true }}
                     />
                   </Grid>
-                  <Grid item xs={12} md={8}>
+                  <Grid item xs={12} md={8} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <TextField
-                      label="Brief summary"
+                      label="Kratki brief"
                       value={description}
                       onChange={(event) => setDescription(event.target.value)}
                       fullWidth
                     />
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <TextField
-                      label="Brief / reporter text"
+                      label="Brief / reporterski tekst"
                       value={scriptText}
                       onChange={(event) => setScriptText(event.target.value)}
                       multiline
@@ -598,10 +645,10 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                       placeholder={'OFF:\n\nIZJAVA:\n\nINSERT / GRAFIKA:\n\nOFF:'}
                     />
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <BriefImportButton onImported={handleBriefImported} />
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
                       <Stack
                         direction={{ xs: 'column', sm: 'row' }}
@@ -613,10 +660,10 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                           <ArticleIcon color="action" />
                           <Box>
                             <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                              Reporter brief and OFF audio
+                              Reporterski brief i OFF audio
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {scriptText.trim() ? 'Brief text added' : 'No brief text'} / {offFiles.length} OFF file(s)
+                              {scriptText.trim() ? 'Brief tekst dodan' : 'Nema brief teksta'} / {offFiles.length} OFF fajl(ova)
                             </Typography>
                           </Box>
                         </Stack>
@@ -626,7 +673,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                           variant="outlined"
                           startIcon={<AudiotrackIcon />}
                         >
-                          Add OFF
+                          Dodaj OFF
                           <input
                             hidden
                             type="file"
@@ -651,7 +698,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                                     {formatBytes(file.size)}
                                   </Typography>
                                 </Box>
-                                <Tooltip title="Remove OFF file">
+                                <Tooltip title="Ukloni OFF fajl">
                                   <IconButton size="small" onClick={() => removeOffFile(index)}>
                                     <DeleteIcon fontSize="small" />
                                   </IconButton>
@@ -663,9 +710,9 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                       )}
                     </Paper>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sx={{ display: advancedOpen ? 'block' : 'none' }}>
                     <TextField
-                      label="Instruction"
+                      label="Instrukcija"
                       value={comment}
                       onChange={(event) => setComment(event.target.value)}
                       multiline
@@ -677,17 +724,21 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
                   <Button variant="outlined" onClick={handleSelectAll} disabled={!activeGroup}>
-                    {activeGroup && selectedVideoIds.length === activeGroup.videos.length ? 'Clear clips' : 'Select all'}
+                    {activeGroup && selectedVideoIds.length === activeGroup.videos.length ? 'Očisti klipove' : 'Odaberi sve'}
                   </Button>
-                  <Chip label={`${selectedVideos.length} selected`} />
+                  <Chip label={`${selectedVideos.length} odabrano`} />
                   <Box sx={{ flex: 1 }} />
                   <Button
                     variant="contained"
                     startIcon={<AssignmentIcon />}
                     onClick={handleCreateJob}
-                    disabled={!activeGroup || selectedVideos.length === 0}
+                    disabled={
+                      !activeGroup
+                      || selectedVideos.length === 0
+                      || !contentTypeId
+                    }
                   >
-                    Send to Production
+                    Pošalji produkciji
                   </Button>
                 </Stack>
 
@@ -695,12 +746,12 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell padding="checkbox">Use</TableCell>
-                        <TableCell>Clip</TableCell>
+                        <TableCell padding="checkbox">Koristi</TableCell>
+                        <TableCell>Klip</TableCell>
                         <TableCell>Status</TableCell>
-                        <TableCell>Duration</TableCell>
-                        <TableCell>Note</TableCell>
-                        <TableCell align="right">Open</TableCell>
+                        <TableCell>Trajanje</TableCell>
+                        <TableCell>Napomena</TableCell>
+                        <TableCell align="right">Otvori</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -747,7 +798,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                               />
                             </TableCell>
                             <TableCell align="right">
-                              <Tooltip title="Open clip">
+                              <Tooltip title="Otvori klip">
                                 <IconButton component={Link} to={`/video-details/${video._id}`} size="small">
                                   <OpenInNewIcon fontSize="small" />
                                 </IconButton>

@@ -3,12 +3,12 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   Divider,
   FormControl,
   Grid,
   InputLabel,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -19,9 +19,19 @@ import AddCommentIcon from '@mui/icons-material/AddComment';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReplyIcon from '@mui/icons-material/Reply';
 import SendIcon from '@mui/icons-material/Send';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { UserContext } from '../contexts/UserContext';
 import axiosInstance from '../axiosConfig';
+import { EmptyState, KpiStrip, StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
+import {
+  feedbackAreaLabels,
+  feedbackStatusLabels,
+  feedbackTypeLabels,
+  formatDateTimeBs,
+  formatNumberBs,
+  priorityLabels,
+} from '../utils/uiLabels';
+
+const pageSize = 20;
 
 const typeOptions = [
   { value: 'bug', label: 'Bug' },
@@ -49,21 +59,6 @@ const areaOptions = [
   { value: 'other', label: 'Ostalo' },
 ];
 
-const statusLabels = {
-  new: 'Novo',
-  reviewing: 'U pregledu',
-  planned: 'Planirano',
-  fixed: 'Rijeseno',
-  rejected: 'Odbijeno',
-};
-
-const priorityColors = {
-  low: 'default',
-  normal: 'primary',
-  high: 'warning',
-  urgent: 'error',
-};
-
 const initialForm = {
   title: '',
   description: '',
@@ -72,18 +67,16 @@ const initialForm = {
   area: 'other',
 };
 
-const getOptionLabel = (options, value) =>
-  options.find((option) => option.value === value)?.label || value || 'N/A';
-
-const formatDateTime = (value) => {
-  if (!value) return 'N/A';
-  return new Date(value).toLocaleString();
-};
-
 const FeedbackPage = () => {
   const { user } = useContext(UserContext);
   const [form, setForm] = useState(initialForm);
   const [feedback, setFeedback] = useState([]);
+  const [page, setPage] = useState(1);
+  const [workspaceMeta, setWorkspaceMeta] = useState({
+    total: 0,
+    totalPages: 1,
+    summary: {},
+  });
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
@@ -93,25 +86,43 @@ const FeedbackPage = () => {
     setLoading(true);
 
     axiosInstance
-      .get('/feedback', { params: { limit: 50 } })
+      .get('/feedback/workspace', {
+        params: {
+          page,
+          limit: pageSize,
+          status: 'all',
+        },
+      })
       .then((response) => {
-        setFeedback(Array.isArray(response.data) ? response.data : []);
+        setFeedback(Array.isArray(response.data?.items) ? response.data.items : []);
+        setWorkspaceMeta({
+          total: Number(response.data?.total) || 0,
+          totalPages: Number(response.data?.totalPages) || 1,
+          summary: response.data?.summary || {},
+        });
       })
       .catch((error) => {
         console.error('Error fetching feedback:', error);
         setErrorMessage('Nije moguce ucitati ranije prijave.');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     fetchFeedback();
   }, [fetchFeedback]);
 
-  const sortedFeedback = useMemo(
-    () => [...feedback].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)),
-    [feedback]
-  );
+  const stats = useMemo(() => {
+    const summary = workspaceMeta.summary || {};
+    return [
+      { label: 'Moje prijave', value: formatNumberBs(workspaceMeta.total) },
+      { label: 'Novo', value: formatNumberBs(summary.new), color: Number(summary.new || 0) > 0 ? 'primary.main' : 'text.primary' },
+      { label: 'U pregledu', value: formatNumberBs(summary.reviewing), color: Number(summary.reviewing || 0) > 0 ? 'warning.main' : 'text.primary' },
+      { label: 'Planirano', value: formatNumberBs(summary.planned) },
+      { label: 'Rijeseno', value: formatNumberBs(summary.fixed), color: Number(summary.fixed || 0) > 0 ? 'success.main' : 'text.primary' },
+      { label: 'Hitno', value: formatNumberBs(summary.urgent), color: Number(summary.urgent || 0) > 0 ? 'error.main' : 'text.primary' },
+    ];
+  }, [workspaceMeta]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -140,11 +151,14 @@ const FeedbackPage = () => {
         description: form.description.trim(),
         pageUrl: window.location.href,
       })
-      .then((response) => {
-        const created = response.data?.feedback;
-        setFeedback((current) => (created ? [created, ...current] : current));
+      .then(() => {
         setForm(initialForm);
         setMessage('Prijava je poslana adminu.');
+        if (page === 1) {
+          fetchFeedback();
+        } else {
+          setPage(1);
+        }
       })
       .catch((error) => {
         console.error('Error submitting feedback:', error);
@@ -154,47 +168,38 @@ const FeedbackPage = () => {
   };
 
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Feedback
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Posalji bug, sugestiju ili produkcijski problem administratoru.
-          </Typography>
-        </Box>
-
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={fetchFeedback}
-          disabled={loading}
-        >
-          Refresh
-        </Button>
-      </Stack>
+    <Box>
+      <WorkspaceHeader
+        eyebrow="Feedback"
+        title="Prijave i sugestije"
+        subtitle="Posalji bug, sugestiju ili produkcijski problem administratoru i prati odgovor."
+        chips={[
+          { label: 'Korisnik', value: user?.username || 'N/A' },
+          { label: 'Rola', value: user?.role || 'N/A' },
+        ]}
+        actions={(
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchFeedback} disabled={loading}>
+            Osvjezi
+          </Button>
+        )}
+      />
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
 
+      <KpiStrip items={stats} dense />
+
       <Grid container spacing={3}>
         <Grid item xs={12} lg={5}>
-          <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 1.5 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <AddCommentIcon color="primary" />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                <Typography variant="h6" sx={{ fontWeight: 850 }}>
                   Nova prijava
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {user?.username || 'Korisnik'} / {user?.role || 'Role'}
+                  Kratko, konkretno i sa dovoljno konteksta za admin tim.
                 </Typography>
               </Box>
             </Stack>
@@ -252,16 +257,10 @@ const FeedbackPage = () => {
                   required
                   multiline
                   minRows={7}
-                  placeholder="Sta se desilo, gdje u aplikaciji, sta si ocekivao/la da se desi?"
                 />
 
-                <Button
-                  type="submit"
-                  variant="contained"
-                  startIcon={<SendIcon />}
-                  disabled={submitting}
-                >
-                  {submitting ? 'Slanje...' : 'Posalji'}
+                <Button type="submit" variant="contained" startIcon={<SendIcon />} disabled={submitting}>
+                  {submitting ? 'Slanje...' : 'Posalji prijavu'}
                 </Button>
               </Stack>
             </Box>
@@ -269,59 +268,41 @@ const FeedbackPage = () => {
         </Grid>
 
         <Grid item xs={12} lg={7}>
-          <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
-            <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 1.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 850, mb: 2 }}>
               Moje prijave
             </Typography>
 
-            {sortedFeedback.length === 0 ? (
-              <Alert severity="info">
-                Nema ranijih prijava.
-              </Alert>
+            {feedback.length === 0 ? (
+              <EmptyState title="Nema prijava" description="Kada posaljes prijavu, status i admin odgovor bice ovdje." />
             ) : (
               <Stack spacing={1.5}>
-                {sortedFeedback.map((item) => (
-                  <Paper key={item._id} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                    <Stack
-                      direction={{ xs: 'column', sm: 'row' }}
-                      justifyContent="space-between"
-                      spacing={1}
-                    >
+                {feedback.map((item) => (
+                  <Paper key={item._id} variant="outlined" sx={{ p: 2, borderRadius: 1.5 }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1}>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 800 }} noWrap>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 850 }} noWrap>
                           {item.title}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {formatDateTime(item.createdAt)} / {getOptionLabel(areaOptions, item.area)}
+                          {formatDateTimeBs(item.createdAt)} / {feedbackAreaLabels[item.area] || item.area}
                         </Typography>
                       </Box>
-                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                        <Chip
-                          icon={<VisibilityOutlinedIcon />}
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                        <StatusChip
                           label={item.adminSeenAt ? 'Admin vidio' : 'Ceka pregled'}
-                          size="small"
-                          color={item.adminSeenAt ? 'success' : 'default'}
+                          tone={item.adminSeenAt ? 'success' : 'default'}
                           variant={item.adminSeenAt ? 'filled' : 'outlined'}
                         />
-                        <Chip label={statusLabels[item.status] || item.status} size="small" />
-                        <Chip
-                          label={getOptionLabel(priorityOptions, item.priority)}
-                          size="small"
-                          color={priorityColors[item.priority] || 'default'}
-                        />
+                        <StatusChip value={item.status} maps={feedbackStatusLabels} />
+                        <StatusChip value={item.priority} maps={priorityLabels} variant="outlined" />
+                        <StatusChip value={item.type} maps={feedbackTypeLabels} variant="outlined" />
                       </Stack>
                     </Stack>
 
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>
                       {item.description}
                     </Typography>
-
-                    {item.adminSeenAt && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        Pregledano: {formatDateTime(item.adminSeenAt)}
-                        {item.adminSeenBy?.username ? ` / ${item.adminSeenBy.username}` : ''}
-                      </Typography>
-                    )}
 
                     {item.adminResponse && (
                       <>
@@ -337,7 +318,7 @@ const FeedbackPage = () => {
                         </Typography>
                         {item.adminResponseAt && (
                           <Typography variant="caption" color="text.secondary">
-                            {formatDateTime(item.adminResponseAt)}
+                            {formatDateTimeBs(item.adminResponseAt)}
                             {item.adminResponseBy?.username ? ` / ${item.adminResponseBy.username}` : ''}
                           </Typography>
                         )}
@@ -345,6 +326,12 @@ const FeedbackPage = () => {
                     )}
                   </Paper>
                 ))}
+              </Stack>
+            )}
+
+            {workspaceMeta.totalPages > 1 && (
+              <Stack alignItems="center" sx={{ mt: 2 }}>
+                <Pagination count={workspaceMeta.totalPages} page={page} onChange={(event, value) => setPage(value)} />
               </Stack>
             )}
           </Paper>

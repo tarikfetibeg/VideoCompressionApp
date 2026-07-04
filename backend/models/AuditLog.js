@@ -9,4 +9,8 @@ const AuditLogSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }    //Vrijeme i datum zabilježene radnje
 });
 
+AuditLogSchema.index({ timestamp: -1 }, { name: 'audit_log_timestamp_idx' });
+AuditLogSchema.index({ performedBy: 1, timestamp: -1 }, { name: 'audit_log_user_timestamp_idx' });
+AuditLogSchema.index({ action: 1, timestamp: -1 }, { name: 'audit_log_action_timestamp_idx' });
+
 module.exports = mongoose.model('AuditLog', AuditLogSchema);
