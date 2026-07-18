@@ -8,6 +8,7 @@ dotenvFlow.config({
 
 const express = require('express');
 const app = express();
+const http = require('http');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const Video = require('./models/Video');
@@ -37,6 +38,9 @@ const {
   previewMaintenanceQueue,
 } = require('./queues/previewMaintenanceQueue');
 const { processPreviewMaintenanceTask } = require('./services/previewMaintenanceService');
+const { processOutboxBatch } = require('./services/domainEventService');
+const { escalateUnacknowledgedNotifications } = require('./services/notificationEscalationService');
+const { initializeRealtime } = require('./realtime/realtimeGateway');
 
 async function requeueLocalPendingVideos() {
   const pendingVideos = await Video.find({
@@ -71,6 +75,18 @@ function isSameHostOrigin(origin, host) {
 
   try {
     return new URL(origin).host === host;
+  } catch (error) {
+    return false;
+  }
+}
+
+function isDesktopDevOrigin(origin) {
+  if (process.env.DESKTOP_DEV_MODE !== 'true' || !origin) return false;
+
+  try {
+    const parsed = new URL(origin);
+    const loopbackHost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    return parsed.protocol === 'http:' && parsed.port === '5173' && loopbackHost;
   } catch (error) {
     return false;
   }
@@ -112,7 +128,10 @@ app.use(
   cors((req, callback) => {
     const origin = req.get('Origin');
     const host = req.get('Host');
-    const originAllowed = !origin || allowedOrigins.includes(origin) || isSameHostOrigin(origin, host);
+    const originAllowed = !origin
+      || allowedOrigins.includes(origin)
+      || isSameHostOrigin(origin, host)
+      || isDesktopDevOrigin(origin);
 
     if (!originAllowed) {
       return callback(new Error('Not allowed by CORS'));
@@ -241,6 +260,18 @@ mongoose
         console.error('Scheduled raw retention cleanup error:', cleanupError);
       }
     }, 6 * 60 * 60 * 1000); // every 6 hours
+
+    if (process.env.EVENT_OUTBOX_MODE !== 'worker') {
+      setInterval(async () => {
+        try {
+          await processOutboxBatch(50);
+          await escalateUnacknowledgedNotifications(25);
+        } catch (eventError) {
+          console.error('Scheduled event outbox error:', eventError);
+        }
+      }, 1000);
+      console.log('Event outbox is running inside the API process.');
+    }
   })
   .catch((err) => console.error('MongoDB connection error:', err));
 
@@ -257,6 +288,25 @@ const editJobRoutes = require('./routes/editJobs');
 const feedbackRoutes = require('./routes/feedback');
 const uploadRoutes = require('./routes/upload');
 const videoRoutes = require('./routes/videos');
+const v2AuthRoutes = require('./routes/v2/auth');
+const v2DeviceRoutes = require('./routes/v2/devices');
+const v2NotificationRoutes = require('./routes/v2/notifications');
+const v2MediaNodeRoutes = require('./routes/v2/mediaNodes');
+const v2TransferRoutes = require('./routes/v2/transfers');
+const v2MediaRoutes = require('./routes/v2/media');
+const v2RoughCutRoutes = require('./routes/v2/roughCuts');
+const v2MyWorkRoutes = require('./routes/v2/myWork');
+const v2AdminPlatformRoutes = require('./routes/v2/adminPlatform');
+
+app.use('/api/v2/auth', v2AuthRoutes);
+app.use('/api/v2/devices', v2DeviceRoutes);
+app.use('/api/v2/notifications', v2NotificationRoutes);
+app.use('/api/v2/media-nodes', v2MediaNodeRoutes);
+app.use('/api/v2/transfers', v2TransferRoutes);
+app.use('/api/v2/media', v2MediaRoutes);
+app.use('/api/v2/edit-jobs', v2RoughCutRoutes);
+app.use('/api/v2/my-work', v2MyWorkRoutes);
+app.use('/api/v2/admin/platform', v2AdminPlatformRoutes);
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/archive', archiveRoutes);
@@ -274,13 +324,20 @@ app.use('/api/videos', videoRoutes);
 // Legacy static route. Existing old files may still be under uploads.
 app.use('/uploads', express.static('uploads'));
 
-// Serve static files from the React app's build folder
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
-
-// Catch-all route: for any request that doesn't match above, send back React's index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'build', 'index.html'));
-});
+if (process.env.DESKTOP_ONLY_MODE === 'true') {
+  app.get('*', (req, res) => {
+    res.status(410).json({
+      message: 'Browser klijent je ugašen. Pokreni instaliranu Aplikaciju v2.',
+      desktopOnly: true,
+    });
+  });
+} else {
+  const frontendBuild = path.join(__dirname, '..', 'frontend', 'dist');
+  app.use(express.static(frontendBuild));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendBuild, 'index.html'));
+  });
+}
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
@@ -291,6 +348,9 @@ app.use((err, req, res, next) => {
 // Start the Server
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = http.createServer(app);
+initializeRealtime(httpServer);
+
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

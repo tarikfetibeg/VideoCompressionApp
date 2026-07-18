@@ -3,18 +3,19 @@ import { ThemeProvider } from '@mui/material/styles';
 import App from './App';
 import UserProvider from './contexts/UserContext';
 import theme from './theme';
+import { vi } from 'vitest';
 
-jest.mock('./axiosConfig', () => ({
+vi.mock('./axiosConfig', () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
-test('renders application shell', () => {
+test('renders application shell', async () => {
   render(
     <UserProvider>
       <ThemeProvider theme={theme}>
@@ -23,6 +24,6 @@ test('renders application shell', () => {
     </UserProvider>
   );
 
-  expect(screen.getByRole('heading', { name: /Prijava/i })).toBeInTheDocument();
-  expect(screen.getByText(/Za novi nalog kontaktiraj administratora/i)).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: /Prijava/i })).toBeInTheDocument();
+  expect(await screen.findByText(/Za novi nalog kontaktiraj administratora/i)).toBeInTheDocument();
 });

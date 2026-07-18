@@ -39,10 +39,12 @@ import DownloadIcon from '@mui/icons-material/Download';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import ViewTimelineIcon from '@mui/icons-material/ViewTimeline';
 import axiosInstance from '../axiosConfig';
 import BriefImportButton from '../components/jobs/BriefImportButton';
 import { StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
 import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
+import PremiereWorkspaceButton from '../components/jobs/PremiereWorkspaceButton';
 import { ACCEPTED_VIDEO_FILE_TYPES } from '../constants/videoFormats';
 import { UserContext } from '../contexts/UserContext';
 import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
@@ -843,6 +845,14 @@ const EditJobDetailsPage = () => {
             {job.viewerMeta?.hasUnreadChanges && (
               <StatusChip label="Nove izmjene" tone="warning" />
             )}
+            <Button
+              component={Link}
+              to={`/edit-jobs/${job._id}/storyboard`}
+              variant="outlined"
+              startIcon={<ViewTimelineIcon />}
+            >
+              Storyboard
+            </Button>
             <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchJob}>
               Osvjezi
             </Button>
@@ -871,6 +881,7 @@ const EditJobDetailsPage = () => {
               Production control
             </Typography>
             <Stack spacing={1.5}>
+              <PremiereWorkspaceButton job={job} role={user?.role} />
               {canClaim && canDirectDownloadPackage && (
                 <>
                   <Button

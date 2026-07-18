@@ -14,6 +14,15 @@ const revokeObjectUrl = (objectUrl) => {
   }
 };
 
+/**
+ * @param {{
+ *   videoId: string,
+ *   title?: string,
+ *   width?: number | string,
+ *   height?: number | string,
+ *   enableScrubPreview?: boolean
+ * }} props
+ */
 const VideoThumbnailPreview = ({
   videoId,
   title = 'Video thumbnail',

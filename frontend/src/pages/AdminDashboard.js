@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { useSearchParams } from 'react-router-dom';
 
 import axiosInstance from '../axiosConfig';
 import UserManagement from '../components/admin/UserManagement';
@@ -20,6 +21,7 @@ import BroadcastProgramManagement from '../components/admin/BroadcastProgramMana
 import FeedbackInbox from '../components/admin/FeedbackInbox';
 import StorageMaintenance from '../components/admin/StorageMaintenance';
 import EditJobManagement from '../components/admin/EditJobManagement';
+import DesktopFleetManagement from '../components/admin/DesktopFleetManagement';
 import {
   FilterBar,
   KpiStrip,
@@ -40,7 +42,8 @@ const formatBytes = (bytes) => {
 };
 
 const AdminDashboard = () => {
-  const [activeSection, setActiveSection] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeSection, setActiveSection] = useState(() => searchParams.get('section') || 'overview');
   const [overviewMetrics, setOverviewMetrics] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState('');
@@ -69,6 +72,7 @@ const AdminDashboard = () => {
       { id: 'users', label: 'Korisnici', description: 'Nalozi, role i reset lozinki' },
       { id: 'videos', label: 'Video', description: 'Materijali, owneri, download i delete' },
       { id: 'jobs', label: 'Jobs', description: 'Aktivni jobovi, SLA, rokovi, montažeri i lifecycle' },
+      { id: 'desktop', label: 'Desktop i Edge', description: 'Uređaji, verzije, notifikacije i Media Edge čvorovi' },
       { id: 'ffmpeg', label: 'FFmpeg', description: 'Codec, bitrate i raw retention' },
       { id: 'maintenance', label: 'Maintenance', description: 'OFF, raw manifesti i servisni fajlovi' },
       { id: 'broadcast', label: 'Programi', description: 'Emisije i content type katalog' },
@@ -182,6 +186,8 @@ const AdminDashboard = () => {
         return <VideoManagement />;
       case 'jobs':
         return <EditJobManagement />;
+      case 'desktop':
+        return <DesktopFleetManagement />;
       case 'ffmpeg':
         return <FfmpegSettings />;
       case 'maintenance':
@@ -217,7 +223,10 @@ const AdminDashboard = () => {
       <FilterBar title="Admin moduli" summary="Kompaktan pristup bez dodatnog bocnog menija.">
         <Tabs
           value={activeSection}
-          onChange={(event, value) => setActiveSection(value)}
+          onChange={(event, value) => {
+            setActiveSection(value);
+            setSearchParams(value === 'overview' ? {} : { section: value });
+          }}
           variant="scrollable"
           scrollButtons="auto"
           sx={{ minHeight: 44 }}

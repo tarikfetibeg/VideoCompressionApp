@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.v2.example
+node_modules
+frontend/node_modules
+frontend/dist
+apps/desktop/src-tauri/target
+storage
+uploads
+*.log
+.doc_work
+.tmp_doc_build
+.tmp_doc_render

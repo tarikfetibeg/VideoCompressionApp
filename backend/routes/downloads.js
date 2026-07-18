@@ -8,6 +8,10 @@ const { DownloadHttpError, streamDownloadByKind } = require('../services/downloa
 const router = express.Router();
 
 const TICKET_TTL_MINUTES = Math.max(parseInt(process.env.DOWNLOAD_TICKET_TTL_MINUTES || '15', 10) || 15, 1);
+const PREMIERE_TICKET_TTL_MINUTES = Math.min(
+  Math.max(parseInt(process.env.PREMIERE_DOWNLOAD_TICKET_TTL_MINUTES || '120', 10) || 120, 15),
+  240
+);
 const allowedKinds = new Set([
   'video-single',
   'video-bulk',
@@ -91,7 +95,10 @@ router.post('/tickets', authenticateToken, async (req, res) => {
 
   try {
     const token = createToken();
-    const expiresAt = new Date(Date.now() + TICKET_TTL_MINUTES * 60 * 1000);
+    const isPremiereWorkspace = req.body?.purpose === 'premiere-workspace'
+      && ['Editor', 'VideoEditor', 'Producer', 'Admin'].includes(req.user.role);
+    const ttlMinutes = isPremiereWorkspace ? PREMIERE_TICKET_TTL_MINUTES : TICKET_TTL_MINUTES;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
     const ticket = await DownloadTicket.create({
       tokenHash: hashToken(token),
       createdBy: req.user.id,

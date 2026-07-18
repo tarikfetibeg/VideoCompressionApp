@@ -4,7 +4,9 @@ const fs = require('fs');
 // Always resolve storage relative to project root.
 // This file is in backend/utils, so ../.. points to project root.
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const STORAGE_ROOT = path.join(PROJECT_ROOT, 'storage');
+const STORAGE_ROOT = process.env.MEDIA_STORAGE_ROOT
+  ? path.resolve(process.env.MEDIA_STORAGE_ROOT)
+  : path.join(PROJECT_ROOT, 'storage');
 
 const paths = {
   root: STORAGE_ROOT,

@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="index.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">TV produkcija</div>
+          <h1>Aplikacija v2 Jobs</h1>
+        </div>
+        <span id="connection-state" class="status">Nema workspacea</span>
+      </header>
+
+      <section class="job-picker">
+        <label for="job-id">Job ID</label>
+        <div class="row">
+          <input id="job-id" type="text" placeholder="MongoDB job ID" />
+          <button id="prepare-button" class="primary">Pripremi</button>
+        </div>
+        <p>Desktop aplikacija priprema Media, OFF, Brief i Exports foldere.</p>
+      </section>
+
+      <section class="toolbar">
+        <button id="manifest-button">Otvori manifest</button>
+        <button id="folder-button" disabled>Otvori folder</button>
+      </section>
+
+      <section id="job-summary" class="summary empty">
+        <h2>Nema odabranog joba</h2>
+        <p>Pripremi job u desktop aplikaciji, zatim odaberi njegov manifest.</p>
+      </section>
+
+      <section id="storyboard-section" hidden>
+        <div class="section-heading">
+          <h2>Storyboard</h2>
+          <span id="storyboard-version"></span>
+        </div>
+        <ol id="storyboard-list"></ol>
+      </section>
+
+      <footer>
+        <button id="import-button" class="primary" disabled>Importuj i napravi sequence</button>
+        <div id="message" role="status"></div>
+      </footer>
+    </main>
+  </body>
+</html>

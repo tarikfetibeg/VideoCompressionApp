@@ -1,0 +1,9 @@
+{
+  "name": "@vca/control-api",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ../../backend/app.js",
+    "worker:events": "node ../../backend/workers/eventOutboxWorker.js"
+  }
+}

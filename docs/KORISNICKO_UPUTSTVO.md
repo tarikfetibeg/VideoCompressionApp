@@ -106,12 +106,12 @@ Tok rada:
 
 1. Korisnik klikne `Skini`, `Skini paket`, `Skini air paket` ili slicnu akciju.
 2. Aplikacija kreira kratkotrajni sigurni download ticket.
-3. Browser dobija download URL i preuzima fizicko skidanje fajla.
-4. Aplikacija i dalje prikazuje status pripreme, starta, server zavrsetka, prekida ili greske.
+3. Desktop aplikacija dobija sigurni URL i pokreće native skidanje u pozadini; web izdanje predaje URL browseru.
+4. Globalni panel prikazuje fazu, prenesene bajtove, ukupnu veličinu, procenat, brzinu i procijenjeno preostalo vrijeme kada ih server može odrediti.
 
-Korisnik moze nastaviti koristiti aplikaciju dok se veliki ZIP ili video skida. Ako se tab pokusa zatvoriti dok aplikacija tek priprema download link, prikazuje se upozorenje. Kada browser preuzme download, fizicki napredak se prati u download listi browsera.
+Korisnik može nastaviti koristiti aplikaciju dok se veliki ZIP ili video skida. Kod native downloada transfer se može pauzirati, a `.part` fajl omogućava nastavak. Ako streamovani ZIP nema unaprijed poznatu ukupnu veličinu, panel prikazuje primljene bajtove i brzinu bez netačnog procenta. Klik na download status u vrhu aplikacije ponovo otvara panel.
 
-Ako se aplikacija koristi sa drugog racunara, preporuceni pristup je backend-servirani URL, npr. `http://server-u-tv-kuci:5000`. U tom modu frontend koristi relativni `/api`, pa login, API i download ticketi idu preko istog hosta. Ako se koristi odvojeni React dev server, `ALLOWED_ORIGINS` i `REACT_APP_API_BASE_URL` moraju pokazivati na stvarni backend, ne na `localhost` drugog racunara.
+Ako se aplikacija koristi sa drugog racunara, preporuceni pristup je backend-servirani URL, npr. `http://server-u-tv-kuci:5000`. U tom modu frontend koristi relativni `/api`, pa login, API i download ticketi idu preko istog hosta. Za instalirani desktop build ili odvojeni Vite dev server, `ALLOWED_ORIGINS` i `VITE_API_BASE_URL` moraju pokazivati na stvarni backend, ne na `localhost` drugog racunara.
 
 ## 3. Pokretanje aplikacije
 
@@ -857,3 +857,13 @@ Preporucene sljedece funkcije:
 - server-side pagination za velike arhive
 - definisani broadcast output profili prema playout sistemu televizije
 - export izvjestaja po danu, emisiji ili reporteru
+
+## 16. Aplikacija v2 na Windowsu
+
+- Nakon prijave početni ekran `Moj rad` prikazuje samo zadatke i sljedeće akcije relevantne tvojoj roli.
+- Zatvaranje prozora skriva aplikaciju u Windows tray; `Izlaz` potpuno gasi aplikaciju i upozorava na aktivne transfere.
+- Klik na Windows notifikaciju otvara odgovarajući job, video, Storyboard ili emisiju.
+- Download se nastavlja u pozadini; status i stvarni broj bajtova vidljivi su u globalnom panelu. Pauzirani `.part` fajl nastavlja se nakon ponovne prijave.
+- Reporter otvara `Storyboard` iz aktivnog joba. Lijevo bira i pomjera klipove, a desno na velikom scrub previewu podešava IN/OUT i napomenu. Gornja traka prikazuje fazu rada, autosave status, verziju i ukupno trajanje. `Pošalji montaži` potvrđuje i šalje posljednju sačuvanu verziju.
+- Montažer u jobu bira `Otvori u Premiere`; desktop priprema `Media`, `OFF`, `Brief` i `Exports` folder. UXP panel učitava `manifest.json`.
+- Admin u modulu `Desktop i Edge` vidi računare, verziju, heartbeat, dozvolu za notifikacije, update kanal i Media Edge stanje.

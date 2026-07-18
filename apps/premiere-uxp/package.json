@@ -1,0 +1,8 @@
+{
+  "name": "@vca/premiere-uxp",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/validate-manifest.cjs"
+  }
+}

@@ -9,22 +9,42 @@ const NotificationSchema = new mongoose.Schema({
   actor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    default: null,
   },
   kind: {
     type: String,
-    enum: ['edit_job_comment'],
     required: true,
   },
   job: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'EditJob',
-    required: true,
+    default: null,
   },
   commentId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true,
+    default: null,
   },
+  sourceEvent: { type: mongoose.Schema.Types.ObjectId, ref: 'EventOutbox' },
+  severity: {
+    type: String,
+    enum: ['info', 'action_required', 'critical'],
+    default: 'info',
+  },
+  state: {
+    type: String,
+    enum: ['unread', 'read', 'acknowledged', 'resolved'],
+    default: 'unread',
+  },
+  entityType: {
+    type: String,
+    enum: ['edit_job', 'video', 'show_day', 'correction', 'transfer', 'system'],
+    default: 'system',
+  },
+  entityId: { type: mongoose.Schema.Types.ObjectId },
+  deepLink: { type: String, default: '' },
+  actionRequired: { type: Boolean, default: false },
+  dedupeKey: { type: String },
+  payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   title: {
     type: String,
     required: true,
@@ -37,6 +57,13 @@ const NotificationSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  acknowledgedAt: { type: Date, default: null },
+  acknowledgedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  resolvedAt: { type: Date, default: null },
+  resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  ackDeadlineAt: { type: Date, default: null },
+  escalationLevel: { type: Number, min: 0, default: 0 },
+  escalatedAt: { type: Date, default: null },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -57,7 +84,23 @@ NotificationSchema.index(
 );
 NotificationSchema.index(
   { recipient: 1, commentId: 1 },
-  { name: 'notification_recipient_comment_unique_idx', unique: true }
+  {
+    name: 'notification_recipient_comment_unique_idx',
+    unique: true,
+    partialFilterExpression: { commentId: { $type: 'objectId' } },
+  }
+);
+NotificationSchema.index(
+  { recipient: 1, dedupeKey: 1 },
+  {
+    name: 'notification_recipient_dedupe_unique_idx',
+    unique: true,
+    partialFilterExpression: { dedupeKey: { $type: 'string' } },
+  }
+);
+NotificationSchema.index(
+  { severity: 1, state: 1, ackDeadlineAt: 1 },
+  { name: 'notification_escalation_idx' }
 );
 NotificationSchema.index(
   { expiresAt: 1 },

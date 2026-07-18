@@ -13,7 +13,11 @@ frontend/.env
 # Build folders
 build/
 frontend/build/
+frontend/dist/
 backend/frontend/build/
+packages/*/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 
 # Local README docs requested outside version tracking
 docs/README.md

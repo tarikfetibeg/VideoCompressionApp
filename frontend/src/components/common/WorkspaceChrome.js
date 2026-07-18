@@ -17,6 +17,7 @@ import {
 import InboxIcon from '@mui/icons-material/Inbox';
 import { formatStatusLabel, getStatusTone } from '../../utils/uiLabels';
 
+/** @type {React.FC<any>} */
 export const WorkspaceHeader = ({
   title,
   subtitle,
@@ -74,6 +75,7 @@ export const WorkspaceHeader = ({
   </Box>
 );
 
+/** @type {React.FC<any>} */
 export const StatusChip = ({
   value,
   label,
@@ -95,6 +97,7 @@ export const StatusChip = ({
   );
 };
 
+/** @type {React.FC<any>} */
 export const KpiStrip = ({ items = [], dense = false }) => (
   <Box
     sx={{
@@ -136,6 +139,7 @@ export const KpiStrip = ({ items = [], dense = false }) => (
   </Box>
 );
 
+/** @type {React.FC<any>} */
 export const FilterBar = ({ title = 'Filteri', summary, actions = null, children }) => (
   <Paper variant="outlined" sx={{ p: 2, mb: 2.5, borderRadius: 1.5 }}>
     <Stack
@@ -165,6 +169,7 @@ export const FilterBar = ({ title = 'Filteri', summary, actions = null, children
   </Paper>
 );
 
+/** @type {React.FC<any>} */
 export const ActionToolbar = ({ selectedCount = 0, label = 'Odabrano', children }) => {
   if (!selectedCount) return null;
 
@@ -181,6 +186,7 @@ export const ActionToolbar = ({ selectedCount = 0, label = 'Odabrano', children 
   );
 };
 
+/** @type {React.FC<any>} */
 export const EmptyState = ({
   title = 'Nema rezultata',
   description = 'Promijeni filtere ili osvjezi prikaz.',
@@ -199,6 +205,7 @@ export const EmptyState = ({
   </Paper>
 );
 
+/** @type {React.FC<any>} */
 export const ConfirmDialog = ({
   open,
   title,

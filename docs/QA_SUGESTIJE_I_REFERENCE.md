@@ -604,3 +604,39 @@ Reference:
   https://www.mongodb.com/docs/manual/reference/method/db.collection.updateOne/
 - Mongoose populate:
   https://mongoosejs.com/docs/populate.html
+
+## Aplikacija v2 QA i reference
+
+- Obavezno testirati tray, autostart, single instance, deep link, Windows scaling 125/150% i remote revoke uređaja.
+- Critical notification mora preživjeti offline period, biti deduplicirana i ostati aktivna dok nije `acknowledged`.
+- Prekinuti native download, restartovati desktop i potvrditi Range/`.part` nastavak bez duplikata.
+- Storyboard 409 konflikt ne smije prepisati noviju verziju; UXP import mora ostati jedna undoable marker transakcija.
+- `npm run v2:migrate:dry-run` ne smije mijenjati DB; legacy media putanje ostaju fallback.
+- Tauri: https://v2.tauri.app/concept/architecture/
+- Windows notifications: https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/
+- Adobe Premiere UXP: https://developer.adobe.com/premiere-pro/uxp/
+- tus: https://tus.io/protocols/resumable-upload
+- HTTP Range: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Range_requests
+- Redis delivery semantics: https://redis.io/docs/latest/develop/pubsub/
+
+### Download progress i Storyboard QA
+
+- Native download sa poznatim `Content-Length` mora prikazati stvarne bajtove,
+  procenat, brzinu i ETA; završni događaj mora pokazati 100% i ciljnu putanju.
+- ZIP bez `Content-Length` mora koristiti indeterminate progress i prikazati
+  samo stvarno primljene bajtove/brzinu, bez izmišljenog procenta.
+- Brzina se računa iz uzastopnih native uzoraka i zaglađuje, pa kratki mrežni
+  skok ne smije proizvesti nekontrolisano treperenje ETA vrijednosti.
+- Više paralelnih poznatih transfera mora dati korektan zbirni procenat u
+  AppShellu; jedan transfer nepoznate veličine prebacuje zbirni bar u
+  indeterminate stanje.
+- Storyboard testirati sa novim jobom bez `RoughCut` dokumenta: submit mora
+  napraviti verziju 1 i zatim poslati istu verziju montaži.
+- Promjena selekcije ne smije izgubiti IN/OUT ili napomenu; reorder mora
+  ažurirati kontinuirane `order` vrijednosti od nule.
+- Izmjena nastala tokom save requesta mora ostati označena kao nesačuvana i
+  završiti u narednoj verziji.
+- Editor/Producent moraju vidjeti isti dvopanelni Storyboard read-only, bez
+  mogućnosti promjene reporterskog prijedloga.
+- Na 1366x768 provjeriti da lista klipova ima vlastiti scroll, detalji ostaju
+  vidljivi i nijedan tekst ili kontrola ne izlazi iz panela.

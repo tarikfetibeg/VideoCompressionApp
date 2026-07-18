@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import VideoThumbnailPreview from './VideoThumbnailPreview';
 import axiosInstance from '../../axiosConfig';
+import { vi } from 'vitest';
 
-jest.mock('../../axiosConfig', () => ({
+vi.mock('../../axiosConfig', () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
+    get: vi.fn(),
   },
 }));
 
@@ -21,7 +22,7 @@ describe('VideoThumbnailPreview', () => {
 
     Object.defineProperty(URL, 'createObjectURL', {
       writable: true,
-      value: jest.fn(() => {
+      value: vi.fn(() => {
         const objectUrl = `blob:mock-${objectUrlIndex}`;
         objectUrlIndex += 1;
         return objectUrl;
@@ -30,7 +31,7 @@ describe('VideoThumbnailPreview', () => {
 
     Object.defineProperty(URL, 'revokeObjectURL', {
       writable: true,
-      value: jest.fn(),
+      value: vi.fn(),
     });
   });
 

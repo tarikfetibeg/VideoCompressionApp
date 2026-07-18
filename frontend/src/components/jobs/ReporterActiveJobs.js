@@ -19,6 +19,7 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import CloseIcon from '@mui/icons-material/Close';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ViewTimelineIcon from '@mui/icons-material/ViewTimeline';
 import axiosInstance from '../../axiosConfig';
 import { useNotifications } from '../../contexts/NotificationContext';
 import {
@@ -340,6 +341,14 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
                 Puni pregled
               </Button>
             </Stack>
+            <Button
+              component={Link}
+              to={`/edit-jobs/${selectedJob._id}/storyboard`}
+              variant="outlined"
+              startIcon={<ViewTimelineIcon />}
+            >
+              Otvori Storyboard
+            </Button>
             <Divider />
             <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>Komentari</Typography>
             <Stack spacing={1} sx={{ overflowY: 'auto', flex: 1 }}>

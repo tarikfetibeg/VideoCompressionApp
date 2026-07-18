@@ -4,13 +4,31 @@ import {
   BackgroundDownloadProvider,
   useBackgroundDownloads,
 } from './BackgroundDownloadContext';
+import { vi } from 'vitest';
 
-jest.mock('../axiosConfig', () => ({
+const desktopMocks = vi.hoisted(() => ({
+  active: false,
+  listener: null,
+  start: vi.fn(() => Promise.resolve({ id: 'native', path: 'C:/Downloads/test.mp4', bytes: 0 })),
+  cancel: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('../axiosConfig', () => ({
   __esModule: true,
   default: {
     defaults: { baseURL: '/api' },
-    get: jest.fn(),
-    post: jest.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}));
+
+vi.mock('../desktop/runtime', () => ({
+  isDesktopRuntime: () => desktopMocks.active,
+  startNativeDownload: desktopMocks.start,
+  cancelNativeDownload: desktopMocks.cancel,
+  listenForNativeTransferProgress: (listener) => {
+    desktopMocks.listener = listener;
+    return Promise.resolve(() => {});
   },
 }));
 
@@ -37,15 +55,19 @@ const renderDownloadManager = (descriptor = {
 
 describe('BackgroundDownloadContext', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     axiosInstance.get.mockReset();
     axiosInstance.post.mockReset();
+    desktopMocks.active = false;
+    desktopMocks.listener = null;
+    desktopMocks.start.mockClear();
+    desktopMocks.cancel.mockClear();
     document.body.querySelectorAll('iframe').forEach((frame) => frame.remove());
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
   });
 
   it('creates a ticket, hands off to browser download, and polls status', async () => {
@@ -74,22 +96,24 @@ describe('BackgroundDownloadContext', () => {
     });
 
     await act(async () => {
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       await Promise.resolve();
     });
 
     await waitFor(() => {
-      expect(document.body.querySelector('iframe')?.getAttribute('src')).toBe('/api/downloads/tickets/token-1');
+      expect(document.body.querySelector('iframe')?.getAttribute('src')).toBe(
+        `${window.location.origin}/api/downloads/tickets/token-1`
+      );
     });
 
     await act(async () => {
-      jest.advanceTimersByTime(1300);
+      vi.advanceTimersByTime(1300);
       await Promise.resolve();
     });
 
     await waitFor(() => {
       expect(axiosInstance.get).toHaveBeenCalledWith('/downloads/tickets/ticket-1/status');
-      expect(screen.getAllByText(/Zavrseno/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Završeno/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -130,5 +154,51 @@ describe('BackgroundDownloadContext', () => {
       });
       await Promise.resolve();
     });
+  });
+
+  it('shows precise native bytes, speed, percentage and remaining time', async () => {
+    desktopMocks.active = true;
+    axiosInstance.post.mockResolvedValue({
+      data: {
+        ticketId: 'ticket-native',
+        downloadUrl: '/api/downloads/tickets/token-native',
+      },
+    });
+
+    renderDownloadManager();
+    fireEvent.click(screen.getByRole('button', { name: /start download/i }));
+
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(desktopMocks.start).toHaveBeenCalledTimes(1));
+
+    const downloadId = desktopMocks.start.mock.calls[0][0].id;
+    await act(async () => {
+      desktopMocks.listener({
+        id: downloadId,
+        status: 'transferring',
+        transferredBytes: 1024 * 1024,
+        totalBytes: 4 * 1024 * 1024,
+        path: 'C:/Downloads/test.mp4',
+        error: '',
+      });
+      vi.advanceTimersByTime(1000);
+      desktopMocks.listener({
+        id: downloadId,
+        status: 'transferring',
+        transferredBytes: 2 * 1024 * 1024,
+        totalBytes: 4 * 1024 * 1024,
+        path: 'C:/Downloads/test.mp4',
+        error: '',
+      });
+    });
+
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('2.00 MB od 4.00 MB')).toBeInTheDocument();
+    expect(screen.getAllByText('1.00 MB/s').length).toBeGreaterThan(0);
+    expect(screen.getByText('Preostalo oko 2 s')).toBeInTheDocument();
   });
 });

@@ -28,10 +28,10 @@ router.get('/workspace', async (req, res) => {
     const { page, limit, skip } = parsePagination(req.query);
     const filter = { recipient: req.user.id };
     if (String(req.query.unreadOnly || '').toLowerCase() === 'true') {
-      filter.readAt = null;
+      filter.state = 'unread';
     }
 
-    const unreadFilter = { recipient: req.user.id, readAt: null };
+    const unreadFilter = { recipient: req.user.id, state: 'unread' };
     const [items, total, unreadCount] = await Promise.all([
       populateNotification(
         Notification.find(filter)
@@ -60,8 +60,8 @@ router.get('/workspace', async (req, res) => {
 router.patch('/read-all', async (req, res) => {
   try {
     const result = await Notification.updateMany(
-      { recipient: req.user.id, readAt: null },
-      { $set: { readAt: new Date() } }
+      { recipient: req.user.id, state: 'unread', severity: { $ne: 'critical' } },
+      { $set: { readAt: new Date(), state: 'read' } }
     );
     res.json({ message: 'Sve notifikacije su označene kao pročitane.', updated: result.modifiedCount });
   } catch (error) {
@@ -80,9 +80,9 @@ router.patch('/read-job/:jobId', async (req, res) => {
       {
         recipient: req.user.id,
         job: req.params.jobId,
-        readAt: null,
+        state: 'unread',
       },
-      { $set: { readAt: new Date() } }
+      { $set: { readAt: new Date(), state: 'read' } }
     );
     return res.json({ message: 'Job notifikacije su označene kao pročitane.', updated: result.modifiedCount });
   } catch (error) {
@@ -103,7 +103,7 @@ router.patch('/:notificationId/read', async (req, res) => {
           _id: req.params.notificationId,
           recipient: req.user.id,
         },
-        { $set: { readAt: new Date() } },
+        { $set: { readAt: new Date(), state: 'read' } },
         { new: true }
       )
     );

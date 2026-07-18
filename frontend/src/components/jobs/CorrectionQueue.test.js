@@ -4,12 +4,13 @@ import { ThemeProvider } from '@mui/material/styles';
 import axiosInstance from '../../axiosConfig';
 import theme from '../../theme';
 import CorrectionQueue from './CorrectionQueue';
+import { vi } from 'vitest';
 
-jest.mock('../../axiosConfig', () => ({
+vi.mock('../../axiosConfig', () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
-    patch: jest.fn(),
+    get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 

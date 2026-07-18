@@ -10,8 +10,8 @@ import {
   Typography,
 } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
-import axios from '../axiosConfig';
 import { UserContext } from '../contexts/UserContext';
+import { loginV2 } from '../auth/sessionApi';
 
 const LoginPage = () => {
   const { login } = useContext(UserContext);
@@ -22,29 +22,22 @@ const LoginPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleLogin = (event) => {
+  const handleLogin = async (event) => {
     event.preventDefault();
     setSubmitting(true);
     setErrorMessage('');
 
-    axios
-      .post('/auth/login', {
-        username: loginUsername,
-        password: loginPassword,
-      })
-      .then((response) => {
-        const { token, user } = response.data;
-        login({ ...user, token });
-        navigate('/');
-      })
-      .catch((error) => {
-        setErrorMessage(
-          error.response?.data?.message ||
-          error.message ||
-          'Login nije uspio.'
-        );
-      })
-      .finally(() => setSubmitting(false));
+    try {
+      const session = await loginV2(loginUsername, loginPassword);
+      login(session);
+      navigate('/');
+    } catch (error) {
+      setErrorMessage(
+        error.response?.data?.message || error.message || 'Prijava nije uspjela.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -83,7 +76,7 @@ const LoginPage = () => {
           {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
 
           <TextField
-            label="Username"
+            label="Korisničko ime"
             value={loginUsername}
             onChange={(event) => setLoginUsername(event.target.value)}
             fullWidth
@@ -91,7 +84,7 @@ const LoginPage = () => {
             autoFocus
           />
           <TextField
-            label="Password"
+            label="Lozinka"
             type="password"
             value={loginPassword}
             onChange={(event) => setLoginPassword(event.target.value)}
@@ -99,7 +92,7 @@ const LoginPage = () => {
             required
           />
           <Button type="submit" variant="contained" startIcon={<LoginIcon />} disabled={submitting}>
-            {submitting ? 'Prijava...' : 'Login'}
+            {submitting ? 'Prijava...' : 'Prijavi se'}
           </Button>
         </Stack>
       </Paper>

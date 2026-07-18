@@ -16,7 +16,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ReplayIcon from '@mui/icons-material/Replay';
 import axios from '../axiosConfig';
 
-const BackgroundUploadContext = createContext(null);
+const BackgroundUploadContext = createContext(/** @type {any} */ (null));
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 

@@ -1,29 +1,39 @@
-import React, { useContext } from 'react';
+import React, { lazy, Suspense, useContext } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
 } from 'react-router-dom';
+import { Box, CircularProgress } from '@mui/material';
 import { UserContext } from './contexts/UserContext';
 import { BackgroundUploadProvider } from './contexts/BackgroundUploadContext';
 import { BackgroundDownloadProvider } from './contexts/BackgroundDownloadContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { RealtimeProvider } from './contexts/RealtimeContext';
 import PrivateRoute from './components/PrivateRoute';
 import AppShell from './components/layout/AppShell';
+import DesktopRuntimeBridge from './desktop/DesktopRuntimeBridge';
 
-// Import Pages
-import LoginPage from './pages/LoginPage';
-import ReporterDashboard from './pages/ReporterDashboard';
-import EditorDashboard from './pages/EditorDashboard';
-import EditJobDetailsPage from './pages/EditJobDetailsPage';
-import ProducerDashboard from './pages/ProducerDashboard';
-import RealizatorDashboard from './pages/RealizatorDashboard';
-import ArchivistDashboard from './pages/ArchivistDashboard';
-import FeedbackPage from './pages/FeedbackPage';
-import VideoDetailsPage from './pages/VideoDetailsPage';
-import NotFoundPage from './pages/NotFoundPage';
-import AdminDashboard from './pages/AdminDashboard';
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ReporterDashboard = lazy(() => import('./pages/ReporterDashboard'));
+const EditorDashboard = lazy(() => import('./pages/EditorDashboard'));
+const EditJobDetailsPage = lazy(() => import('./pages/EditJobDetailsPage'));
+const ProducerDashboard = lazy(() => import('./pages/ProducerDashboard'));
+const RealizatorDashboard = lazy(() => import('./pages/RealizatorDashboard'));
+const ArchivistDashboard = lazy(() => import('./pages/ArchivistDashboard'));
+const FeedbackPage = lazy(() => import('./pages/FeedbackPage'));
+const VideoDetailsPage = lazy(() => import('./pages/VideoDetailsPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const StoryboardPage = lazy(() => import('./pages/StoryboardPage'));
+const MyWorkPage = lazy(() => import('./pages/MyWorkPage'));
+
+const RouteLoading = () => (
+  <Box sx={{ minHeight: '50vh', display: 'grid', placeItems: 'center' }}>
+    <CircularProgress size={30} aria-label="Učitavanje radnog prostora" />
+  </Box>
+);
 
 function App() {
   const { user } = useContext(UserContext);
@@ -32,8 +42,11 @@ function App() {
     <BackgroundUploadProvider>
       <BackgroundDownloadProvider>
         <Router>
-          <NotificationProvider>
+          <DesktopRuntimeBridge />
+          <RealtimeProvider>
+            <NotificationProvider>
             <AppShell>
+              <Suspense fallback={<RouteLoading />}>
               <Routes>
         {/* Public Routes */}
         <Route
@@ -49,28 +62,18 @@ function App() {
          */}
         <Route
           path="/"
-          element={
-            user ? (
-              user.role === 'Reporter' || user.role === 'Admin' ? (
-                <Navigate to="/reporter-dashboard" />
-              ) : user.role === 'Producer' ? (
-                <Navigate to="/producer-dashboard" />
-              ) : user.role === 'Realizator' ? (
-                <Navigate to="/realizator-dashboard" />
-              ) : user.role === 'Archivist' ? (
-                <Navigate to="/archivist-dashboard" />
-              ) : ['Editor', 'VideoEditor'].includes(user.role) ? (
-                <Navigate to="/editor-dashboard" />
-              ) : (
-                <Navigate to="/login" />
-              )
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
+          element={user ? <Navigate to="/my-work" /> : <Navigate to="/login" />}
         />
 
         {/* Private Routes */}
+        <Route
+          path="/my-work"
+          element={
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin']}>
+              <MyWorkPage />
+            </PrivateRoute>
+          }
+        />
         <Route
           path="/reporter-dashboard"
           element={
@@ -135,6 +138,14 @@ function App() {
             </PrivateRoute>
           }
         />
+        <Route
+          path="/edit-jobs/:jobId/storyboard"
+          element={
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Admin']}>
+              <StoryboardPage />
+            </PrivateRoute>
+          }
+        />
 
         {/* Other Routes */}
         <Route
@@ -149,8 +160,10 @@ function App() {
         {/* Not Found */}
         <Route path="*" element={<NotFoundPage />} />
               </Routes>
+              </Suspense>
             </AppShell>
-          </NotificationProvider>
+            </NotificationProvider>
+          </RealtimeProvider>
         </Router>
       </BackgroundDownloadProvider>
     </BackgroundUploadProvider>

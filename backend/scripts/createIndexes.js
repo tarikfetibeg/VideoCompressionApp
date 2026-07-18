@@ -15,6 +15,15 @@ const CorrectionRequest = require('../models/CorrectionRequest');
 const DownloadTicket = require('../models/DownloadTicket');
 const MediaTicket = require('../models/MediaTicket');
 const Notification = require('../models/Notification');
+const Session = require('../models/Session');
+const Device = require('../models/Device');
+const EventOutbox = require('../models/EventOutbox');
+const EscalationPolicy = require('../models/EscalationPolicy');
+const MediaNode = require('../models/MediaNode');
+const MediaAsset = require('../models/MediaAsset');
+const MediaTask = require('../models/MediaTask');
+const RoughCut = require('../models/RoughCut');
+const TransferSession = require('../models/TransferSession');
 
 const models = [
   Video,
@@ -26,6 +35,15 @@ const models = [
   DownloadTicket,
   MediaTicket,
   Notification,
+  Session,
+  Device,
+  EventOutbox,
+  EscalationPolicy,
+  MediaNode,
+  MediaAsset,
+  MediaTask,
+  RoughCut,
+  TransferSession,
 ];
 
 async function listIndexNames(model) {

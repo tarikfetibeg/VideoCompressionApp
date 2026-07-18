@@ -36,15 +36,25 @@ import NewspaperIcon from '@mui/icons-material/Newspaper';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import TvIcon from '@mui/icons-material/Tv';
 import VideoSettingsIcon from '@mui/icons-material/VideoSettings';
+import HomeWorkIcon from '@mui/icons-material/HomeWork';
 import { UserContext } from '../../contexts/UserContext';
 import { useBackgroundUploads } from '../../contexts/BackgroundUploadContext';
 import { useBackgroundDownloads } from '../../contexts/BackgroundDownloadContext';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useRealtime } from '../../contexts/RealtimeContext';
+import { formatProgressPercent, formatTransferRate } from '../../utils/downloadProgress';
 import { formatRole } from '../../utils/uiLabels';
 
 const drawerWidth = 268;
 
 const navItems = [
+  {
+    label: 'Moj rad',
+    description: 'Prioriteti i sljedeće akcije',
+    to: '/my-work',
+    icon: <HomeWorkIcon />,
+    roles: ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'],
+  },
   {
     label: 'Reporter',
     description: 'Ingest i priprema priloga',
@@ -160,7 +170,10 @@ const GlobalStatusBar = () => {
     failedDownloads,
     completedDownloads,
     hasBlockingDownloads,
+    downloadSummary,
+    openDownloadPanel,
   } = useBackgroundDownloads();
+  const { status: realtimeStatus } = useRealtime();
   const hasActiveTransfers = hasBlockingUploads || activeDownloads.length > 0;
 
   return (
@@ -191,21 +204,39 @@ const GlobalStatusBar = () => {
             hasBlockingDownloads
               ? 'Download se priprema'
               : activeDownloads.length > 0
-                ? 'Download u toku'
+                ? `Download ${formatProgressPercent(downloadSummary.progress) || 'u toku'}`
                 : 'Download miruje'
           }
           color={activeDownloads.length > 0 ? 'primary' : 'default'}
           size="small"
           variant={activeDownloads.length > 0 ? 'filled' : 'outlined'}
+          onClick={(activeDownloads.length > 0 || completedDownloads.length > 0 || failedDownloads.length > 0)
+            ? openDownloadPanel
+            : undefined}
         />
-        <Chip label={`${activeDownloads.length} skidanje`} size="small" variant="outlined" />
-        <Chip label={`${completedDownloads.length} zavrseno`} size="small" color="success" variant="outlined" />
+        {downloadSummary.speedBytesPerSecond > 0 && (
+          <Chip label={formatTransferRate(downloadSummary.speedBytesPerSecond)} size="small" variant="outlined" />
+        )}
+        <Chip label={`${activeDownloads.length} skidanja`} size="small" variant="outlined" />
+        <Chip label={`${completedDownloads.length} završeno`} size="small" color="success" variant="outlined" />
         {failedDownloads.length > 0 && (
           <Chip label={`${failedDownloads.length} problem`} size="small" color="error" variant="outlined" />
         )}
-        <Chip label="Polling samo kad ima obrade" size="small" variant="outlined" />
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
+        <Chip
+          label={realtimeStatus === 'connected' ? 'Notifikacije uživo' : 'Ponovno povezivanje'}
+          color={realtimeStatus === 'connected' ? 'success' : 'warning'}
+          size="small"
+          variant="outlined"
+        />
       </Stack>
-      {hasActiveTransfers && <LinearProgress sx={{ mt: 0.75 }} />}
+      {hasActiveTransfers && (
+        <LinearProgress
+          variant={!hasBlockingUploads && downloadSummary.progress != null ? 'determinate' : 'indeterminate'}
+          value={!hasBlockingUploads && downloadSummary.progress != null ? downloadSummary.progress : undefined}
+          sx={{ mt: 0.75 }}
+        />
+      )}
     </Box>
   );
 };
@@ -220,6 +251,7 @@ const NotificationCenter = () => {
     refreshNotifications,
     markRead,
     markAllRead,
+    acknowledge,
     dismissLatest,
   } = useNotifications();
   const [anchorEl, setAnchorEl] = useState(null);
@@ -230,8 +262,22 @@ const NotificationCenter = () => {
   };
 
   const openNotification = async (notification) => {
-    await markRead(notification._id);
+    if (notification.severity !== 'critical') await markRead(notification._id);
     setAnchorEl(null);
+    if (notification.deepLink?.startsWith('vca://')) {
+      try {
+        const url = new URL(notification.deepLink);
+        const id = url.pathname.replace(/^\//, '');
+        if (url.hostname === 'job' && id) {
+          return navigate(url.searchParams.get('view') === 'storyboard'
+            ? `/edit-jobs/${id}/storyboard`
+            : `/edit-jobs/${id}`);
+        }
+        if (url.hostname === 'video' && id) return navigate(`/video-details/${id}`);
+      } catch (error) {
+        // Entity fallback below keeps legacy notifications working.
+      }
+    }
     const jobId = notification.job?._id || notification.job;
     if (jobId) navigate(`/edit-jobs/${jobId}#comments`);
   };
@@ -283,19 +329,38 @@ const NotificationCenter = () => {
               alignItems: 'flex-start',
               whiteSpace: 'normal',
               py: 1.25,
-              bgcolor: notification.readAt ? 'transparent' : 'action.selected',
+              bgcolor: notification.state === 'read' || notification.readAt ? 'transparent' : 'action.selected',
             }}
           >
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="body2" sx={{ fontWeight: notification.readAt ? 700 : 900 }}>
-                {notification.title}
-              </Typography>
+            <Box sx={{ minWidth: 0, width: '100%' }}>
+              <Stack direction="row" spacing={0.75} alignItems="center">
+                <Typography variant="body2" sx={{ flex: 1, fontWeight: notification.readAt ? 700 : 900 }}>
+                  {notification.title}
+                </Typography>
+                {notification.severity === 'critical' && (
+                  <Chip label="Kritično" color="error" size="small" />
+                )}
+              </Stack>
               <Typography variant="caption" color="text.secondary" component="div">
                 {notification.actor?.username || 'Korisnik'}: {notification.bodyPreview}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {notification.createdAt ? new Date(notification.createdAt).toLocaleString('bs-BA') : ''}
               </Typography>
+              {notification.severity === 'critical' && notification.state !== 'acknowledged' && (
+                <Button
+                  size="small"
+                  color="error"
+                  variant="contained"
+                  sx={{ mt: 0.75 }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    acknowledge(notification._id);
+                  }}
+                >
+                  Potvrdi prijem
+                </Button>
+              )}
             </Box>
           </MenuItem>
         ))}
@@ -307,7 +372,7 @@ const NotificationCenter = () => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert
-          severity="info"
+          severity={latestNotification?.severity === 'critical' ? 'error' : latestNotification?.severity === 'action_required' ? 'warning' : 'info'}
           variant="filled"
           onClose={dismissLatest}
           action={latestNotification ? (
@@ -330,6 +395,7 @@ const NotificationCenter = () => {
 const AppShell = ({ children }) => {
   const { user, logout } = useContext(UserContext);
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -341,9 +407,9 @@ const AppShell = ({ children }) => {
 
   const activeItem = visibleItems.find((item) => matchesPath(location.pathname, item.to));
 
-  const handleLogout = () => {
-    logout();
-    window.location.href = '/login';
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
   };
 
   if (!user) {

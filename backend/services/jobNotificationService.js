@@ -1,6 +1,5 @@
 const Notification = require('../models/Notification');
-
-const NOTIFICATION_RETENTION_DAYS = 180;
+const { enqueueDomainEvent } = require('./domainEventService');
 
 function getObjectIdString(value) {
   if (!value) return '';
@@ -26,10 +25,6 @@ function getCommentRecipientIds(job, actor) {
   return Array.from(new Set(recipientIds.filter((id) => id && id !== actorId)));
 }
 
-function createExpiryDate() {
-  return new Date(Date.now() + NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-}
-
 function createBodyPreview(body) {
   const normalized = String(body || '').replace(/\s+/g, ' ').trim();
   return normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
@@ -39,27 +34,21 @@ async function createCommentNotifications(job, actor, comment) {
   const recipientIds = getCommentRecipientIds(job, actor);
   if (recipientIds.length === 0 || !comment?._id) return 0;
 
-  const expiresAt = createExpiryDate();
-  const documents = recipientIds.map((recipient) => ({
-    recipient,
+  await enqueueDomainEvent({
+    type: 'edit_job.comment_added',
+    severity: 'action_required',
     actor: actor.id || actor._id,
-    kind: 'edit_job_comment',
-    job: job._id,
-    commentId: comment._id,
+    recipients: recipientIds,
+    entityType: 'edit_job',
+    entityId: job._id,
+    entityVersion: Number(job.__v || 0),
     title: `Novi komentar: ${job.title}`,
     bodyPreview: createBodyPreview(comment.body),
-    expiresAt,
-  }));
-
-  try {
-    const result = await Notification.insertMany(documents, { ordered: false });
-    return result.length;
-  } catch (error) {
-    if (error?.code === 11000) {
-      return Number(error?.result?.insertedCount || 0);
-    }
-    throw error;
-  }
+    deepLink: `vca://job/${job._id}`,
+    payload: { jobId: job._id, commentId: comment._id },
+    dedupeKey: `edit_job.comment_added:${comment._id}`,
+  });
+  return recipientIds.length;
 }
 
 async function markJobNotificationsRead(jobId, userId) {
@@ -67,10 +56,10 @@ async function markJobNotificationsRead(jobId, userId) {
     {
       recipient: userId,
       job: jobId,
-      readAt: null,
+      state: 'unread',
     },
     {
-      $set: { readAt: new Date() },
+      $set: { readAt: new Date(), state: 'read' },
     }
   );
 }

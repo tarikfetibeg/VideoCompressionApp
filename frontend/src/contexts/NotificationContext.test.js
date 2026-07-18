@@ -5,12 +5,14 @@ import {
   NotificationProvider,
   useNotifications,
 } from './NotificationContext';
+import { vi } from 'vitest';
 
-jest.mock('../axiosConfig', () => ({
+vi.mock('../axiosConfig', () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
-    patch: jest.fn(),
+    get: vi.fn(),
+    patch: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -47,7 +49,8 @@ describe('NotificationContext', () => {
   beforeEach(() => {
     axiosInstance.get.mockReset();
     axiosInstance.patch.mockReset();
-    axiosInstance.get.mockResolvedValue({
+    axiosInstance.post.mockReset();
+    axiosInstance.get.mockResolvedValueOnce({
       data: {
         items: [{
           _id: 'notification-1',
@@ -58,6 +61,7 @@ describe('NotificationContext', () => {
         unreadCount: 1,
       },
     });
+    axiosInstance.get.mockResolvedValue({ data: { items: [], unreadCount: 0 } });
     axiosInstance.patch.mockResolvedValue({ data: { updated: 1 } });
   });
 
@@ -72,7 +76,7 @@ describe('NotificationContext', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Read first' }));
 
     await waitFor(() => {
-      expect(axiosInstance.patch).toHaveBeenCalledWith('/notifications/notification-1/read');
+      expect(axiosInstance.patch).toHaveBeenCalledWith('/v2/notifications/notification-1/read');
       expect(screen.getByText('Unread: 0')).toBeInTheDocument();
     });
   });
@@ -84,7 +88,7 @@ describe('NotificationContext', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Read all' }));
 
     await waitFor(() => {
-      expect(axiosInstance.patch).toHaveBeenCalledWith('/notifications/read-all');
+      expect(axiosInstance.patch).toHaveBeenCalledWith('/v2/notifications/read-all');
       expect(screen.getByText('Unread: 0')).toBeInTheDocument();
     });
   });

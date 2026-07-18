@@ -538,3 +538,32 @@ Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje ut
   svom queueu, a ingest nastavlja nezavisno.
 - Node runtime je standardizovan na 20.x.
 - Detalji: `docs/STORAGE_I_MEDIA_PROFILI.md`.
+
+## Aplikacija v2 desktop temelj
+
+- Dodat je Tauri 2 Windows shell sa trayem, autostartom, single-instance režimom, `vca://` deep linkovima, sigurnim refresh tokenom i update kanalima.
+- CRA je zamijenjen Vite buildom; postojeći React/MUI feature-i ostaju kompatibilni i rute se lazy-loaduju.
+- Novi početni ekran `Moj rad` objedinjuje jobove, rokove, critical događaje, transfere, ispravke i emisije prema roli.
+- Uvedeni su device fleet, rotirajuće sesije, durable EventOutbox, Socket.IO/Redis realtime i critical acknowledge/escalation.
+- Media Edge koristi tus upload, Range download, `MediaNode`/`MediaAsset` lokacije i izlazni heartbeat.
+- Reporter Storyboard je verzioniran; Premiere 25.6+ UXP panel importuje workspace i postavlja markere.
+- Native download radi u Rust procesu, čuva `.part` i SQLite red te ne blokira ostatak aplikacije.
+- Rollout i rollback: `docs/V2_MIGRACIJA_RUNBOOK.md`.
+
+### Precizni download status i Storyboard radni prostor
+
+- Native download panel sada iz stvarnih Rust progress događaja prikazuje
+  prenesene i ukupne bajtove, procenat na decimalu, zaglađenu brzinu i
+  procijenjeno preostalo vrijeme.
+- Streamovani ZIP bez poznatog `Content-Length` prikazuje stvarno primljene
+  bajtove i brzinu, bez lažnog procenta ili ETA vrijednosti.
+- AppShell prikazuje zbirni procenat i brzinu kada su veličine svih aktivnih
+  transfera poznate; klik na download status ponovo otvara globalni panel.
+- Storyboard je prepakovan u dvopanelni workflow: redoslijed i thumbnaili su
+  lijevo, a fokusirani scrub preview, IN/OUT i napomena desno.
+- Pregled cjeline prikazuje proporcionalne segmente, broj klipova, broj
+  napomena i ukupno trajanje prijedloga.
+- Autosave čuva izmjene bez gubitka novijih lokalnih unosa, `beforeunload`
+  štiti nesačuvan nacrt, a postojeća verzijska `409` zaštita ostaje aktivna.
+- Prvo slanje novog Storyboarda automatski kreira verziju 1 prije slanja
+  notifikacije montažeru.

@@ -1,0 +1,39 @@
+:root {
+  color: #f4f4f4;
+  background: #202020;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { padding: 14px; }
+header, .row, .toolbar, .section-heading { display: flex; align-items: center; gap: 8px; }
+header { justify-content: space-between; margin-bottom: 16px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 18px; }
+h2 { font-size: 14px; }
+.eyebrow { color: #a8a8a8; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+.status { border: 1px solid #555; padding: 3px 6px; border-radius: 3px; color: #d0d0d0; }
+section { border-top: 1px solid #3b3b3b; padding: 12px 0; }
+label { display: block; font-weight: 600; margin-bottom: 6px; }
+input { min-width: 0; flex: 1; background: #151515; color: #fff; border: 1px solid #555; padding: 7px; border-radius: 3px; }
+button { background: #373737; color: #fff; border: 1px solid #606060; border-radius: 3px; padding: 7px 10px; font-weight: 600; }
+button.primary { background: #1473e6; border-color: #1473e6; }
+button:disabled { opacity: 0.45; }
+.job-picker p, .summary p { color: #aaa; margin-top: 7px; line-height: 1.4; }
+.toolbar { flex-wrap: wrap; }
+.summary { min-height: 64px; }
+.summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.metric { background: #2a2a2a; border: 1px solid #444; padding: 7px; }
+.metric span { display: block; color: #aaa; font-size: 10px; }
+.metric strong { display: block; margin-top: 2px; }
+.section-heading { justify-content: space-between; }
+#storyboard-list { padding-left: 24px; margin: 10px 0 0; }
+#storyboard-list li { border-bottom: 1px solid #3b3b3b; padding: 7px 0; }
+.clip-name { font-weight: 600; }
+.clip-note { color: #bbb; margin-top: 2px; }
+.clip-range { color: #8fbfff; font-size: 11px; margin-top: 2px; }
+footer { position: sticky; bottom: 0; background: #202020; border-top: 1px solid #444; padding-top: 12px; }
+footer button { width: 100%; }
+#message { min-height: 20px; margin-top: 8px; color: #b8d7ff; line-height: 1.4; }

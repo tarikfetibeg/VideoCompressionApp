@@ -1,6 +1,8 @@
 import axios from 'axios';
+import { getAccessToken, setAccessToken } from './auth/tokenStore';
+import { refreshCurrentSession } from './auth/sessionApi';
 
-const baseURL = process.env.REACT_APP_API_BASE_URL || '/api';
+const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const axiosInstance = axios.create({
   baseURL,
@@ -8,11 +10,9 @@ const axiosInstance = axios.create({
 
 axiosInstance.interceptors.request.use(
   (config) => {
-    const userData = localStorage.getItem('user');
-    const user = userData ? JSON.parse(userData) : null;
-
-    if (user && user.token) {
-      config.headers.Authorization = `Bearer ${user.token}`;
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
@@ -28,9 +28,22 @@ axiosInstance.interceptors.request.use(
 
 axiosInstance.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      console.warn('Unauthorized request. Token may be missing or expired.');
+  async (error) => {
+    const config = error.config || {};
+    const isAuthRequest = String(config.url || '').includes('/v2/auth/');
+    if (error.response?.status === 401 && !config.__v2Retry && !isAuthRequest) {
+      config.__v2Retry = true;
+      try {
+        const session = await refreshCurrentSession();
+        if (session?.accessToken) {
+          setAccessToken(session.accessToken);
+          config.headers = config.headers || {};
+          config.headers.Authorization = `Bearer ${session.accessToken}`;
+          return axiosInstance(config);
+        }
+      } catch (refreshError) {
+        window.dispatchEvent(new Event('vca:session-expired'));
+      }
     }
 
     if (error.response && error.response.status === 403) {

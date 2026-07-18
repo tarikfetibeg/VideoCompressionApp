@@ -1,0 +1,41 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  control-api:
+    build:
+      context: .
+      dockerfile: deploy/control-api.Dockerfile
+    env_file: .env.v2
+    environment:
+      REDIS_URL: redis://redis:6379
+      EVENT_OUTBOX_MODE: worker
+      DESKTOP_ONLY_MODE: "true"
+    depends_on: [redis]
+    restart: unless-stopped
+
+  event-worker:
+    build:
+      context: .
+      dockerfile: deploy/event-worker.Dockerfile
+    env_file: .env.v2
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on: [redis, control-api]
+    restart: unless-stopped
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [control-api]
+    restart: unless-stopped
+
+volumes:
+  redis-data:
