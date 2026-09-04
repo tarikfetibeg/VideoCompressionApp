@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -37,6 +37,7 @@ import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import TvIcon from '@mui/icons-material/Tv';
 import VideoSettingsIcon from '@mui/icons-material/VideoSettings';
 import HomeWorkIcon from '@mui/icons-material/HomeWork';
+import LiveTvIcon from '@mui/icons-material/LiveTv';
 import { UserContext } from '../../contexts/UserContext';
 import { useBackgroundUploads } from '../../contexts/BackgroundUploadContext';
 import { useBackgroundDownloads } from '../../contexts/BackgroundDownloadContext';
@@ -89,6 +90,13 @@ const navItems = [
     to: '/archivist-dashboard',
     icon: <Inventory2Icon />,
     roles: ['Archivist', 'Admin'],
+  },
+  {
+    label: 'Finali emisija',
+    description: 'Zaštićena arhiva kompletnih emisija',
+    to: '/program-finals',
+    icon: <LiveTvIcon />,
+    roles: ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'],
   },
   {
     label: 'Admin',
@@ -174,7 +182,14 @@ const GlobalStatusBar = () => {
     openDownloadPanel,
   } = useBackgroundDownloads();
   const { status: realtimeStatus } = useRealtime();
+  const [desktopUpdate, setDesktopUpdate] = useState(null);
   const hasActiveTransfers = hasBlockingUploads || activeDownloads.length > 0;
+
+  useEffect(() => {
+    const handleUpdate = (event) => setDesktopUpdate(event.detail || null);
+    window.addEventListener('vca:desktop-update-status', handleUpdate);
+    return () => window.removeEventListener('vca:desktop-update-status', handleUpdate);
+  }, []);
 
   return (
     <Box
@@ -229,6 +244,16 @@ const GlobalStatusBar = () => {
           size="small"
           variant="outlined"
         />
+        {desktopUpdate?.updateAvailable && (
+          <Chip
+            label={desktopUpdate.updateRequired
+              ? `Update ${desktopUpdate.targetVersion} obavezan`
+              : `Update ${desktopUpdate.targetVersion}`}
+            color={desktopUpdate.updateRequired ? 'warning' : 'info'}
+            size="small"
+            variant="filled"
+          />
+        )}
       </Stack>
       {hasActiveTransfers && (
         <LinearProgress
@@ -273,7 +298,13 @@ const NotificationCenter = () => {
             ? `/edit-jobs/${id}/storyboard`
             : `/edit-jobs/${id}`);
         }
-        if (url.hostname === 'video' && id) return navigate(`/video-details/${id}`);
+        if (url.hostname === 'video' && id) {
+          const start = url.searchParams.get('start') || url.searchParams.get('t');
+          return navigate(`/video-details/${id}${start ? `?start=${encodeURIComponent(start)}` : ''}`);
+        }
+        if (url.hostname === 'program-final' && id) {
+          return navigate(`/program-finals/${id}`);
+        }
       } catch (error) {
         // Entity fallback below keeps legacy notifications working.
       }

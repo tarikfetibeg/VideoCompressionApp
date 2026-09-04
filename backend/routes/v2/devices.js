@@ -4,6 +4,7 @@ const authenticateToken = require('../../middleware/authenticateToken');
 const Device = require('../../models/Device');
 const AuditLog = require('../../models/AuditLog');
 const { revokeDevice, upsertDevice } = require('../../services/v2SessionService');
+const { updatePolicyFor } = require('../../services/desktopVersionService');
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -55,11 +56,30 @@ router.patch('/heartbeat', async (req, res) => {
       { new: true }
     );
     if (!device) return res.status(404).json({ message: 'Uređaj nije registrovan ili je opozvan.' });
-    return res.json({ ok: true, serverTime: new Date(), device });
+    return res.json({
+      ok: true,
+      serverTime: new Date(),
+      device,
+      updatePolicy: updatePolicyFor({
+        currentVersion: device.appVersion,
+        updateChannel: device.updateChannel,
+      }),
+    });
   } catch (error) {
     console.error('Device heartbeat failed:', error);
     return res.status(500).json({ message: 'Heartbeat nije sačuvan.' });
   }
+});
+
+router.get('/update-policy/current', async (req, res) => {
+  const deviceId = String(req.query.deviceId || '');
+  const device = deviceId
+    ? await Device.findOne({ deviceId, user: req.user.id, revokedAt: null }).lean()
+    : null;
+  return res.json(updatePolicyFor({
+    currentVersion: device?.appVersion || String(req.query.currentVersion || '2.0.0'),
+    updateChannel: device?.updateChannel || String(req.query.channel || 'stable'),
+  }));
 });
 
 router.get('/workspace', async (req, res) => {

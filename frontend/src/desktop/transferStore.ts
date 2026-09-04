@@ -16,6 +16,23 @@ export type StoredDownload = {
   updatedAt: string;
 };
 
+export type StoredUpload = {
+  id: string;
+  userId: string;
+  filename: string;
+  size: number;
+  lastModified: number;
+  status: string;
+  progress: number;
+  transferredBytes: number;
+  transferId?: string;
+  videoId?: string;
+  uploadUrl?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 let databasePromise: Promise<any> | null = null;
 
 async function database() {
@@ -41,10 +58,108 @@ async function database() {
         )
       `);
       await db.execute('CREATE INDEX IF NOT EXISTS download_queue_user_status_idx ON download_queue(user_id, status, updated_at)');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS upload_queue (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          last_modified INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          progress INTEGER NOT NULL DEFAULT 0,
+          transferred_bytes INTEGER NOT NULL DEFAULT 0,
+          transfer_id TEXT,
+          video_id TEXT,
+          upload_url TEXT,
+          metadata_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `);
+      await db.execute('CREATE INDEX IF NOT EXISTS upload_queue_user_status_idx ON upload_queue(user_id, status, updated_at)');
       return db;
     });
   }
   return databasePromise;
+}
+
+export async function persistUploads(records: StoredUpload[]): Promise<void> {
+  const db = await database();
+  if (!db) return;
+  for (const item of records) {
+    await db.execute(
+      `INSERT INTO upload_queue (
+        id, user_id, filename, size, last_modified, status, progress,
+        transferred_bytes, transfer_id, video_id, upload_url, metadata_json,
+        created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ON CONFLICT(id) DO UPDATE SET
+        status=excluded.status,
+        progress=excluded.progress,
+        transferred_bytes=excluded.transferred_bytes,
+        transfer_id=excluded.transfer_id,
+        video_id=excluded.video_id,
+        upload_url=excluded.upload_url,
+        metadata_json=excluded.metadata_json,
+        updated_at=excluded.updated_at`,
+      [
+        item.id,
+        item.userId,
+        item.filename,
+        Number(item.size || 0),
+        Number(item.lastModified || 0),
+        item.status,
+        Number(item.progress || 0),
+        Number(item.transferredBytes || 0),
+        item.transferId || null,
+        item.videoId || null,
+        item.uploadUrl || null,
+        JSON.stringify(item.metadata || {}),
+        item.createdAt,
+        item.updatedAt,
+      ]
+    );
+  }
+}
+
+export async function loadRecoverableUploads(userId: string): Promise<StoredUpload[]> {
+  const db = await database();
+  if (!db || !userId) return [];
+  const rows = await db.select(
+    `SELECT * FROM upload_queue
+     WHERE user_id = $1 AND status IN ('pending','preparing','uploading','paused','verifying','error')
+     ORDER BY updated_at ASC LIMIT 30`,
+    [userId]
+  );
+  return rows.map((row: any) => ({
+    id: row.id,
+    userId: row.user_id,
+    filename: row.filename,
+    size: Number(row.size || 0),
+    lastModified: Number(row.last_modified || 0),
+    status: 'paused',
+    progress: Number(row.progress || 0),
+    transferredBytes: Number(row.transferred_bytes || 0),
+    transferId: row.transfer_id || '',
+    videoId: row.video_id || '',
+    uploadUrl: row.upload_url || '',
+    metadata: JSON.parse(row.metadata_json || '{}'),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function pruneFinishedUploads(userId: string): Promise<void> {
+  const db = await database();
+  if (!db || !userId) return;
+  await db.execute(
+    `DELETE FROM upload_queue
+     WHERE user_id = $1 AND status IN ('done','cancelled')
+       AND id NOT IN (
+         SELECT id FROM upload_queue WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 30
+       )`,
+    [userId]
+  );
 }
 
 export async function persistDownloads(records: StoredDownload[]): Promise<void> {

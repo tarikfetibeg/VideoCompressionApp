@@ -15,7 +15,7 @@ const EventOutboxSchema = new mongoose.Schema({
   }],
   entityType: {
     type: String,
-    enum: ['edit_job', 'video', 'show_day', 'correction', 'transfer', 'system'],
+    enum: ['edit_job', 'video', 'show_day', 'correction', 'transfer', 'program_final', 'system'],
     required: true,
   },
   entityId: { type: mongoose.Schema.Types.ObjectId },

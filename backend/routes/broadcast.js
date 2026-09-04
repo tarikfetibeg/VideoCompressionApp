@@ -34,6 +34,8 @@ const { applyApprovedArchiveEligibility } = require('../utils/archiveEligibility
 const { setDownloadHeaders } = require('../utils/downloadHeaders');
 const { streamAirPackage } = require('../services/downloadService');
 const { createOrUpdateCorrectionRequest } = require('../services/correctionWorkflowService');
+const { enqueueDomainEvent } = require('../services/domainEventService');
+const { handleShowDayAired } = require('../services/programFinalService');
 
 const router = express.Router();
 
@@ -99,6 +101,32 @@ function getDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 0;
   return date.getTime();
+}
+
+async function notifyRundownChange({ showDay, user, action, summary, itemId = null, video = null }) {
+  const changedAfterDownload = (showDay.downloadStates || []).some((state) => Boolean(state.lastDownloadedAt));
+  const severity = changedAfterDownload ? 'critical' : 'action_required';
+  return enqueueDomainEvent({
+    type: changedAfterDownload ? 'rundown.changed_after_download' : 'rundown.changed',
+    severity,
+    actor: user.id,
+    recipients: [video?.reporter].filter(Boolean),
+    recipientRoles: ['Producer', 'Realizator'],
+    entityType: 'show_day',
+    entityId: showDay._id,
+    entityVersion: Math.floor(new Date(showDay.updatedAt || Date.now()).getTime() / 1000),
+    title: changedAfterDownload ? 'Kritična promjena rundowna' : 'Rundown je promijenjen',
+    bodyPreview: summary,
+    deepLink: 'vca://my-work',
+    payload: {
+      showDayId: showDay._id,
+      itemId,
+      videoId: video?._id || null,
+      action,
+      changedAfterDownload,
+    },
+    dedupeKey: `rundown:${showDay._id}:${action}:${itemId || 'show'}:${Date.now()}`,
+  });
 }
 
 function parseAirDate(value) {
@@ -477,7 +505,7 @@ function buildRundownText(showDay, items) {
 
 router.get('/programs', async (req, res) => {
   try {
-    const programs = await BroadcastProgram.find({ active: true }).sort({ name: 1 });
+    const programs = await BroadcastProgram.find({ active: true }).populate('programType').sort({ name: 1 });
     res.json(programs);
   } catch (error) {
     console.error('Error fetching broadcast programs:', error);
@@ -1135,6 +1163,13 @@ router.post('/show-day/:showDayId/mark-aired', authorize(showAiringRoles), async
 
     await showDay.save();
 
+    try {
+      await handleShowDayAired(showDay, req.user);
+    } catch (programFinalError) {
+      // Emisija je već potvrđena u eteru; pomoćni arhivski workflow ne smije poništiti tu odluku.
+      console.error('Program Final mark-aired integration failed:', programFinalError);
+    }
+
     await AuditLog.create({
       action: 'Confirm Show Aired',
       performedBy: req.user.id,
@@ -1218,6 +1253,15 @@ router.post('/show-day/:showDayId/items', authorize(producerRoles), async (req, 
 
     await showDay.save();
 
+    await notifyRundownChange({
+      showDay,
+      user: req.user,
+      action: 'add_material',
+      summary: `Dodan materijal: ${materialTitle}`,
+      itemId: showDay.items[showDay.items.length - 1]?._id,
+      video,
+    });
+
     await AuditLog.create({
       action: 'Add Material To Show',
       performedBy: req.user.id,
@@ -1299,6 +1343,13 @@ router.patch('/show-day/:showDayId/items/reorder', authorize(reorderRoles), asyn
     });
 
     await showDay.save();
+
+    await notifyRundownChange({
+      showDay,
+      user: req.user,
+      action: 'reorder',
+      summary: `Promijenjen je redoslijed ${activeItems.length} stavki rundowna.`,
+    });
 
     await AuditLog.create({
       action: 'Reorder Show Rundown',
@@ -1491,6 +1542,15 @@ router.patch('/show-day/:showDayId/items/:itemId/replace', authorize(producerRol
 
     await showDay.save();
 
+    await notifyRundownChange({
+      showDay,
+      user: req.user,
+      action: 'replace_material',
+      summary: `Materijal je zamijenjen: ${previousTitle || previousVideoId} -> ${materialTitle}`,
+      itemId: item._id,
+      video,
+    });
+
     const correctionRequest = await CorrectionRequest.findOne({
       video: previousVideoId,
       status: { $in: ['reported', 'assigned', 'in_edit', 'ready_for_review'] },
@@ -1593,6 +1653,14 @@ router.patch('/show-day/:showDayId/items/:itemId', authorize(producerRoles), asy
     }
 
     await showDay.save();
+
+    await notifyRundownChange({
+      showDay,
+      user: req.user,
+      action: status === 'removed' ? 'remove_material' : 'update_material_status',
+      summary: `"${materialTitle}" je promijenjen iz ${previousStatus} u ${status}.`,
+      itemId: item._id,
+    });
 
     await AuditLog.create({
       action: 'Update Show Material Status',

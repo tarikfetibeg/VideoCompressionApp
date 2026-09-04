@@ -14,8 +14,11 @@ dotenvFlow.config({ cwd: projectRoot });
 
 const MediaAsset = require(path.join(projectRoot, 'backend', 'models', 'MediaAsset'));
 const MediaNode = require(path.join(projectRoot, 'backend', 'models', 'MediaNode'));
+const TransferSession = require(path.join(projectRoot, 'backend', 'models', 'TransferSession'));
 const { paths, STORAGE_ROOT, ensureStorageFolders } = require(path.join(projectRoot, 'backend', 'utils', 'storagePaths'));
+const { setDownloadHeaders } = require(path.join(projectRoot, 'backend', 'utils', 'downloadHeaders'));
 const { sendFileWithRange } = require(path.join(projectRoot, 'backend', 'utils', 'mediaStreaming'));
+const { scanFinalWatchedFolder, watchedRoot } = require(path.join(projectRoot, 'backend', 'services', 'finalWatchedFolderService'));
 
 const NODE_ID = process.env.EDGE_NODE_ID || 'primary-edge';
 const NODE_NAME = process.env.EDGE_NODE_NAME || 'Primarni Media Edge';
@@ -26,8 +29,10 @@ const CONTROL_API_URL = String(process.env.CONTROL_API_URL || 'http://127.0.0.1:
 const EDGE_SECRET = process.env.EDGE_REGISTRATION_SECRET || '';
 const TRANSFER_SECRET = process.env.EDGE_TRANSFER_SECRET || process.env.JWT_SECRET || '';
 const uploadDirectory = path.join(paths.temp, 'edge-uploads');
+const transferAuthCache = new Map();
 
 let stopping = false;
+let registeredNodeObjectId = null;
 const childWorkers = [];
 
 function authPayload(req) {
@@ -80,11 +85,13 @@ function capabilities() {
     hls: true,
     resumableUploads: true,
     codecs: ['h264', 'aac', 'mp3'],
+    programFinalWatch: process.env.FINAL_PROGRAM_WATCH_ENABLED !== 'false',
+    programFinalWatchRoot: watchedRoot(),
   };
 }
 
 async function register() {
-  return postControl('/v2/media-nodes/register', {
+  const result = await postControl('/v2/media-nodes/register', {
     nodeId: NODE_ID,
     name: NODE_NAME,
     site: SITE_ID,
@@ -92,6 +99,26 @@ async function register() {
     capabilities: capabilities(),
     storage: await storageStats(),
   });
+  registeredNodeObjectId = result.node?._id || null;
+  return result;
+}
+
+async function activeUploadTransfer(payload, { fresh = false } = {}) {
+  const cached = transferAuthCache.get(payload.transferId);
+  if (!fresh && cached && cached.cachedUntil > Date.now()) return cached.transfer;
+  if (!registeredNodeObjectId) throw new Error('Media Edge registracija nije završena.');
+  const transfer = await TransferSession.findOne({
+    transferId: payload.transferId,
+    user: payload.userId,
+    mediaNode: registeredNodeObjectId,
+    direction: 'upload',
+    status: { $nin: ['completed', 'cancelled'] },
+    expiresAt: { $gt: new Date() },
+  });
+  if (!transfer) throw new Error('Upload transfer nije aktivan na ovom Media Edge čvoru.');
+  transferAuthCache.set(payload.transferId, { transfer, cachedUntil: Date.now() + 10_000 });
+  if (transferAuthCache.size > 5000) transferAuthCache.delete(transferAuthCache.keys().next().value);
+  return transfer;
 }
 
 async function heartbeat() {
@@ -115,6 +142,21 @@ async function processClaimedTask(task) {
     } else if (task.kind === 'preview_rebuild') {
       const { enqueuePreviewMaintenance } = require(path.join(projectRoot, 'backend', 'queues', 'previewMaintenanceQueue'));
       await enqueuePreviewMaintenance(task.video, task.payload?.assetTypes || []);
+    } else if (task.kind === 'program_final_processing') {
+      const { enqueueProgramFinalProcessing } = require(path.join(projectRoot, 'backend', 'queues', 'programFinalQueue'));
+      await enqueueProgramFinalProcessing(task.programFinalVersion || task.payload?.versionId, task.payload || {});
+    } else if (task.kind === 'program_final_ingest') {
+      const { finalizeProgramFinalTransfer } = require(path.join(projectRoot, 'backend', 'services', 'programFinalTransferService'));
+      const transferId = String(task.payload?.transferId || '');
+      const uploadedPath = path.join(uploadDirectory, transferId);
+      const stat = await fs.promises.stat(uploadedPath);
+      await finalizeProgramFinalTransfer({ transferId, uploadedPath, size: stat.size });
+    } else if (task.kind === 'program_final_fixity') {
+      const { verifyVersionFixity } = require(path.join(projectRoot, 'backend', 'services', 'programFinalProtectionService'));
+      const ProgramFinalVersion = require(path.join(projectRoot, 'backend', 'models', 'ProgramFinalVersion'));
+      const version = await ProgramFinalVersion.findById(task.programFinalVersion || task.payload?.versionId);
+      if (!version) throw new Error('Program Final verzija nije pronađena.');
+      await verifyVersionFixity(version);
     } else {
       throw new Error(`Nepodržan Media Edge task: ${task.kind}`);
     }
@@ -167,13 +209,34 @@ async function start() {
   await mongoose.connect(process.env.MONGODB_URI, { autoIndex: false });
   await register();
 
+  const {
+    isLocalProgramFinalQueue,
+    programFinalQueue,
+    programFinalQueueConcurrency,
+  } = require(path.join(projectRoot, 'backend', 'queues', 'programFinalQueue'));
+  if (isLocalProgramFinalQueue) {
+    const { processProgramFinalQueueTask } = require(path.join(projectRoot, 'backend', 'services', 'programFinalQueueProcessor'));
+    programFinalQueue.process(programFinalQueueConcurrency, (job) => processProgramFinalQueueTask(job.data, job));
+  }
+
   const tusServer = new TusServer({
     path: '/files',
     datastore: new FileStore({ directory: uploadDirectory }),
-    maxSize: Math.max(Number(process.env.MAX_UPLOAD_SIZE_GB || 25), 1) * 1024 ** 3,
-    async onIncomingRequest(req) {
+    maxSize: Math.max(
+      Number(process.env.MAX_UPLOAD_SIZE_GB || 25),
+      Number(process.env.MAX_PROGRAM_FINAL_SIZE_GB || 100),
+      1
+    ) * 1024 ** 3,
+    namingFunction(req) {
+      return authPayload(req).transferId;
+    },
+    async onIncomingRequest(req, _res, uploadId) {
       try {
         req.edgeTransfer = authPayload(req);
+        if (uploadId && uploadId !== req.edgeTransfer.transferId) {
+          throw new Error('Transfer token nije vezan za ovaj upload.');
+        }
+        req.edgeTransferRecord = await activeUploadTransfer(req.edgeTransfer);
       } catch (error) {
         throw { status_code: 401, body: error.message };
       }
@@ -183,28 +246,64 @@ async function start() {
       if (!transferId || transferId !== req.edgeTransfer?.transferId) {
         throw { status_code: 403, body: 'Upload metadata ne odgovara transfer tokenu.' };
       }
+      if (Number(upload.size) !== Number(req.edgeTransferRecord?.totalBytes)) {
+        throw { status_code: 409, body: 'Veličina fajla ne odgovara pripremljenom transferu.' };
+      }
+      if (upload.metadata?.filename !== req.edgeTransferRecord?.filename) {
+        throw { status_code: 409, body: 'Naziv fajla ne odgovara pripremljenom transferu.' };
+      }
+      req.edgeTransferRecord.status = 'transferring';
+      await req.edgeTransferRecord.save();
       return { res };
     },
   });
 
   tusServer.on(EVENTS.POST_FINISH, async (req, _res, upload) => {
+    let transferId = '';
     try {
       const transfer = authPayload(req);
+      transferId = transfer.transferId;
       const filePath = path.join(uploadDirectory, upload.id);
       const stat = await fs.promises.stat(filePath);
-      const sha256 = await sha256File(filePath);
-      const relativePath = path.relative(STORAGE_ROOT, filePath).replace(/\\/g, '/');
-      await postControl(`/v2/media-nodes/${NODE_ID}/transfers/${transfer.transferId}/complete`, {
-        relativePath,
-        size: stat.size,
-        sha256,
-      });
+      const transferRecord = await activeUploadTransfer(transfer, { fresh: true });
+      if (transferRecord.entityType === 'program_final') {
+        const { finalizeProgramFinalTransfer } = require(path.join(projectRoot, 'backend', 'services', 'programFinalTransferService'));
+        await finalizeProgramFinalTransfer({ transferId: transfer.transferId, uploadedPath: filePath, size: stat.size });
+      } else {
+        const sha256 = await sha256File(filePath);
+        const relativePath = path.relative(STORAGE_ROOT, filePath).replace(/\\/g, '/');
+        await postControl(`/v2/media-nodes/${NODE_ID}/transfers/${transfer.transferId}/complete`, {
+          relativePath,
+          size: stat.size,
+          sha256,
+        });
+      }
+      transferAuthCache.delete(transfer.transferId);
     } catch (error) {
       console.error('Upload completion callback failed:', error);
+      if (transferId) {
+        await TransferSession.updateOne(
+          { transferId, status: { $ne: 'completed' } },
+          { $set: { status: 'failed', error: String(error.message || error).slice(0, 2000) } }
+        ).catch(() => {});
+      }
     }
   });
 
   const app = express();
+  app.use((req, res, next) => {
+    const configured = String(process.env.EDGE_CORS_ORIGINS || '*').split(',').map((item) => item.trim());
+    const origin = req.headers.origin;
+    if (origin && (configured.includes('*') || configured.includes(origin))) {
+      res.setHeader('Access-Control-Allow-Origin', configured.includes('*') ? '*' : origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range, Tus-Resumable, Upload-Length, Upload-Metadata, Upload-Offset');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, PATCH, POST');
+    res.setHeader('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Length, Content-Range, Location, Tus-Resumable, Tus-Version, Tus-Extension, Upload-Offset, Upload-Length');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    return next();
+  });
   app.get('/health', async (_req, res) => {
     res.json({ nodeId: NODE_ID, status: 'online', storage: await storageStats() });
   });
@@ -229,6 +328,28 @@ async function start() {
       return res.status(401).json({ message: error.message });
     }
   });
+  app.get('/api/edge/program-finals/:token/*', async (req, res) => {
+    try {
+      const { resolveProgramFinalMedia } = require(path.join(projectRoot, 'backend', 'services', 'programFinalMediaService'));
+      const { filePath, extension } = await resolveProgramFinalMedia(req.params.token, req.params[0]);
+      if (extension === '.mp4') {
+        setDownloadHeaders(res, 'final-preview.mp4', { type: 'inline' });
+        return sendFileWithRange(req, res, filePath, 'video/mp4');
+      }
+      const contentTypes = {
+        '.m3u8': 'application/vnd.apple.mpegurl',
+        '.ts': 'video/mp2t',
+        '.jpg': 'image/jpeg',
+      };
+      res.setHeader('Content-Type', contentTypes[extension] || 'application/octet-stream');
+      res.setHeader('Cache-Control', extension === '.m3u8' ? 'private, no-store' : 'private, max-age=3600, immutable');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      return fs.createReadStream(filePath).pipe(res);
+    } catch (error) {
+      if (!res.headersSent) return res.status(error.statusCode || 500).json({ message: error.message });
+      return undefined;
+    }
+  });
 
   app.listen(EDGE_PORT, '0.0.0.0', () => {
     console.log(`Media Edge ${NODE_ID} sluša na portu ${EDGE_PORT}.`);
@@ -238,10 +359,26 @@ async function start() {
     startWorker('videoWorker.js');
     startWorker('hlsWorker.js');
     startWorker('previewMaintenanceWorker.js');
+    startWorker('programFinalWorker.js');
   }
 
   setInterval(() => heartbeat().catch((error) => console.error('Media Edge heartbeat failed:', error.message)), 30_000);
   setInterval(pollTasks, 2_000);
+  if (process.env.FINAL_PROGRAM_WATCH_ENABLED !== 'false') {
+    scanFinalWatchedFolder(NODE_ID).catch((error) => console.error('Program Final watched-folder scan failed:', error.message));
+    setInterval(
+      () => scanFinalWatchedFolder(NODE_ID).catch((error) => console.error('Program Final watched-folder scan failed:', error.message)),
+      Math.max(Number(process.env.FINAL_PROGRAM_WATCH_INTERVAL_SECONDS || 30), 10) * 1000
+    );
+  }
+  if (String(process.env.PROGRAM_FINAL_FIXITY_OWNER || 'api').toLowerCase() === 'edge') {
+    const { runProgramFinalFixityCheck } = require(path.join(projectRoot, 'backend', 'services', 'programFinalProtectionService'));
+    runProgramFinalFixityCheck().catch((error) => console.error('Program Final fixity check failed:', error.message));
+    setInterval(
+      () => runProgramFinalFixityCheck().catch((error) => console.error('Program Final fixity check failed:', error.message)),
+      60 * 60 * 1000
+    );
+  }
 }
 
 async function shutdown() {

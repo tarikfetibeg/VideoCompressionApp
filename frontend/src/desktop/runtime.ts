@@ -62,7 +62,10 @@ export async function listenForDesktopNavigation(
         else if (url.searchParams.get('action') === 'premiere') onNavigate(`/edit-jobs/${id}?desktopAction=premiere`);
         else onNavigate(`/edit-jobs/${id}`);
       }
-      if (entity === 'video' && id) onNavigate(`/video-details/${id}`);
+      if (entity === 'video' && id) {
+        const start = url.searchParams.get('start') || url.searchParams.get('t');
+        onNavigate(`/video-details/${id}${start ? `?start=${encodeURIComponent(start)}` : ''}`);
+      }
       if (entity === 'my-work') onNavigate('/my-work');
     } catch {
       if (value.startsWith('/')) onNavigate(value);
@@ -188,4 +191,58 @@ export async function listenForPremiereExports(
   if (!isDesktopRuntime()) return () => {};
   const { listen } = await import('@tauri-apps/api/event');
   return listen('desktop:premiere-export-ready', (event) => handler(event.payload as any));
+}
+
+export interface DesktopUpdateInfo {
+  available: boolean;
+  version?: string;
+  currentVersion?: string;
+  body?: string;
+  date?: string;
+}
+
+let pendingDesktopUpdate: any = null;
+
+export async function checkForDesktopUpdate(): Promise<DesktopUpdateInfo> {
+  if (!isDesktopRuntime()) return { available: false };
+  const { check } = await import('@tauri-apps/plugin-updater');
+  const update = await check();
+  pendingDesktopUpdate = update || null;
+  if (!update) return { available: false };
+  return {
+    available: true,
+    version: update.version,
+    currentVersion: update.currentVersion,
+    body: update.body || '',
+    date: update.date || '',
+  };
+}
+
+export async function installPendingDesktopUpdate(
+  onProgress?: (progress: { downloadedBytes: number; totalBytes?: number }) => void
+): Promise<void> {
+  if (!isDesktopRuntime()) throw new Error('Desktop update je dostupan samo u instaliranoj aplikaciji.');
+  if (!pendingDesktopUpdate) {
+    await checkForDesktopUpdate();
+  }
+  if (!pendingDesktopUpdate) throw new Error('Nema dostupnog desktop updatea.');
+  let downloadedBytes = 0;
+  let totalBytes: number | undefined;
+  await pendingDesktopUpdate.downloadAndInstall((event: any) => {
+    if (event.event === 'Started') totalBytes = Number(event.data?.contentLength) || undefined;
+    if (event.event === 'Progress') downloadedBytes += Number(event.data?.chunkLength) || 0;
+    if (onProgress) onProgress({ downloadedBytes, totalBytes });
+  });
+}
+
+export async function relaunchDesktopApp(): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const { relaunch } = await import('@tauri-apps/plugin-process');
+  await relaunch();
+}
+
+export async function createDesktopDiagnostics(snapshot: Record<string, unknown>): Promise<string> {
+  if (!isDesktopRuntime()) throw new Error('Dijagnostika je dostupna samo u desktop aplikaciji.');
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('create_diagnostics_report', { snapshot });
 }

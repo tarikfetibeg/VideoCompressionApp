@@ -17,6 +17,20 @@ Control plane u cloudu čuva metadata, workflow i notifikacije. Raw, master, fin
 - Integrity: SHA-256 prije označavanja verificiranog asseta.
 - Idempotency: `(user, idempotencyKey)` sprečava dupli transfer session.
 
+Za kompletne finalne emisije `PROGRAM_FINAL_UPLOAD_TARGET=edge` usmjerava
+rucni TUS upload na svjeze dostupan Edge. Edge provjerava potpisani token i
+centralni `TransferSession`, kopira/verifikuje master lokalno i tek zatim
+pokrece poseban Program Final proxy queue. HLS ticket vraca Edge URL jer taj
+cvor posjeduje proxy; nikada ne vraca putanju mastera.
+
+Preporucena podjela procesa:
+
+- control API: `PROGRAM_FINAL_WORKER_EXTERNAL=true`;
+- Media Edge: `EDGE_RUN_LOCAL_WORKERS=true` i
+  `PROGRAM_FINAL_FIXITY_OWNER=edge`;
+- oba procesa: isti Redis i MongoDB tokom pilot kompatibilnog rezima;
+- `EDGE_BASE_URL`: LAN DNS/IP dostupan svim desktop klijentima.
+
 Edge registracija i heartbeat koriste `EDGE_REGISTRATION_SECRET`; pojedinačni transfer koristi kratkotrajni JWT sa smjerom, node ID-em i asset ID-em. Edge ne zahtijeva inbound konekciju prema cloud bazi za control taskove, ali pilot implementacija još podržava direktan MongoDB pristup za kompatibilne worker modele. Produkcijski hardening treba ukloniti taj direktni DB pristup nakon potpunog task/result API razdvajanja.
 
 ## Operativni fallback
@@ -29,4 +43,3 @@ Ako Edge nije dostupan, metadata i HLS workflow ostaju funkcionalni. Original do
 - [MDN HTTP Range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Range_requests)
 - [AWS S3 multipart upload overview](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
 - [NVIDIA FFmpeg GPU acceleration](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/ffmpeg-with-nvidia-gpu/index.html)
-

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const Video = require('../models/Video');
+const CorrectionRequest = require('../models/CorrectionRequest');
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
 const BroadcastProgram = require('../models/BroadcastProgram');
@@ -14,6 +15,17 @@ const { removeScrubPreviewFolderForVideo } = require('../services/videoProcessin
 const { removeHlsPreviewFolder } = require('../services/hlsPreviewService');
 const { addVideoPrefixSearchFilter } = require('../utils/searchText');
 const { addContentTypeFallbackFilter } = require('../utils/contentTypeFilters');
+const {
+  assertArchiveClaim,
+  buildArchiveAssignmentCondition,
+  clearArchiveClaim,
+  extendArchiveClaim,
+  getArchiveReviewWarnings,
+  getClaimExpiry,
+  getClaimMinutes,
+  isClaimActive,
+  isClaimOwner,
+} = require('../services/archiveWorkflowService');
 
 const router = express.Router();
 
@@ -181,12 +193,13 @@ function populateArchiveVideo(query) {
     .populate('correctionReportedBy', 'username role')
     .populate({
       path: 'activeCorrectionRequest',
-      select: 'status origin assignedEditor correctionJob correctedBy correctedAt correctedVideo',
+      select: 'status origin assignedEditor correctionJob correctedBy correctedAt correctedVideo issues highestSeverity note timestamp updatedAt',
       populate: [
         { path: 'assignedEditor', select: 'username role' },
         { path: 'correctedBy', select: 'username role' },
       ],
     })
+    .populate('archiveAssignedTo', 'username role')
     .populate('archiveReviewedBy', 'username role')
     .populate('archiveTagsUpdatedBy', 'username role')
     .populate('duplicateOf', 'filename originalFilename finalTitle')
@@ -194,10 +207,11 @@ function populateArchiveVideo(query) {
     .populate('contentType');
 }
 
-async function buildArchiveVideoFilter(query = {}) {
+async function buildArchiveVideoFilter(query = {}, user = null) {
   const filter = buildArchiveMaterialBaseFilter();
   const andConditions = [];
-  const review = String(query.reviewStatus || query.review || 'unreviewed');
+  const attention = String(query.attention || 'all');
+  const review = String(query.reviewStatus || query.review || (attention === 'all' ? 'unreviewed' : 'all'));
   const workflow = String(query.workflowStatus || query.workflow || 'all');
   const search = String(query.q || '').trim();
 
@@ -237,6 +251,31 @@ async function buildArchiveVideoFilter(query = {}) {
     filter.correctionStatus = 'needs_correction';
   }
 
+  if (attention === 'review') {
+    andConditions.push({
+      $or: [
+        { archiveReviewStatus: { $exists: false } },
+        { archiveReviewStatus: 'unreviewed' },
+        { archiveReviewStatus: null },
+      ],
+    });
+  } else if (attention === 'metadata') {
+    filter.archiveReviewStatus = 'needs_metadata';
+  } else if (attention === 'in_edit' || attention === 'ready_for_review') {
+    const statuses = attention === 'in_edit'
+      ? ['reported', 'assigned', 'in_edit']
+      : ['ready_for_review'];
+    const correctionVideoIds = await CorrectionRequest.distinct('video', { status: { $in: statuses } });
+    filter._id = { $in: correctionVideoIds };
+  }
+
+  const assignmentCondition = buildArchiveAssignmentCondition(
+    String(query.assignment || 'all'),
+    user?.id || user?._id,
+    new Date()
+  );
+  if (assignmentCondition) andConditions.push(assignmentCondition);
+
   await addContentTypeFallbackFilter(filter, query.contentTypeId);
 
   addVideoPrefixSearchFilter(filter, search);
@@ -248,8 +287,9 @@ async function buildArchiveVideoFilter(query = {}) {
   return filter;
 }
 
-async function buildArchiveWorkspaceSummary(filter) {
+async function buildArchiveWorkspaceSummary(filter, user = null) {
   const baseFilter = buildArchiveMaterialBaseFilter();
+  const now = new Date();
   const unreviewedFilter = {
     ...baseFilter,
     $and: [{
@@ -261,6 +301,11 @@ async function buildArchiveWorkspaceSummary(filter) {
     }],
   };
 
+  const [inEditVideoIds, readyVideoIds] = await Promise.all([
+    CorrectionRequest.distinct('video', { status: { $in: ['reported', 'assigned', 'in_edit'] } }),
+    CorrectionRequest.distinct('video', { status: 'ready_for_review' }),
+  ]);
+
   const [
     total,
     filtered,
@@ -271,6 +316,10 @@ async function buildArchiveWorkspaceSummary(filter) {
     needsCorrection,
     aired,
     archiveReady,
+    mine,
+    unassigned,
+    inEdit,
+    readyForReview,
   ] = await Promise.all([
     Video.countDocuments(baseFilter),
     Video.countDocuments(filter),
@@ -287,6 +336,19 @@ async function buildArchiveWorkspaceSummary(filter) {
         { finalApprovalStatus: 'approved' },
       ],
     }),
+    user
+      ? Video.countDocuments({
+        ...baseFilter,
+        archiveAssignedTo: user.id || user._id,
+        archiveAssignmentExpiresAt: { $gt: now },
+      })
+      : Promise.resolve(0),
+    Video.countDocuments({
+      ...baseFilter,
+      $and: [buildArchiveAssignmentCondition('unassigned', null, now)],
+    }),
+    Video.countDocuments({ ...baseFilter, _id: { $in: inEditVideoIds } }),
+    Video.countDocuments({ ...baseFilter, _id: { $in: readyVideoIds } }),
   ]);
 
   return {
@@ -300,6 +362,10 @@ async function buildArchiveWorkspaceSummary(filter) {
     needsCorrection,
     aired,
     archiveReady,
+    mine,
+    unassigned,
+    inEdit,
+    readyForReview,
   };
 }
 
@@ -466,7 +532,6 @@ router.get('/summary', async (req, res) => {
       needsMetadata,
       duplicateMarked,
       needsCorrection,
-      duplicateCandidates,
     ] = await Promise.all([
       Video.countDocuments(archiveMaterialFilter),
       Video.countDocuments({ status: 'raw' }),
@@ -483,10 +548,7 @@ router.get('/summary', async (req, res) => {
       Video.countDocuments({ ...archiveMaterialFilter, archiveReviewStatus: 'needs_metadata' }),
       Video.countDocuments({ ...archiveMaterialFilter, archiveReviewStatus: 'duplicate' }),
       Video.countDocuments({ ...archiveMaterialFilter, correctionStatus: 'needs_correction' }),
-      Video.find(archiveMaterialFilter).select('filename originalFilename finalTitle duration sourceDuration sizeOriginal sizeCompressed sizePreview archivedAt uploadDate').lean(),
     ]);
-
-    const duplicateGroups = buildDuplicateGroups(duplicateCandidates);
 
     res.json({
       totalVideos,
@@ -499,8 +561,8 @@ router.get('/summary', async (req, res) => {
       needsMetadata,
       duplicateMarked,
       needsCorrection,
-      duplicateCandidateGroups: duplicateGroups.length,
-      duplicateCandidateVideos: duplicateGroups.reduce((sum, group) => sum + group.count, 0),
+      duplicateCandidateGroups: duplicateMarked,
+      duplicateCandidateVideos: duplicateMarked,
     });
   } catch (error) {
     console.error('Error loading archive summary:', error);
@@ -515,7 +577,7 @@ router.get('/videos', async (req, res) => {
 
   try {
     const videos = await populateArchiveVideo(
-      Video.find(await buildArchiveVideoFilter(req.query))
+      Video.find(await buildArchiveVideoFilter(req.query, req.user))
         .sort({ uploadDate: -1 })
         .limit(limit)
     );
@@ -529,7 +591,7 @@ router.get('/videos', async (req, res) => {
 
 router.get('/videos/workspace', async (req, res) => {
   const { page, limit, skip } = parseWorkspacePagination(req.query);
-  const filter = await buildArchiveVideoFilter(req.query);
+  const filter = await buildArchiveVideoFilter(req.query, req.user);
   const sort = buildArchiveWorkspaceSort(req.query);
 
   try {
@@ -541,7 +603,7 @@ router.get('/videos/workspace', async (req, res) => {
           .skip(skip)
           .limit(limit)
       ),
-      buildArchiveWorkspaceSummary(filter),
+      buildArchiveWorkspaceSummary(filter, req.user),
       buildArchiveWorkspaceFacets(filter),
     ]);
 
@@ -557,6 +619,124 @@ router.get('/videos/workspace', async (req, res) => {
   } catch (error) {
     console.error('Error loading archive workspace videos:', error);
     res.status(500).json({ message: 'Error loading archive workspace videos.' });
+  }
+});
+
+router.patch('/videos/:id/claim', async (req, res) => {
+  const now = new Date();
+  const expiresAt = getClaimExpiry(now);
+
+  try {
+    const video = await Video.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        ...buildArchiveMaterialBaseFilter(),
+        $or: [
+          { archiveAssignedTo: { $exists: false } },
+          { archiveAssignedTo: null },
+          { archiveAssignmentExpiresAt: { $exists: false } },
+          { archiveAssignmentExpiresAt: null },
+          { archiveAssignmentExpiresAt: { $lte: now } },
+          { archiveAssignedTo: req.user.id },
+        ],
+      },
+      {
+        $set: {
+          archiveAssignedTo: req.user.id,
+          archiveAssignedAt: now,
+          archiveAssignmentExpiresAt: expiresAt,
+        },
+      },
+      { new: true }
+    );
+
+    if (!video) {
+      const existing = await Video.findById(req.params.id).populate('archiveAssignedTo', 'username role');
+      if (!existing) return res.status(404).json({ message: 'Video nije pronađen.' });
+      const holder = existing.archiveAssignedTo?.username || 'drugi arhivista';
+      return res.status(409).json({
+        code: 'ARCHIVE_ALREADY_CLAIMED',
+        message: `Materijal je trenutno preuzeo ${holder}.`,
+        assignment: {
+          assignedTo: existing.archiveAssignedTo || null,
+          expiresAt: existing.archiveAssignmentExpiresAt || null,
+        },
+      });
+    }
+
+    await AuditLog.create({
+      action: 'Claim Archive Video',
+      performedBy: req.user.id,
+      details: { videoId: video._id, expiresAt, leaseMinutes: getClaimMinutes() },
+    });
+    const populatedVideo = await populateArchiveVideo(Video.findById(video._id));
+    return res.json({ message: 'Materijal je preuzet u vaš radni red.', video: populatedVideo });
+  } catch (error) {
+    console.error('Error claiming archive video:', error);
+    return res.status(500).json({ message: 'Materijal nije moguće preuzeti.' });
+  }
+});
+
+router.patch('/videos/:id/release', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video nije pronađen.' });
+    if (req.user.role !== 'Admin' && !isClaimOwner(video, req.user)) {
+      return res.status(409).json({ message: 'Samo trenutni vlasnik reda može osloboditi materijal.' });
+    }
+
+    const previousAssignee = video.archiveAssignedTo || null;
+    clearArchiveClaim(video);
+    await video.save();
+    await AuditLog.create({
+      action: 'Release Archive Video',
+      performedBy: req.user.id,
+      details: { videoId: video._id, previousAssignee },
+    });
+    const populatedVideo = await populateArchiveVideo(Video.findById(video._id));
+    return res.json({ message: 'Materijal je vraćen u nepreuzeti red.', video: populatedVideo });
+  } catch (error) {
+    console.error('Error releasing archive video:', error);
+    return res.status(500).json({ message: 'Materijal nije moguće osloboditi.' });
+  }
+});
+
+router.patch('/videos/:id/assignment', authorize(['Admin']), async (req, res) => {
+  const assignedToId = String(req.body?.assignedToId || '').trim();
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video nije pronađen.' });
+    const previousAssignee = video.archiveAssignedTo || null;
+
+    if (!assignedToId) {
+      clearArchiveClaim(video);
+    } else {
+      if (!mongoose.Types.ObjectId.isValid(assignedToId)) {
+        return res.status(400).json({ message: 'Odabrani arhivista nije ispravan.' });
+      }
+      const archivist = await User.findOne({ _id: assignedToId, role: 'Archivist' }).select('_id');
+      if (!archivist) return res.status(404).json({ message: 'Odabrani arhivista nije pronađen.' });
+      video.archiveAssignedTo = archivist._id;
+      video.archiveAssignedAt = new Date();
+      video.archiveAssignmentExpiresAt = getClaimExpiry();
+    }
+
+    await video.save();
+    await AuditLog.create({
+      action: 'Admin Reassign Archive Video',
+      performedBy: req.user.id,
+      details: {
+        videoId: video._id,
+        previousAssignee,
+        assignedTo: video.archiveAssignedTo || null,
+        expiresAt: video.archiveAssignmentExpiresAt || null,
+      },
+    });
+    const populatedVideo = await populateArchiveVideo(Video.findById(video._id));
+    return res.json({ message: 'Arhivističko zaduženje je ažurirano.', video: populatedVideo });
+  } catch (error) {
+    console.error('Error reassigning archive video:', error);
+    return res.status(500).json({ message: 'Zaduženje nije moguće ažurirati.' });
   }
 });
 
@@ -615,11 +795,12 @@ router.get('/duplicates/workspace', async (req, res) => {
 
 router.get('/metadata-options', async (req, res) => {
   try {
-    const [programs, contentTypes, reporters, editors, events] = await Promise.all([
+    const [programs, contentTypes, reporters, editors, archivists, events] = await Promise.all([
       BroadcastProgram.find({ active: true }).select('_id name defaultTime daysOfWeek active').sort({ name: 1 }),
       BroadcastContentType.find({ active: true }).select('_id name slug description active').sort({ name: 1 }),
       User.find({ role: { $in: reporterRoles } }).select('_id username role').sort({ username: 1 }),
       User.find({ role: { $in: editorRoles } }).select('_id username role').sort({ username: 1 }),
+      User.find({ role: 'Archivist' }).select('_id username role').sort({ username: 1 }),
       Video.distinct('event', { ...buildArchiveMaterialBaseFilter(), event: { $exists: true, $nin: [null, ''] } }),
     ]);
 
@@ -628,6 +809,7 @@ router.get('/metadata-options', async (req, res) => {
       contentTypes,
       reporters,
       editors,
+      archivists,
       events: events
         .map((event) => String(event || '').trim())
         .filter(Boolean)
@@ -645,6 +827,8 @@ router.patch('/videos/:id/metadata', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'Video not found.' });
+    assertArchiveClaim(video, req.user);
+    extendArchiveClaim(video, req.user);
 
     const previousSnapshot = buildMetadataSnapshot(video);
     const nextContentTypeId = Object.prototype.hasOwnProperty.call(body, 'contentTypeId')
@@ -726,8 +910,9 @@ router.patch('/videos/:id/metadata', async (req, res) => {
     const changedFields = buildChangedFields(previousSnapshot, nextSnapshot);
 
     if (changedFields.length === 0) {
+      await video.save();
       const populatedVideo = await populateArchiveVideo(Video.findById(video._id));
-      return res.json({ message: 'No metadata changes detected.', video: populatedVideo, changedFields: [] });
+      return res.json({ message: 'Nema promjena metadata podataka.', video: populatedVideo, changedFields: [] });
     }
 
     await video.save();
@@ -746,7 +931,7 @@ router.patch('/videos/:id/metadata', async (req, res) => {
     res.json({ message: 'Video metadata updated.', video: populatedVideo, changedFields });
   } catch (error) {
     console.error('Error updating archive metadata:', error);
-    res.status(error.statusCode || 500).json({ message: error.message || 'Error updating archive metadata.' });
+    res.status(error.statusCode || 500).json({ code: error.code, message: error.message || 'Metadata nije moguće ažurirati.' });
   }
 });
 
@@ -756,6 +941,8 @@ router.patch('/videos/:id/tags', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'Video not found.' });
+    assertArchiveClaim(video, req.user);
+    extendArchiveClaim(video, req.user);
 
     const currentTags = normalizeTagList(video.keywords || []);
     let nextTags = currentTags;
@@ -789,7 +976,7 @@ router.patch('/videos/:id/tags', async (req, res) => {
     res.json({ message: 'Video tags updated.', video: populatedVideo });
   } catch (error) {
     console.error('Error updating archive tags:', error);
-    res.status(500).json({ message: 'Error updating archive tags.' });
+    res.status(error.statusCode || 500).json({ code: error.code, message: error.message || 'Tagove nije moguće ažurirati.' });
   }
 });
 
@@ -808,6 +995,8 @@ router.patch('/videos/:id/content-type', async (req, res) => {
 
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'Video not found.' });
+    assertArchiveClaim(video, req.user);
+    extendArchiveClaim(video, req.user);
 
     const previousContentTypeId = video.contentType || null;
     const previousFinalCategory = video.finalCategory || null;
@@ -837,12 +1026,18 @@ router.patch('/videos/:id/content-type', async (req, res) => {
     res.json({ message: 'Video content type updated.', video: populatedVideo });
   } catch (error) {
     console.error('Error updating archive content type:', error);
-    res.status(500).json({ message: 'Error updating archive content type.' });
+    res.status(error.statusCode || 500).json({ code: error.code, message: error.message || 'Kategoriju nije moguće ažurirati.' });
   }
 });
 
 router.patch('/videos/:id/review', async (req, res) => {
-  const { status, notes = '', duplicateOf = null } = req.body || {};
+  const {
+    status,
+    notes = '',
+    duplicateOf = null,
+    overrideWarnings = false,
+    overrideReason = '',
+  } = req.body || {};
 
   if (!archiveReviewStatuses.includes(status)) {
     return res.status(400).json({ message: 'Invalid archive review status.' });
@@ -851,6 +1046,24 @@ router.patch('/videos/:id/review', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'Video not found.' });
+    assertArchiveClaim(video, req.user);
+
+    const warnings = status === 'reviewed' ? getArchiveReviewWarnings(video) : [];
+    const warningOverrideRequested = overrideWarnings === true;
+    if (warnings.length > 0 && !warningOverrideRequested) {
+      return res.status(409).json({
+        code: 'ARCHIVE_REVIEW_WARNINGS',
+        message: 'Pregled ima upozorenja. Provjerite podatke ili potvrdite završetak.',
+        warnings,
+      });
+    }
+    if (warnings.length > 0 && String(overrideReason || '').trim().length < 3) {
+      return res.status(400).json({
+        code: 'ARCHIVE_OVERRIDE_REASON_REQUIRED',
+        message: 'Kratko obrazloženje je obavezno kada završavate pregled sa upozorenjima.',
+        warnings,
+      });
+    }
 
     if (duplicateOf) {
       if (!mongoose.Types.ObjectId.isValid(duplicateOf)) {
@@ -878,6 +1091,8 @@ router.patch('/videos/:id/review', async (req, res) => {
       video.archiveReviewedBy = req.user.id;
       video.archiveReviewedAt = new Date();
     }
+    if (['reviewed', 'duplicate'].includes(status)) clearArchiveClaim(video);
+    else extendArchiveClaim(video, req.user);
     await video.save();
 
     await AuditLog.create({
@@ -890,6 +1105,9 @@ router.patch('/videos/:id/review', async (req, res) => {
         status,
         duplicateOf: video.duplicateOf || null,
         notes,
+        warnings,
+        overrideWarnings: warnings.length > 0 && warningOverrideRequested,
+        overrideReason: String(overrideReason || '').trim(),
       },
     });
 
@@ -897,7 +1115,7 @@ router.patch('/videos/:id/review', async (req, res) => {
     res.json({ message: 'Archive review saved.', video: populatedVideo });
   } catch (error) {
     console.error('Error saving archive review:', error);
-    res.status(500).json({ message: 'Error saving archive review.' });
+    res.status(error.statusCode || 500).json({ code: error.code, message: error.message || 'Pregled nije moguće spremiti.' });
   }
 });
 

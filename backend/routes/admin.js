@@ -15,6 +15,8 @@ const FfmpegSettings = require('../models/FfmpegSettings');
 const AuditLog = require('../models/AuditLog');
 const BroadcastProgram = require('../models/BroadcastProgram');
 const BroadcastContentType = require('../models/BroadcastContentType');
+const ProgramType = require('../models/ProgramType');
+const { slugify } = require('../utils/programFinals');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const { defaultContentTypes } = require('../config/broadcastDefaults');
@@ -1472,7 +1474,7 @@ router.patch('/videos/:id/content-type', async (req, res) => {
 
 router.get('/broadcast-programs', async (req, res) => {
   try {
-    const programs = await BroadcastProgram.find({}).sort({ active: -1, name: 1 });
+    const programs = await BroadcastProgram.find({}).populate('programType').sort({ active: -1, name: 1 });
     res.json(programs);
   } catch (err) {
     console.error('Error retrieving broadcast programs:', err);
@@ -1481,15 +1483,19 @@ router.get('/broadcast-programs', async (req, res) => {
 });
 
 router.post('/broadcast-programs', async (req, res) => {
-  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true } = req.body;
+  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true, programTypeId = null } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ message: 'Program name is required.' });
   }
 
   try {
+    const programType = programTypeId ? await ProgramType.findById(programTypeId) : null;
+    if (programTypeId && !programType) return res.status(400).json({ message: 'Tip programa nije pronađen.' });
     const program = await BroadcastProgram.create({
       name: name.trim(),
+      slug: slugify(req.body.slug || name),
+      programType: programType?._id || null,
       description,
       defaultTime,
       daysOfWeek: normalizeDaysOfWeek(daysOfWeek),
@@ -1510,17 +1516,21 @@ router.post('/broadcast-programs', async (req, res) => {
 });
 
 router.put('/broadcast-programs/:id', async (req, res) => {
-  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true } = req.body;
+  const { name, description = '', defaultTime = '', daysOfWeek = [], active = true, programTypeId = null } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ message: 'Program name is required.' });
   }
 
   try {
+    const programType = programTypeId ? await ProgramType.findById(programTypeId) : null;
+    if (programTypeId && !programType) return res.status(400).json({ message: 'Tip programa nije pronađen.' });
     const program = await BroadcastProgram.findByIdAndUpdate(
       req.params.id,
       {
         name: name.trim(),
+        slug: slugify(req.body.slug || name),
+        programType: programType?._id || null,
         description,
         defaultTime,
         daysOfWeek: normalizeDaysOfWeek(daysOfWeek),

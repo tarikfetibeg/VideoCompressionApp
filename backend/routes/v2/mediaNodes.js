@@ -152,6 +152,7 @@ router.post('/:nodeId/tasks', async (req, res) => {
     node: node._id,
     kind: req.body.kind,
     video: req.body.videoId || null,
+    programFinalVersion: req.body.programFinalVersionId || null,
     payload: req.body.payload || {},
   });
   return res.status(201).json(task);

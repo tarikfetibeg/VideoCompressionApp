@@ -37,7 +37,7 @@ const NotificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['edit_job', 'video', 'show_day', 'correction', 'transfer', 'system'],
+    enum: ['edit_job', 'video', 'show_day', 'correction', 'transfer', 'program_final', 'system'],
     default: 'system',
   },
   entityId: { type: mongoose.Schema.Types.ObjectId },

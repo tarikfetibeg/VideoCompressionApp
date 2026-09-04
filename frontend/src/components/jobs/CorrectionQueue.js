@@ -195,7 +195,28 @@ const CorrectionQueue = ({ role, userId }) => {
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 320 }}>
-                      <Typography variant="body2">{correction.note}</Typography>
+                      {(correction.issues || []).length > 0 ? (
+                        <Stack spacing={0.25} alignItems="flex-start">
+                          {(correction.issues || []).slice(0, 5).map((issue, index) => (
+                            <Button
+                              key={issue._id || index}
+                              component={Link}
+                              to={`/video-details/${correction.video?._id}?start=${Math.floor(issue.startSeconds || 0)}`}
+                              size="small"
+                              sx={{ justifyContent: 'flex-start', textAlign: 'left', px: 0.5 }}
+                            >
+                              {Number(issue.startSeconds || 0).toFixed(2)}s / {issue.note}
+                            </Button>
+                          ))}
+                          {(correction.issues || []).length > 5 && (
+                            <Typography variant="caption" color="text.secondary">
+                              +{correction.issues.length - 5} dodatnih problema
+                            </Typography>
+                          )}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2">{correction.note}</Typography>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Stack spacing={0.5} alignItems="flex-start">

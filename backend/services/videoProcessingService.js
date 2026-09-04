@@ -110,6 +110,18 @@ function getFileSize(filePath) {
   return filePath && fs.existsSync(filePath) ? fs.statSync(filePath).size : null;
 }
 
+function resolveVideoInputPath(video) {
+  let relativeCandidate = null;
+  if (video?.rawRelativePath) {
+    const candidate = path.resolve(paths.root, video.rawRelativePath);
+    const root = path.resolve(paths.root);
+    if (candidate === root || candidate.startsWith(`${root}${path.sep}`)) {
+      relativeCandidate = candidate;
+    }
+  }
+  return resolveExistingPath(relativeCandidate, video?.rawPath, video?.filepath);
+}
+
 function parseFrameRate(value) {
   if (!value || typeof value !== 'string') return null;
 
@@ -628,7 +640,7 @@ async function processVideoJob({ videoId }, job) {
     throw new Error(`Video not found: ${videoId}`);
   }
 
-  const inputPath = video.rawPath || video.filepath;
+  const inputPath = resolveVideoInputPath(video);
 
   try {
     if (!inputPath || !fs.existsSync(inputPath)) {
@@ -721,6 +733,7 @@ async function processVideoJob({ videoId }, job) {
 
       video.filepath = video.compressedPath;
       video.rawPath = video.compressedPath;
+      video.rawRelativePath = '';
       video.rawDeleted = false;
       video.rawDeletedAt = null;
     } else {
@@ -802,6 +815,7 @@ async function processVideoJob({ videoId }, job) {
       if (!video.rawRetentionDays || video.rawRetentionDays <= 0) {
         removeFileIfExists(inputPath);
         video.rawPath = null;
+        video.rawRelativePath = '';
         video.rawDeleted = true;
         video.rawDeletedAt = new Date();
       }

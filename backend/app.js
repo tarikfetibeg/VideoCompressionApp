@@ -12,6 +12,7 @@ const http = require('http');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const Video = require('./models/Video');
+const ProgramFinalVersion = require('./models/ProgramFinalVersion');
 const { ensureStorageFolders } = require('./utils/storagePaths');
 const { cleanupExpiredRawFiles } = require('./services/rawRetentionService');
 const { expireEditJobs } = require('./services/editJobLifecycleService');
@@ -41,6 +42,21 @@ const { processPreviewMaintenanceTask } = require('./services/previewMaintenance
 const { processOutboxBatch } = require('./services/domainEventService');
 const { escalateUnacknowledgedNotifications } = require('./services/notificationEscalationService');
 const { initializeRealtime } = require('./realtime/realtimeGateway');
+const { requestMetricsMiddleware } = require('./services/runtimeMetricsService');
+const {
+  isLocalTechnicalQcQueue,
+  technicalQcQueue,
+  technicalQcQueueConcurrency,
+} = require('./queues/technicalQcQueue');
+const { processTechnicalQcTask } = require('./services/technicalQcQueueProcessor');
+const {
+  isLocalProgramFinalQueue,
+  programFinalQueue,
+  programFinalQueueConcurrency,
+  enqueueProgramFinalProcessing,
+} = require('./queues/programFinalQueue');
+const { processProgramFinalQueueTask } = require('./services/programFinalQueueProcessor');
+const { runProgramFinalFixityCheck } = require('./services/programFinalProtectionService');
 
 async function requeueLocalPendingVideos() {
   const pendingVideos = await Video.find({
@@ -122,6 +138,32 @@ async function requeueLocalPendingPreviewMaintenance() {
   }
 }
 
+async function requeueLocalPendingTechnicalQc() {
+  const pendingVideos = await Video.find({
+    'technicalQc.status': { $in: ['queued', 'processing'] },
+  }).select('_id technicalQc.requestedBy');
+  const { enqueueTechnicalQc } = require('./queues/technicalQcQueue');
+  for (const video of pendingVideos) {
+    await enqueueTechnicalQc(video._id, {
+      requestedBy: video.technicalQc?.requestedBy || null,
+      force: true,
+    });
+  }
+  if (pendingVideos.length > 0) {
+    console.log(`Local technical QC queue recovered ${pendingVideos.length} interrupted job(s).`);
+  }
+}
+
+async function requeueLocalPendingProgramFinals() {
+  const pendingVersions = await ProgramFinalVersion.find({ status: 'processing' }).select('_id');
+  for (const version of pendingVersions) {
+    await enqueueProgramFinalProcessing(version._id, { force: true });
+  }
+  if (pendingVersions.length > 0) {
+    console.log(`Program Final queue recovered ${pendingVersions.length} interrupted job(s).`);
+  }
+}
+
 // CORS middleware keeps explicit dev origins, and also allows backend-served
 // same-host access such as http://station-host:5000 from another workstation.
 app.use(
@@ -140,7 +182,15 @@ app.use(
     return callback(null, {
       origin: origin || true,
       credentials: true,
-      exposedHeaders: ['Content-Length', 'Content-Range', 'Content-Disposition'],
+      exposedHeaders: [
+        'Content-Length',
+        'Content-Range',
+        'Content-Disposition',
+        'Location',
+        'Upload-Offset',
+        'Upload-Length',
+        'Tus-Resumable',
+      ],
     });
   })
 );
@@ -148,6 +198,7 @@ app.use(
 // Middleware for parsing JSON and URL-encoded data
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requestMetricsMiddleware);
 
 // Create storage directories if they don't exist
 ensureStorageFolders();
@@ -208,6 +259,30 @@ mongoose
       console.warn('Local preview maintenance is isolated from ingest; concurrency=1.');
       await requeueLocalPendingPreviewMaintenance();
     }
+    if (isLocalTechnicalQcQueue) {
+      technicalQcQueue.process(
+        technicalQcQueueConcurrency,
+        async (job) => processTechnicalQcTask(job.data, job)
+      );
+      technicalQcQueue.on('completed', (job) => {
+        console.log(`Local technical QC completed: ${job.id}`);
+      });
+      technicalQcQueue.on('failed', (job, error) => {
+        console.error(`Local technical QC failed: ${job.id}`, error);
+      });
+      console.warn('Technical QC je izolovan i serijski; automatsko pokretanje je isključeno po defaultu.');
+      await requeueLocalPendingTechnicalQc();
+    }
+    if (isLocalProgramFinalQueue) {
+      programFinalQueue.process(
+        programFinalQueueConcurrency,
+        async (job) => processProgramFinalQueueTask(job.data, job)
+      );
+      programFinalQueue.on('completed', (job) => console.log(`Program Final job completed: ${job.id}`));
+      programFinalQueue.on('failed', (job, error) => console.error(`Program Final job failed: ${job.id}`, error));
+      console.warn(`Program Final processing is isolated; concurrency=${programFinalQueueConcurrency}.`);
+      await requeueLocalPendingProgramFinals();
+    }
 
     try {
       const cleanupResult = await cleanupExpiredRawFiles();
@@ -261,6 +336,23 @@ mongoose
       }
     }, 6 * 60 * 60 * 1000); // every 6 hours
 
+    if (String(process.env.PROGRAM_FINAL_FIXITY_OWNER || 'api').toLowerCase() === 'api') {
+      runProgramFinalFixityCheck()
+        .then((result) => {
+          if (result.checked) console.log('Program Final startup fixity result:', result);
+        })
+        .catch((fixityError) => console.error('Program Final startup fixity error:', fixityError));
+
+      setInterval(async () => {
+        try {
+          const result = await runProgramFinalFixityCheck();
+          if (result.checked) console.log('Program Final fixity result:', result);
+        } catch (fixityError) {
+          console.error('Program Final fixity error:', fixityError);
+        }
+      }, 60 * 60 * 1000);
+    }
+
     if (process.env.EVENT_OUTBOX_MODE !== 'worker') {
       setInterval(async () => {
         try {
@@ -297,6 +389,16 @@ const v2MediaRoutes = require('./routes/v2/media');
 const v2RoughCutRoutes = require('./routes/v2/roughCuts');
 const v2MyWorkRoutes = require('./routes/v2/myWork');
 const v2AdminPlatformRoutes = require('./routes/v2/adminPlatform');
+const v2TechnicalQcRoutes = require('./routes/v2/technicalQc');
+const programFinalCatalogRoutes = require('./routes/programFinalCatalogs');
+const {
+  router: programFinalRoutes,
+  v2Router: v2ProgramFinalRoutes,
+} = require('./routes/programFinals');
+const {
+  handleTusRequest: handleV2TusUpload,
+  router: v2ResumableUploadRoutes,
+} = require('./routes/v2/resumableUploads');
 
 app.use('/api/v2/auth', v2AuthRoutes);
 app.use('/api/v2/devices', v2DeviceRoutes);
@@ -307,6 +409,11 @@ app.use('/api/v2/media', v2MediaRoutes);
 app.use('/api/v2/edit-jobs', v2RoughCutRoutes);
 app.use('/api/v2/my-work', v2MyWorkRoutes);
 app.use('/api/v2/admin/platform', v2AdminPlatformRoutes);
+app.use('/api/v2/technical-qc', v2TechnicalQcRoutes);
+app.use('/api/v2/program-finals', v2ProgramFinalRoutes);
+app.use('/api/v2/uploads', v2ResumableUploadRoutes);
+app.all('/api/v2/uploads/files', handleV2TusUpload);
+app.all('/api/v2/uploads/files/*', handleV2TusUpload);
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/archive', archiveRoutes);
@@ -320,6 +427,8 @@ app.use('/api/edit-jobs', editJobRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/program-finals', programFinalRoutes);
+app.use('/api', programFinalCatalogRoutes);
 
 // Legacy static route. Existing old files may still be under uploads.
 app.use('/uploads', express.static('uploads'));

@@ -83,6 +83,7 @@ const VideoPlayer = ({
   initialStart = 0,
   onTimecodesChange,
   onPlaybackPositionChange,
+  seekRequest = null,
   readOnly = false,
   compact = false,
 }) => {
@@ -103,6 +104,14 @@ const VideoPlayer = ({
   const ticketRefreshAttemptsRef = useRef(0);
 
   const sortedTimecodes = useMemo(() => sortByTimestamp(timecodes), [timecodes]);
+
+  useEffect(() => {
+    const seconds = Number(seekRequest?.seconds);
+    if (!playerRef.current || !Number.isFinite(seconds)) return;
+    playerRef.current.currentTime = Math.max(seconds, 0);
+    resumeTimeRef.current = Math.max(seconds, 0);
+    setCurrentTime(Math.max(seconds, 0));
+  }, [mediaTicket, seekRequest]);
 
   useEffect(() => {
     if (onTimecodesChange) {

@@ -4,10 +4,12 @@ const { z } = require('zod');
 const authenticateToken = require('../../middleware/authenticateToken');
 const MediaNode = require('../../models/MediaNode');
 const MediaTask = require('../../models/MediaTask');
-const TransferSession = require('../../models/TransferSession');
-const EventOutbox = require('../../models/EventOutbox');
 const EscalationPolicy = require('../../models/EscalationPolicy');
 const AuditLog = require('../../models/AuditLog');
+const {
+  loadPlatformHealth,
+  loadPlatformOverview,
+} = require('../../services/platformOverviewService');
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -26,47 +28,19 @@ const policySchema = z.object({
 
 router.get('/', async (req, res) => {
   try {
-    const staleAt = new Date(Date.now() - 90 * 1000);
-    const [nodes, taskCounts, transferCounts, outbox, policies] = await Promise.all([
-      MediaNode.find()
-        .select('nodeId name site kind baseUrl status capabilities storage lastSeenAt createdAt updatedAt')
-        .sort({ site: 1, name: 1 })
-        .lean(),
-      MediaTask.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-      TransferSession.aggregate([
-        { $match: { status: { $in: ['queued', 'preparing', 'transferring', 'paused', 'verifying', 'failed'] } } },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
-      Promise.all([
-        EventOutbox.countDocuments({ publishedAt: null }),
-        EventOutbox.countDocuments({ publishedAt: null, attempts: { $gt: 0 } }),
-        EventOutbox.findOne({ publishedAt: { $ne: null } }).sort({ publishedAt: -1 }).select('publishedAt').lean(),
-      ]),
-      EscalationPolicy.find().sort({ eventType: 1 }).lean(),
-    ]);
-
-    return res.json({
-      nodes: nodes.map((node) => ({
-        ...node,
-        effectiveStatus: node.status === 'maintenance'
-          ? 'maintenance'
-          : (!node.lastSeenAt || new Date(node.lastSeenAt) < staleAt ? 'offline' : node.status),
-      })),
-      queues: {
-        mediaTasks: Object.fromEntries(taskCounts.map((item) => [item._id, item.count])),
-        transfers: Object.fromEntries(transferCounts.map((item) => [item._id, item.count])),
-        outbox: {
-          pending: outbox[0],
-          retrying: outbox[1],
-          lastPublishedAt: outbox[2]?.publishedAt || null,
-        },
-      },
-      policies,
-      generatedAt: new Date(),
-    });
+    return res.json(await loadPlatformOverview());
   } catch (error) {
     console.error('Admin platform load failed:', error);
     return res.status(500).json({ message: 'Platform pregled se ne može učitati.' });
+  }
+});
+
+router.get('/health', async (req, res) => {
+  try {
+    return res.json(await loadPlatformHealth());
+  } catch (error) {
+    console.error('Admin platform health failed:', error);
+    return res.status(500).json({ message: 'Health pregled se ne može učitati.' });
   }
 });
 

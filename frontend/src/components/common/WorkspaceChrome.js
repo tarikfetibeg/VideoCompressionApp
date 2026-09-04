@@ -115,12 +115,20 @@ export const KpiStrip = ({ items = [], dense = false }) => (
       <Paper
         key={item.label}
         variant="outlined"
+        component={item.onClick ? 'button' : 'div'}
+        type={item.onClick ? 'button' : undefined}
+        onClick={item.onClick}
         sx={{
           p: dense ? 1.25 : 2,
           borderRadius: 1.5,
           borderColor: item.active ? 'primary.main' : 'divider',
           bgcolor: item.active ? 'primary.light' : 'background.paper',
           minHeight: dense ? 74 : 90,
+          width: '100%',
+          textAlign: 'left',
+          cursor: item.onClick ? 'pointer' : 'default',
+          font: 'inherit',
+          '&:hover': item.onClick ? { borderColor: 'primary.main' } : undefined,
         }}
       >
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>

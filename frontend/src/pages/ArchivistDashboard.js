@@ -1,13 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
+  ButtonBase,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
+  Drawer,
   FormControl,
   Grid,
   IconButton,
@@ -15,6 +17,7 @@ import {
   LinearProgress,
   MenuItem,
   Pagination,
+  Paper,
   Select,
   Stack,
   Table,
@@ -26,7 +29,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import EditNoteIcon from '@mui/icons-material/EditNote';
@@ -37,6 +42,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import SaveIcon from '@mui/icons-material/Save';
 import SendIcon from '@mui/icons-material/Send';
+import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
+import LogoutIcon from '@mui/icons-material/Logout';
+import CloseIcon from '@mui/icons-material/Close';
 import { Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
 import {
@@ -47,6 +55,9 @@ import {
   WorkspaceHeader,
 } from '../components/common/WorkspaceChrome';
 import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
+import VideoPlayer from '../components/VideoPlayer';
+import VideoCorrectionPanel, { VideoIssueComposer } from '../components/corrections/VideoCorrectionPanel';
+import { UserContext } from '../contexts/UserContext';
 import {
   archiveReviewLabels,
   archiveWorkflowLabels,
@@ -132,11 +143,15 @@ const defaultDuplicateWorkspace = {
 };
 
 const ArchivistDashboard = () => {
-  const [activeView, setActiveView] = useState('queue');
+  const { user } = useContext(UserContext);
+  const theme = useTheme();
+  const mobileLayout = useMediaQuery(theme.breakpoints.down('md'));
+  const [activeView, setActiveView] = useState('work');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
   const [duplicates, setDuplicates] = useState(defaultDuplicateWorkspace);
   const [overview, setOverview] = useState({});
   const [contentTypes, setContentTypes] = useState([]);
+  const [archivists, setArchivists] = useState([]);
   const [filters, setFilters] = useState({
     reviewStatus: 'all',
     workflowStatus: 'all',
@@ -144,6 +159,8 @@ const ArchivistDashboard = () => {
     q: '',
     sortBy: 'uploadDate',
     sortOrder: 'desc',
+    assignment: 'mine',
+    attention: 'review',
   });
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -154,7 +171,14 @@ const ArchivistDashboard = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [tagDialog, setTagDialog] = useState({ open: false, video: null, value: '' });
   const [metadataDialog, setMetadataDialog] = useState({ open: false, video: null, draft: {} });
-  const [reviewDialog, setReviewDialog] = useState({ open: false, video: null, status: 'needs_metadata', notes: '' });
+  const [reviewDialog, setReviewDialog] = useState({
+    open: false,
+    video: null,
+    status: 'needs_metadata',
+    notes: '',
+    warnings: [],
+    overrideReason: '',
+  });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, video: null, keeper: null, reason: '' });
   const [correctionDialog, setCorrectionDialog] = useState({
     open: false,
@@ -163,6 +187,16 @@ const ArchivistDashboard = () => {
     reason: '',
     busy: false,
   });
+  const [selectedVideoId, setSelectedVideoId] = useState('');
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [playheadSeconds, setPlayheadSeconds] = useState(0);
+  const [seekRequest, setSeekRequest] = useState(null);
+  const [issueComposerOpen, setIssueComposerOpen] = useState(false);
+  const [correctionContext, setCorrectionContext] = useState(null);
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [duplicateKeepers, setDuplicateKeepers] = useState({});
+  const correctionFetchSequence = useRef(0);
+  const workspaceFetchSequence = useRef(0);
 
   const activeContentTypes = useMemo(
     () => contentTypes.filter((type) => type.active !== false),
@@ -191,6 +225,8 @@ const ArchivistDashboard = () => {
   }, []);
 
   const fetchVideos = useCallback(({ silent = false } = {}) => {
+    const sequence = workspaceFetchSequence.current + 1;
+    workspaceFetchSequence.current = sequence;
     if (!silent) setLoading(true);
     setErrorMessage('');
 
@@ -199,23 +235,65 @@ const ArchivistDashboard = () => {
         params: {
           page,
           limit: pageSize,
-          reviewStatus: activeView === 'queue' ? 'queue' : filters.reviewStatus,
+          reviewStatus: activeView === 'work' ? 'all' : filters.reviewStatus,
           workflowStatus: filters.workflowStatus,
+          assignment: activeView === 'work' ? filters.assignment : 'all',
+          attention: activeView === 'work' ? filters.attention : 'all',
           contentTypeId: filters.contentTypeId,
           q: getSearchParam(debouncedSearch),
           sortBy: filters.sortBy,
           sortOrder: filters.sortOrder,
         },
       })
-      .then((response) => setWorkspace({ ...defaultWorkspace, ...response.data }))
+      .then((response) => {
+        if (workspaceFetchSequence.current !== sequence) return;
+        const nextWorkspace = { ...defaultWorkspace, ...response.data };
+        setWorkspace(nextWorkspace);
+        setSelectedVideoId((current) => (
+          nextWorkspace.items.some((item) => item._id === current)
+            ? current
+            : nextWorkspace.items[0]?._id || ''
+        ));
+      })
       .catch((error) => {
+        if (workspaceFetchSequence.current !== sequence) return;
         console.error('Error loading archive workspace:', error);
         setErrorMessage(error.response?.data?.message || 'Arhiva nije ucitana.');
       })
       .finally(() => {
-        if (!silent) setLoading(false);
+        if (workspaceFetchSequence.current === sequence) setLoading(false);
       });
   }, [activeView, debouncedSearch, filters, page]);
+
+  const selectedVideo = useMemo(
+    () => workspace.items.find((video) => video._id === selectedVideoId) || null,
+    [selectedVideoId, workspace.items]
+  );
+
+  const fetchCorrectionContext = useCallback(() => {
+    const sequence = correctionFetchSequence.current + 1;
+    correctionFetchSequence.current = sequence;
+    if (!selectedVideoId) {
+      setCorrectionContext(null);
+      return;
+    }
+    axiosInstance.get(`/corrections/video/${selectedVideoId}/context`)
+      .then((response) => {
+        if (correctionFetchSequence.current === sequence) setCorrectionContext(response.data || null);
+      })
+      .catch(() => {
+        if (correctionFetchSequence.current === sequence) setCorrectionContext(null);
+      });
+  }, [selectedVideoId]);
+
+  useEffect(() => {
+    fetchCorrectionContext();
+  }, [fetchCorrectionContext]);
+
+  useEffect(() => {
+    setPlayheadSeconds(0);
+    setSeekRequest(null);
+  }, [selectedVideoId]);
 
   const fetchDuplicates = useCallback(({ silent = false } = {}) => {
     if (!silent) setDuplicatesLoading(true);
@@ -247,6 +325,86 @@ const ArchivistDashboard = () => {
     }
     fetchVideos();
   }, [activeView, fetchDuplicates, fetchOverview, fetchVideos]);
+
+  const replaceWorkspaceVideo = useCallback((nextVideo) => {
+    if (!nextVideo?._id) return;
+    setWorkspace((current) => ({
+      ...current,
+      items: current.items.map((item) => item._id === nextVideo._id ? nextVideo : item),
+    }));
+  }, []);
+
+  const fetchArchivists = useCallback(() => {
+    axiosInstance.get('/archive/metadata-options')
+      .then((response) => setArchivists(response.data?.archivists || []))
+      .catch(() => setArchivists([]));
+  }, []);
+
+  const selectNextVideo = useCallback((videoId) => {
+    const currentIndex = workspace.items.findIndex((item) => item._id === videoId);
+    const next = workspace.items[currentIndex + 1] || workspace.items[currentIndex - 1] || null;
+    setSelectedVideoId(next?._id || '');
+    if (!next) setMobileDetailOpen(false);
+  }, [workspace.items]);
+
+  const selectedAssignmentId = selectedVideo?.archiveAssignedTo?._id || selectedVideo?.archiveAssignedTo;
+  const selectedClaimActive = Boolean(
+    selectedAssignmentId
+    && selectedVideo?.archiveAssignmentExpiresAt
+    && new Date(selectedVideo.archiveAssignmentExpiresAt).getTime() > Date.now()
+  );
+  const selectedClaimMine = selectedClaimActive && String(selectedAssignmentId) === String(user?.id);
+  const canOperateSelected = user?.role === 'Admin' || selectedClaimMine;
+
+  const claimSelectedVideo = async () => {
+    if (!selectedVideo) return;
+    setClaimBusy(true);
+    setErrorMessage('');
+    try {
+      const response = await axiosInstance.patch(`/archive/videos/${selectedVideo._id}/claim`);
+      replaceWorkspaceVideo(response.data.video);
+      setMessage(response.data?.message || 'Materijal je preuzet.');
+      fetchOverview();
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || 'Materijal nije moguće preuzeti.');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  const releaseSelectedVideo = async () => {
+    if (!selectedVideo) return;
+    setClaimBusy(true);
+    setErrorMessage('');
+    try {
+      const response = await axiosInstance.patch(`/archive/videos/${selectedVideo._id}/release`);
+      replaceWorkspaceVideo(response.data.video);
+      setMessage(response.data?.message || 'Materijal je oslobođen.');
+      if (activeView === 'work' && filters.assignment === 'mine') selectNextVideo(selectedVideo._id);
+      fetchVideos({ silent: true });
+      fetchOverview();
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || 'Materijal nije moguće osloboditi.');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  const assignSelectedVideo = async (assignedToId) => {
+    if (!selectedVideo || user?.role !== 'Admin') return;
+    setClaimBusy(true);
+    setErrorMessage('');
+    try {
+      const response = await axiosInstance.patch(`/archive/videos/${selectedVideo._id}/assignment`, { assignedToId });
+      replaceWorkspaceVideo(response.data.video);
+      setMessage(response.data?.message || 'Zaduženje je ažurirano.');
+      fetchOverview();
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || 'Zaduženje nije moguće ažurirati.');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
 
   const sendCorrectionToProduction = (video) => {
     setMessage('');
@@ -285,6 +443,7 @@ const ArchivistDashboard = () => {
       .then((response) => {
         setMessage(response.data?.message || 'Correction status je ažuriran.');
         setCorrectionDialog({ open: false, mode: 'dismiss', video: null, reason: '', busy: false });
+        selectNextVideo(video._id);
         refreshCurrentView();
       })
       .catch((error) => {
@@ -296,7 +455,8 @@ const ArchivistDashboard = () => {
   useEffect(() => {
     fetchOverview();
     fetchContentTypes();
-  }, [fetchContentTypes, fetchOverview]);
+    fetchArchivists();
+  }, [fetchArchivists, fetchContentTypes, fetchOverview]);
 
   useEffect(() => {
     if (activeView === 'duplicates') {
@@ -349,7 +509,8 @@ const ArchivistDashboard = () => {
         keywords: normalizeTags(draft.keywords),
         archiveReviewNotes: draft.archiveReviewNotes,
       })
-      .then(() => {
+      .then((response) => {
+        replaceWorkspaceVideo(response.data.video);
         setMetadataDialog({ open: false, video: null, draft: {} });
         setMessage('Metadata je sacuvana.');
         fetchOverview();
@@ -370,7 +531,8 @@ const ArchivistDashboard = () => {
       .patch(`/archive/videos/${tagDialog.video._id}/tags`, {
         replace: normalizeTags(tagDialog.value),
       })
-      .then(() => {
+      .then((response) => {
+        replaceWorkspaceVideo(response.data.video);
         setTagDialog({ open: false, video: null, value: '' });
         setMessage('Tagovi su sacuvani.');
         fetchOverview();
@@ -389,7 +551,8 @@ const ArchivistDashboard = () => {
 
     axiosInstance
       .patch(`/archive/videos/${video._id}/content-type`, { contentTypeId })
-      .then(() => {
+      .then((response) => {
+        replaceWorkspaceVideo(response.data.video);
         setMessage('Kategorija je sacuvana.');
         fetchOverview();
         fetchVideos({ silent: true });
@@ -400,22 +563,40 @@ const ArchivistDashboard = () => {
       });
   };
 
-  const saveReview = (video, status, notes = '') => {
+  const saveReview = (video, status, notes = '', overrideWarnings = false, overrideReason = '') => {
     if (!video) return;
     setMessage('');
     setErrorMessage('');
 
     axiosInstance
-      .patch(`/archive/videos/${video._id}/review`, { status, notes })
-      .then(() => {
-        setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '' });
-        setMessage('Review je sacuvan.');
+      .patch(`/archive/videos/${video._id}/review`, {
+        status,
+        notes,
+        overrideWarnings,
+        overrideReason,
+      })
+      .then((response) => {
+        replaceWorkspaceVideo(response.data.video);
+        setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '', warnings: [], overrideReason: '' });
+        setMessage('Pregled je sačuvan.');
+        if (['reviewed', 'duplicate'].includes(status)) selectNextVideo(video._id);
         fetchOverview();
         fetchVideos({ silent: true });
       })
       .catch((error) => {
         console.error('Error saving review:', error);
-        setErrorMessage(error.response?.data?.message || 'Review nije sacuvan.');
+        if (error.response?.data?.code === 'ARCHIVE_REVIEW_WARNINGS') {
+          setReviewDialog({
+            open: true,
+            video,
+            status,
+            notes,
+            warnings: error.response.data.warnings || [],
+            overrideReason: '',
+          });
+          return;
+        }
+        setErrorMessage(error.response?.data?.message || 'Pregled nije sačuvan.');
       });
   };
 
@@ -445,12 +626,48 @@ const ArchivistDashboard = () => {
   };
 
   const kpis = [
-    { label: 'Za pregled', value: formatNumberBs(overview.reviewQueue ?? workspace.summary.reviewQueue ?? overview.unreviewed ?? workspace.summary.unreviewed ?? 0), color: 'warning.main' },
-    { label: 'Treba metadata', value: formatNumberBs(overview.needsMetadata ?? workspace.summary.needsMetadata ?? 0), color: 'info.main' },
-    { label: 'Duplikat grupe', value: formatNumberBs(overview.duplicateCandidateGroups ?? duplicates.summary.groups ?? 0), color: 'error.main' },
-    { label: 'Spremno za arhivu', value: formatNumberBs(overview.archiveReadyVideos ?? workspace.summary.archiveReady ?? 0), color: 'success.main' },
-    { label: 'Treba ispravka', value: formatNumberBs(overview.needsCorrection ?? workspace.summary.needsCorrection ?? 0), color: 'error.main' },
-    { label: 'Ukupno', value: formatNumberBs(overview.totalVideos ?? workspace.summary.total ?? 0) },
+    {
+      label: 'Moj red',
+      value: formatNumberBs(workspace.summary.mine ?? 0),
+      color: 'primary.main',
+      active: activeView === 'work' && filters.assignment === 'mine',
+      onClick: () => { setActiveView('work'); setPage(1); setFilters((current) => ({ ...current, assignment: 'mine', attention: 'all' })); },
+    },
+    {
+      label: 'Nepreuzeto',
+      value: formatNumberBs(workspace.summary.unassigned ?? 0),
+      color: 'warning.main',
+      active: activeView === 'work' && filters.assignment === 'unassigned',
+      onClick: () => { setActiveView('work'); setPage(1); setFilters((current) => ({ ...current, assignment: 'unassigned', attention: 'all' })); },
+    },
+    {
+      label: 'Treba metadata',
+      value: formatNumberBs(workspace.summary.needsMetadata ?? overview.needsMetadata ?? 0),
+      color: 'info.main',
+      active: activeView === 'work' && filters.attention === 'metadata',
+      onClick: () => { setActiveView('work'); setPage(1); setFilters((current) => ({ ...current, assignment: 'all', attention: 'metadata' })); },
+    },
+    {
+      label: 'U montaži',
+      value: formatNumberBs(workspace.summary.inEdit ?? 0),
+      color: 'error.main',
+      active: activeView === 'work' && filters.attention === 'in_edit',
+      onClick: () => { setActiveView('work'); setPage(1); setFilters((current) => ({ ...current, assignment: 'all', attention: 'in_edit' })); },
+    },
+    {
+      label: 'Spremno za potvrdu',
+      value: formatNumberBs(workspace.summary.readyForReview ?? 0),
+      color: 'success.main',
+      active: activeView === 'work' && filters.attention === 'ready_for_review',
+      onClick: () => { setActiveView('work'); setPage(1); setFilters((current) => ({ ...current, assignment: 'all', attention: 'ready_for_review' })); },
+    },
+    {
+      label: activeView === 'duplicates' ? 'Grupe duplikata' : 'Označeni duplikati',
+      value: formatNumberBs(overview.duplicateCandidateGroups ?? duplicates.summary.groups ?? 0),
+      color: 'error.main',
+      active: activeView === 'duplicates',
+      onClick: () => { setActiveView('duplicates'); setDuplicatePage(1); },
+    },
   ];
 
   const renderVideoRow = (video) => {
@@ -632,35 +849,249 @@ const ArchivistDashboard = () => {
     );
   };
 
+  const renderSelectedDetail = (mobile = false) => {
+    if (!selectedVideo) {
+      return <EmptyState title="Odaberite materijal" description="Detalji i preview prikazuju se nakon izbora iz radnog reda." />;
+    }
+    const requestStatus = correctionContext?.active?.status;
+    const metadataWarnings = [
+      !selectedVideo.finalTitle && 'naslov',
+      !selectedVideo.tagDate && 'datum',
+      !selectedVideo.contentType && !selectedVideo.finalCategory && 'kategorija',
+      !selectedVideo.event && 'event',
+      !selectedVideo.reporter && !selectedVideo.uploader && 'autor',
+      (!selectedVideo.keywords || selectedVideo.keywords.length === 0) && 'tagovi',
+    ].filter(Boolean);
+
+    return (
+      <Stack spacing={1.5} sx={{ p: mobile ? 2 : 0 }}>
+        {mobile && (
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6" sx={{ fontWeight: 850 }}>Pregled materijala</Typography>
+            <IconButton onClick={() => setMobileDetailOpen(false)} aria-label="Zatvori pregled"><CloseIcon /></IconButton>
+          </Stack>
+        )}
+
+        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}>
+          <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start" sx={{ mb: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, overflowWrap: 'anywhere' }}>{getVideoTitle(selectedVideo)}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {selectedVideo.event || 'Bez eventa'} / {formatDateTimeBs(selectedVideo.tagDate || selectedVideo.uploadDate)}
+              </Typography>
+            </Box>
+            <Tooltip title="Otvori puni pregled">
+              <IconButton component={Link} to={`/video-details/${selectedVideo._id}`}><OpenInNewIcon /></IconButton>
+            </Tooltip>
+          </Stack>
+          <VideoPlayer
+            key={selectedVideo._id}
+            videoId={selectedVideo._id}
+            compact
+            readOnly
+            onPlaybackPositionChange={setPlayheadSeconds}
+            seekRequest={seekRequest}
+          />
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}>
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+            <StatusChip value={selectedVideo.archiveReviewStatus || 'unreviewed'} maps={archiveReviewLabels} />
+            <StatusChip value={selectedVideo.processingStatus} maps={processingLabels} variant="outlined" />
+            {selectedVideo.broadcastStatus && <StatusChip value={selectedVideo.broadcastStatus} maps={broadcastLabels} variant="outlined" />}
+          </Stack>
+
+          {selectedClaimActive ? (
+            <Alert severity={selectedClaimMine ? 'info' : 'warning'} sx={{ mb: 1 }}>
+              Preuzeo: {selectedVideo.archiveAssignedTo?.username || 'arhivista'} / do {formatDateTimeBs(selectedVideo.archiveAssignmentExpiresAt)}
+            </Alert>
+          ) : (
+            <Alert severity="info" sx={{ mb: 1 }}>Materijal trenutno nije preuzet.</Alert>
+          )}
+
+          {user?.role === 'Admin' && (
+            <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+              <InputLabel>Dodijeli arhivisti</InputLabel>
+              <Select
+                value={selectedClaimActive ? selectedAssignmentId || '' : ''}
+                label="Dodijeli arhivisti"
+                onChange={(event) => assignSelectedVideo(event.target.value)}
+                disabled={claimBusy}
+              >
+                <MenuItem value="">Oslobodi zaduženje</MenuItem>
+                {archivists.map((archivist) => (
+                  <MenuItem key={archivist._id} value={archivist._id}>{archivist.username}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
+          {metadataWarnings.length > 0 && (
+            <Alert severity="warning" variant="outlined" sx={{ mb: 1 }}>
+              Nedostaje: {metadataWarnings.join(', ')}.
+            </Alert>
+          )}
+
+          <Grid container spacing={1}>
+            <Grid item xs={6}><Typography variant="caption" color="text.secondary">Kategorija</Typography><Typography variant="body2" sx={{ fontWeight: 750 }}>{selectedVideo.contentType?.name || selectedVideo.finalCategory || 'Nije unesena'}</Typography></Grid>
+            <Grid item xs={6}><Typography variant="caption" color="text.secondary">Reporter</Typography><Typography variant="body2" sx={{ fontWeight: 750 }}>{getPersonName(selectedVideo.reporter)}</Typography></Grid>
+            <Grid item xs={6}><Typography variant="caption" color="text.secondary">Montažer</Typography><Typography variant="body2" sx={{ fontWeight: 750 }}>{getPersonName(selectedVideo.editor)}</Typography></Grid>
+            <Grid item xs={6}><Typography variant="caption" color="text.secondary">Veličina</Typography><Typography variant="body2" sx={{ fontWeight: 750 }}>{formatBytesBs(selectedVideo.sizeCompressed || selectedVideo.sizeOriginal || selectedVideo.sizePreview)}</Typography></Grid>
+          </Grid>
+
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+            {!canOperateSelected && user?.role !== 'Admin' && (
+              <Button variant="contained" startIcon={<AssignmentIndIcon />} onClick={claimSelectedVideo} disabled={claimBusy || (selectedClaimActive && !selectedClaimMine)}>
+                Preuzmi
+              </Button>
+            )}
+            {canOperateSelected && user?.role !== 'Admin' && (
+              <Button variant="outlined" startIcon={<LogoutIcon />} onClick={releaseSelectedVideo} disabled={claimBusy}>Oslobodi</Button>
+            )}
+            <Button variant="outlined" startIcon={<EditNoteIcon />} onClick={() => openMetadataDialog(selectedVideo)} disabled={!canOperateSelected}>Uredi metadata</Button>
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={() => setReviewDialog({ open: true, video: selectedVideo, status: 'needs_metadata', notes: selectedVideo.archiveReviewNotes || '', warnings: [], overrideReason: '' })}
+              disabled={!canOperateSelected}
+            >
+              Treba metadata
+            </Button>
+            <Button variant="contained" startIcon={<DoneAllIcon />} onClick={() => saveReview(selectedVideo, 'reviewed', selectedVideo.archiveReviewNotes || '')} disabled={!canOperateSelected}>
+              Pregledano
+            </Button>
+          </Stack>
+        </Paper>
+
+        <VideoCorrectionPanel
+          context={correctionContext}
+          onTimestamp={(seconds) => {
+            setPlayheadSeconds(seconds);
+            setSeekRequest({ seconds, key: Date.now() });
+          }}
+          onReport={() => setIssueComposerOpen(true)}
+          reportDisabled={!canOperateSelected}
+        />
+
+        {correctionContext?.active && ['reported', 'assigned'].includes(requestStatus) && (
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => setCorrectionDialog({ open: true, mode: 'dismiss', video: selectedVideo, reason: '', busy: false })}
+            disabled={!canOperateSelected}
+          >
+            Povuci oznaku ispravke
+          </Button>
+        )}
+
+        {requestStatus === 'ready_for_review' && (
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => setCorrectionDialog({ open: true, mode: 'resolve', video: selectedVideo, reason: '', busy: false })}
+            disabled={!canOperateSelected}
+          >
+            Potvrdi završenu ispravku
+          </Button>
+        )}
+      </Stack>
+    );
+  };
+
   const renderVideoTable = () => (
     <Box>
       {loading && <LinearProgress sx={{ mb: 1 }} />}
       {workspace.items.length === 0 && !loading ? (
         <EmptyState
-          title="Nema arhivskog materijala"
-          description="Promijeni filtere ili osvjezi workspace."
-          action={<Button variant="outlined" startIcon={<RefreshIcon />} onClick={refreshCurrentView}>Osvjezi</Button>}
+          title="Nema materijala u ovom redu"
+          description="Promijenite scope ili attention filter i pokušajte ponovo."
+          action={<Button variant="outlined" startIcon={<RefreshIcon />} onClick={refreshCurrentView}>Osvježi</Button>}
         />
       ) : (
-        <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Materijal</TableCell>
-                <TableCell>Metadata</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Akcije</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>{workspace.items.map(renderVideoRow)}</TableBody>
-          </Table>
-        </TableContainer>
+        <Grid container spacing={2} alignItems="flex-start">
+          <Grid item xs={12} md={5} lg={4}>
+            <Paper variant="outlined" sx={{ borderRadius: 1.5, overflow: 'hidden' }}>
+              <Box
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+                  event.preventDefault();
+                  const currentIndex = Math.max(workspace.items.findIndex((item) => item._id === selectedVideoId), 0);
+                  const nextIndex = event.key === 'ArrowDown'
+                    ? Math.min(currentIndex + 1, workspace.items.length - 1)
+                    : event.key === 'ArrowUp'
+                      ? Math.max(currentIndex - 1, 0)
+                      : currentIndex;
+                  const nextVideo = workspace.items[nextIndex];
+                  if (nextVideo) setSelectedVideoId(nextVideo._id);
+                  if (event.key === 'Enter' && mobileLayout) setMobileDetailOpen(true);
+                }}
+                sx={{ maxHeight: { md: 'calc(100vh - 330px)' }, overflowY: 'auto', outline: 'none' }}
+              >
+                {workspace.items.map((video) => {
+                  const assignedTo = video.archiveAssignedTo?.username;
+                  const selected = video._id === selectedVideoId;
+                  return (
+                    <ButtonBase
+                      key={video._id}
+                      onClick={() => {
+                        setSelectedVideoId(video._id);
+                        setCorrectionContext(null);
+                        setPlayheadSeconds(0);
+                        setSeekRequest(null);
+                        if (mobileLayout) setMobileDetailOpen(true);
+                      }}
+                      sx={{
+                        width: '100%',
+                        p: 1.25,
+                        textAlign: 'left',
+                        alignItems: 'flex-start',
+                        borderBottom: 1,
+                        borderColor: 'divider',
+                        bgcolor: selected ? 'action.selected' : 'background.paper',
+                        '&:hover': { bgcolor: 'action.hover' },
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.25} sx={{ width: '100%', minWidth: 0 }}>
+                        <VideoThumbnailPreview videoId={video._id} title={getVideoTitle(video)} width={112} height={63} enableScrubPreview />
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 850 }} noWrap>{getVideoTitle(video)}</Typography>
+                          <Typography variant="caption" color="text.secondary" display="block" noWrap>{video.event || 'Bez eventa'}</Typography>
+                          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                            <StatusChip value={video.archiveReviewStatus || 'unreviewed'} maps={archiveReviewLabels} size="small" />
+                            {video.correctionStatus === 'needs_correction' && <StatusChip label="Ispravka" tone="error" size="small" />}
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            {assignedTo ? `Arhivista: ${assignedTo}` : 'Nepreuzeto'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </ButtonBase>
+                  );
+                })}
+              </Box>
+            </Paper>
+          </Grid>
+          {!mobileLayout && (
+            <Grid item md={7} lg={8}>
+              <Box sx={{ position: 'sticky', top: 16 }}>{renderSelectedDetail()}</Box>
+            </Grid>
+          )}
+        </Grid>
       )}
       {workspace.totalPages > 1 && (
         <Stack alignItems="center" sx={{ mt: 2 }}>
           <Pagination count={workspace.totalPages} page={page} onChange={(event, value) => setPage(value)} />
         </Stack>
       )}
+      <Drawer
+        anchor="right"
+        open={mobileLayout && mobileDetailOpen}
+        onClose={() => setMobileDetailOpen(false)}
+        PaperProps={{ sx: { width: '100%', maxWidth: 680 } }}
+      >
+        {renderSelectedDetail(true)}
+      </Drawer>
     </Box>
   );
 
@@ -668,7 +1099,8 @@ const ArchivistDashboard = () => {
     <Stack spacing={2}>
       {duplicatesLoading && <LinearProgress />}
       {duplicates.items.map((group, groupIndex) => {
-        const keeper = group.videos?.[0];
+        const keeperId = duplicateKeepers[group.key] || group.videos?.[0]?._id;
+        const keeper = group.videos?.find((video) => video._id === keeperId) || group.videos?.[0];
         return (
           <Box key={group.key} sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
             <Stack
@@ -731,6 +1163,14 @@ const ArchivistDashboard = () => {
                         <TableCell>{formatBytesBs(video.sizeCompressed || video.sizeOriginal || video.sizePreview)}</TableCell>
                         <TableCell align="right">
                           <Stack direction="row" justifyContent="flex-end" spacing={0.75}>
+                            <Button
+                              size="small"
+                              variant={isKeeper ? 'contained' : 'outlined'}
+                              color="success"
+                              onClick={() => setDuplicateKeepers((current) => ({ ...current, [group.key]: video._id }))}
+                            >
+                              {isKeeper ? 'Zadržava se' : 'Zadrži'}
+                            </Button>
                             <Tooltip title="Otvori detalje">
                               <IconButton size="small" component={Link} to={`/video-details/${video._id}`}>
                                 <OpenInNewIcon fontSize="small" />
@@ -775,7 +1215,7 @@ const ArchivistDashboard = () => {
         title="Arhiva materijala"
         subtitle="Pregled, metadata, tagovi, kategorije i kontrola duplikata za finalne materijale."
         chips={[
-          { label: 'Prikaz', value: activeView === 'duplicates' ? 'Duplikati' : formatStatusLabel(activeView === 'queue' ? 'unreviewed' : filters.reviewStatus, archiveReviewLabels) },
+          { label: 'Prikaz', value: activeView === 'work' ? 'Radni red' : activeView === 'duplicates' ? 'Duplikati' : 'Pretraga arhive' },
           { label: 'Workflow', value: formatStatusLabel(filters.workflowStatus, archiveWorkflowLabels) },
           { label: 'Rezultata', value: formatNumberBs(activeView === 'duplicates' ? duplicates.total : workspace.total) },
         ]}
@@ -797,18 +1237,18 @@ const ArchivistDashboard = () => {
         actions={(
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Button
-              variant={activeView === 'queue' ? 'contained' : 'outlined'}
+              variant={activeView === 'work' ? 'contained' : 'outlined'}
               startIcon={<ReportProblemIcon />}
-              onClick={(event) => handleViewChange(event, 'queue')}
+              onClick={(event) => handleViewChange(event, 'work')}
             >
-              Review queue
+              Radni red
             </Button>
             <Button
-              variant={activeView === 'all' ? 'contained' : 'outlined'}
+              variant={activeView === 'archive' ? 'contained' : 'outlined'}
               startIcon={<FindReplaceIcon />}
-              onClick={(event) => handleViewChange(event, 'all')}
+              onClick={(event) => handleViewChange(event, 'archive')}
             >
-              Svi materijali
+              Pretraga arhive
             </Button>
             <Button
               variant={activeView === 'duplicates' ? 'contained' : 'outlined'}
@@ -821,7 +1261,33 @@ const ArchivistDashboard = () => {
         )}
       >
         <Grid container spacing={1.5}>
-          {activeView !== 'queue' && activeView !== 'duplicates' && (
+          {activeView === 'work' && (
+            <>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Scope</InputLabel>
+                  <Select name="assignment" value={filters.assignment} label="Scope" onChange={handleFilterChange}>
+                    <MenuItem value="mine">Moj red</MenuItem>
+                    <MenuItem value="unassigned">Nepreuzeto</MenuItem>
+                    <MenuItem value="all">Sve aktivno</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Pažnja</InputLabel>
+                  <Select name="attention" value={filters.attention} label="Pažnja" onChange={handleFilterChange}>
+                    <MenuItem value="all">Sve</MenuItem>
+                    <MenuItem value="review">Za pregled</MenuItem>
+                    <MenuItem value="metadata">Treba metadata</MenuItem>
+                    <MenuItem value="in_edit">U montaži</MenuItem>
+                    <MenuItem value="ready_for_review">Spremno za potvrdu</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </>
+          )}
+          {activeView === 'archive' && (
             <Grid item xs={12} sm={6} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Review</InputLabel>
@@ -858,7 +1324,7 @@ const ArchivistDashboard = () => {
               </Grid>
             </>
           )}
-          <Grid item xs={12} md={activeView === 'duplicates' ? 6 : 3}>
+          <Grid item xs={12} md={activeView === 'duplicates' ? 6 : activeView === 'work' ? 2 : 3}>
             <TextField
               name="q"
               label="Pretraga"
@@ -895,6 +1361,32 @@ const ArchivistDashboard = () => {
       </FilterBar>
 
       {activeView === 'duplicates' ? renderDuplicates() : renderVideoTable()}
+
+      <VideoIssueComposer
+        open={issueComposerOpen}
+        video={selectedVideo}
+        playheadSeconds={playheadSeconds}
+        correctionContext={correctionContext}
+        onClose={() => setIssueComposerOpen(false)}
+        onSubmitted={(result) => {
+          setMessage(result?.message || 'Greške su poslane u montažu.');
+          if (selectedVideo) selectNextVideo(selectedVideo._id);
+          fetchCorrectionContext();
+          fetchOverview();
+          fetchVideos({ silent: true });
+        }}
+        onMetadataIssue={() => {
+          setIssueComposerOpen(false);
+          if (selectedVideo) {
+            saveReview(
+              selectedVideo,
+              'needs_metadata',
+              selectedVideo.archiveReviewNotes || 'Potrebna je dopuna metadata podataka.'
+            );
+            openMetadataDialog(selectedVideo);
+          }
+        }}
+      />
 
       <Dialog open={tagDialog.open} onClose={() => setTagDialog({ open: false, video: null, value: '' })} fullWidth maxWidth="sm">
         <DialogTitle>Uredi tagove</DialogTitle>
@@ -1015,8 +1507,8 @@ const ArchivistDashboard = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={reviewDialog.open} onClose={() => setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '' })} fullWidth maxWidth="sm">
-        <DialogTitle>Archive review</DialogTitle>
+      <Dialog open={reviewDialog.open} onClose={() => setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '', warnings: [], overrideReason: '' })} fullWidth maxWidth="sm">
+        <DialogTitle>Arhivistički pregled</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>
             {getVideoTitle(reviewDialog.video)}
@@ -1034,22 +1526,49 @@ const ArchivistDashboard = () => {
             </Select>
           </FormControl>
           <TextField
-            label="Biljeska"
+            label="Bilješka"
             value={reviewDialog.notes}
             onChange={(event) => setReviewDialog((state) => ({ ...state, notes: event.target.value }))}
             fullWidth
             multiline
             minRows={3}
           />
+          {(reviewDialog.warnings || []).length > 0 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 800 }}>Pregled ima upozorenja:</Typography>
+              {(reviewDialog.warnings || []).map((warning) => (
+                <Typography key={warning.code} variant="body2">• {warning.label}</Typography>
+              ))}
+            </Alert>
+          )}
+          {(reviewDialog.warnings || []).length > 0 && (
+            <TextField
+              label="Obrazloženje završetka"
+              value={reviewDialog.overrideReason || ''}
+              onChange={(event) => setReviewDialog((state) => ({ ...state, overrideReason: event.target.value }))}
+              fullWidth
+              multiline
+              minRows={2}
+              required
+              sx={{ mt: 2 }}
+            />
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '' })}>Odustani</Button>
+          <Button onClick={() => setReviewDialog({ open: false, video: null, status: 'needs_metadata', notes: '', warnings: [], overrideReason: '' })}>Odustani</Button>
           <Button
             variant="contained"
             startIcon={<SaveIcon />}
-            onClick={() => saveReview(reviewDialog.video, reviewDialog.status, reviewDialog.notes)}
+            disabled={(reviewDialog.warnings || []).length > 0 && (reviewDialog.overrideReason || '').trim().length < 3}
+            onClick={() => saveReview(
+              reviewDialog.video,
+              reviewDialog.status,
+              reviewDialog.notes,
+              (reviewDialog.warnings || []).length > 0,
+              reviewDialog.overrideReason
+            )}
           >
-            Sacuvaj
+            {(reviewDialog.warnings || []).length > 0 ? 'Završi ipak' : 'Sačuvaj'}
           </Button>
         </DialogActions>
       </Dialog>

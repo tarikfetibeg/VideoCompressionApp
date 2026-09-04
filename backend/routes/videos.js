@@ -950,7 +950,16 @@ router.get(
         .populate('contentType')
         .populate('finalApprovedBy', 'username role')
         .populate('archiveReviewedBy', 'username role')
+        .populate('archiveAssignedTo', 'username role')
         .populate('archiveTagsUpdatedBy', 'username role')
+        .populate({
+          path: 'activeCorrectionRequest',
+          select: 'status origin assignedEditor correctionJob issues highestSeverity note timestamp updatedAt',
+          populate: [
+            { path: 'assignedEditor', select: 'username role' },
+            { path: 'issues.reportedBy', select: 'username role' },
+          ],
+        })
         .populate('duplicateOf', 'filename originalFilename finalTitle');
       if (!video) {
         return res.status(404).json({ message: 'Video not found' });

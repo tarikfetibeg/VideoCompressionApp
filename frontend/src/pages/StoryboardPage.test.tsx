@@ -57,10 +57,10 @@ const job = {
   ],
 };
 
-const renderPage = () => render(
+const renderPage = (user = { id: 'reporter-1', username: 'reporter', role: 'Reporter' }) => render(
   <MemoryRouter initialEntries={['/edit-jobs/job-1/storyboard']}>
     <ThemeProvider theme={theme}>
-      <UserContext.Provider value={{ user: { id: 'reporter-1', username: 'reporter', role: 'Reporter' } } as any}>
+      <UserContext.Provider value={{ user } as any}>
         <Routes>
           <Route path="/edit-jobs/:jobId/storyboard" element={<StoryboardPage />} />
         </Routes>
@@ -128,5 +128,47 @@ describe('StoryboardPage', () => {
       expect(axiosInstance.post).toHaveBeenCalledWith('/v2/edit-jobs/job-1/rough-cut/submit', { version: 1 });
     });
     expect(await screen.findByText(/Storyboard je poslan montaži/i)).toBeInTheDocument();
+  });
+
+  it('lets the assigned editor acknowledge a submitted storyboard', async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url === '/edit-jobs/job-1') return Promise.resolve({ data: job });
+      if (url === '/v2/edit-jobs/job-1/rough-cut') {
+        return Promise.resolve({
+          data: {
+            roughCut: {
+              version: 2,
+              status: 'submitted',
+              durationMs: 11000,
+              items: [{
+                id: 'rough-item-1',
+                videoId: 'video-1',
+                video: job.segments[0].video,
+                inMs: 1000,
+                outMs: 12000,
+                order: 0,
+                note: '',
+              }],
+            },
+            permissions: { view: true, edit: false, submit: false, acknowledge: true, reopen: false },
+          },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    mockedPost.mockResolvedValueOnce({
+      data: { roughCut: { version: 2, status: 'locked', updatedAt: '2026-07-18T12:02:00.000Z' } },
+    });
+
+    renderPage({ id: 'editor-1', username: 'montazer', role: 'Editor' });
+
+    const acknowledgeButton = await screen.findByRole('button', { name: 'Preuzmi u montažu' });
+    fireEvent.click(acknowledgeButton);
+
+    await waitFor(() => {
+      expect(axiosInstance.post).toHaveBeenCalledWith('/v2/edit-jobs/job-1/rough-cut/acknowledge');
+    });
+    expect(await screen.findByText(/Reporter je obaviješten/i)).toBeInTheDocument();
+    expect(screen.getByText(/Status: Preuzeto u montažu/i)).toBeInTheDocument();
   });
 });

@@ -21,6 +21,10 @@ const paths = {
   adminMetrics: path.join(STORAGE_ROOT, 'admin-metrics'),
   temp: path.join(STORAGE_ROOT, 'temp'),
   final: path.join(STORAGE_ROOT, 'final'),
+  programFinalMasters: path.join(STORAGE_ROOT, 'program-finals', 'masters'),
+  programFinalInbox: path.join(STORAGE_ROOT, 'program-finals-inbox'),
+  programFinalPreviews: path.join(STORAGE_ROOT, 'program-final-previews'),
+  programFinalQuarantine: path.join(STORAGE_ROOT, 'program-finals-quarantine'),
 };
 
 function ensureFolderExists(folderPath) {

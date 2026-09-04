@@ -28,6 +28,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const StoryboardPage = lazy(() => import('./pages/StoryboardPage'));
 const MyWorkPage = lazy(() => import('./pages/MyWorkPage'));
+const ProgramFinalsPage = lazy(() => import('./pages/ProgramFinalsPage'));
 
 const RouteLoading = () => (
   <Box sx={{ minHeight: '50vh', display: 'grid', placeItems: 'center' }}>
@@ -153,6 +154,14 @@ function App() {
           element={
             <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin']}>
               <VideoDetailsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/program-finals/:programFinalId?"
+          element={
+            <PrivateRoute roles={['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin']}>
+              <ProgramFinalsPage />
             </PrivateRoute>
           }
         />

@@ -48,6 +48,21 @@ flowchart LR
 
 `DESKTOP_ONLY_MODE=false` ostaje dok pilot korisnici svih rola ne potpišu parity matricu. Nakon toga API se deploya sa `DESKTOP_ONLY_MODE=true`; `/api` i `/api/v2` ostaju dostupni, dok `/` vraća 410. Prethodni desktop release i stari API ugovori ostaju podržani tokom jednog rollback prozora.
 
+## Stabilizacijski sloj
+
+- Resumable final upload koristi tus chunkove i desktop SQLite recovery; jedan
+  transfer se obrađuje po redu kako bi se ograničio disk i mrežni pritisak.
+- Admin health koristi ograničene in-process agregate umjesto stalnog vanjskog
+  telemetry stacka.
+- Technical QC je zaseban serijski queue, preview-first i ručan po defaultu.
+- `Moj rad` prioritizira durable EventOutbox notifikacije, correction zahtjeve,
+  rundown promjene i rokove bez dodatnog polling servisa po domeni.
+- Storyboard acknowledge zaključava samo poslovnu verziju; ne renderuje i ne
+  kopira video sadržaj.
+- AI indeksiranje sadržaja nije dio trenutnog hardverskog profila.
+
+Operativni detalji: `docs/V2_STABILIZACIJA_I_RESURSNI_BUDZET.md`.
+
 ## Reference
 
 - [Tauri arhitektura](https://v2.tauri.app/concept/architecture/)

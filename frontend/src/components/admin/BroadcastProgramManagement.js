@@ -6,9 +6,13 @@ import {
   Checkbox,
   Chip,
   FormControlLabel,
+  FormControl,
   Grid,
+  InputLabel,
+  MenuItem,
   Paper,
   Stack,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -32,6 +36,8 @@ const weekDays = [
 
 const emptyProgram = {
   name: '',
+  slug: '',
+  programTypeId: '',
   description: '',
   defaultTime: '',
   daysOfWeek: [],
@@ -51,6 +57,7 @@ const emptyType = {
 const BroadcastProgramManagement = () => {
   const [programs, setPrograms] = useState([]);
   const [contentTypes, setContentTypes] = useState([]);
+  const [programTypes, setProgramTypes] = useState([]);
   const [programForm, setProgramForm] = useState(emptyProgram);
   const [typeForm, setTypeForm] = useState(emptyType);
   const [editingProgramId, setEditingProgramId] = useState('');
@@ -62,10 +69,12 @@ const BroadcastProgramManagement = () => {
     Promise.all([
       axiosInstance.get('/admin/broadcast-programs'),
       axiosInstance.get('/admin/broadcast-content-types'),
+      axiosInstance.get('/program-types'),
     ])
-      .then(([programResponse, typeResponse]) => {
+      .then(([programResponse, typeResponse, programTypeResponse]) => {
         setPrograms(Array.isArray(programResponse.data) ? programResponse.data : []);
         setContentTypes(Array.isArray(typeResponse.data) ? typeResponse.data : []);
+        setProgramTypes(Array.isArray(programTypeResponse.data) ? programTypeResponse.data : []);
       })
       .catch((error) => {
         console.error('Error fetching broadcast settings:', error);
@@ -136,6 +145,8 @@ const BroadcastProgramManagement = () => {
     setEditingProgramId(program._id);
     setProgramForm({
       name: program.name || '',
+      slug: program.slug || '',
+      programTypeId: program.programType?._id || program.programType || '',
       description: program.description || '',
       defaultTime: program.defaultTime || '',
       daysOfWeek: program.daysOfWeek || [],
@@ -181,6 +192,31 @@ const BroadcastProgramManagement = () => {
                 onChange={(event) => setProgramForm((current) => ({ ...current, name: event.target.value }))}
                 fullWidth
               />
+              <Grid container spacing={1.5}>
+                <Grid item xs={12} sm={5}>
+                  <TextField
+                    label="Slug"
+                    value={programForm.slug}
+                    onChange={(event) => setProgramForm((current) => ({ ...current, slug: event.target.value }))}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12} sm={7}>
+                  <FormControl fullWidth>
+                    <InputLabel>Tip programa</InputLabel>
+                    <Select
+                      value={programForm.programTypeId}
+                      label="Tip programa"
+                      onChange={(event) => setProgramForm((current) => ({ ...current, programTypeId: event.target.value }))}
+                    >
+                      <MenuItem value="">Nekategorisano</MenuItem>
+                      {programTypes.filter((item) => item.active !== false).map((item) => (
+                        <MenuItem key={item._id} value={item._id}>{item.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
               <TextField
                 label="Default time"
                 type="time"
@@ -230,6 +266,7 @@ const BroadcastProgramManagement = () => {
                 <TableRow>
                   <TableCell>Program</TableCell>
                   <TableCell>Time</TableCell>
+                  <TableCell>Tip programa</TableCell>
                   <TableCell>Days</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Edit</TableCell>
@@ -247,6 +284,7 @@ const BroadcastProgramManagement = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>{program.defaultTime || 'N/A'}</TableCell>
+                    <TableCell>{program.programType?.name || 'Nekategorisano'}</TableCell>
                     <TableCell>
                       {(program.daysOfWeek || []).length > 0
                         ? program.daysOfWeek.map((day) => weekDays.find((item) => item.value === day)?.label || day).join(', ')

@@ -24,6 +24,14 @@ const MediaAsset = require('../models/MediaAsset');
 const MediaTask = require('../models/MediaTask');
 const RoughCut = require('../models/RoughCut');
 const TransferSession = require('../models/TransferSession');
+const BroadcastProgram = require('../models/BroadcastProgram');
+const ProgramType = require('../models/ProgramType');
+const ProductionRole = require('../models/ProductionRole');
+const ProductionPerson = require('../models/ProductionPerson');
+const ProgramFinal = require('../models/ProgramFinal');
+const ProgramFinalVersion = require('../models/ProgramFinalVersion');
+const FinalIngestCandidate = require('../models/FinalIngestCandidate');
+const ProgramFinalMediaTicket = require('../models/ProgramFinalMediaTicket');
 
 const models = [
   Video,
@@ -44,6 +52,14 @@ const models = [
   MediaTask,
   RoughCut,
   TransferSession,
+  BroadcastProgram,
+  ProgramType,
+  ProductionRole,
+  ProductionPerson,
+  ProgramFinal,
+  ProgramFinalVersion,
+  FinalIngestCandidate,
+  ProgramFinalMediaTicket,
 ];
 
 async function listIndexNames(model) {

@@ -2,6 +2,47 @@
 
 Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje uticu na svakodnevno koristenje u TV produkciji.
 
+## 2026-07-21
+
+### Zasticena arhiva kompletnih finalnih emisija
+
+- Uveden je potpuno odvojen `ProgramFinal` domen. Kompletne emisije se ne
+  cuvaju u `Video` kolekciji i ne pojavljuju se u TV arhivi priloga, ready
+  material listama, Video Managementu ili postojecim download endpointima.
+- Logicko izdanje definisu tip programa, emisija, datum, termin i edition
+  label. Svaki novi master dobija novu `ProgramFinalVersion`; stari master se
+  ne prepisuje.
+- Rucni unos koristi postojeci resumable transfer sloj. Media Edge watched
+  folder prihvata stabilan fajl i opcionalni JSON sidecar, provjerava SHA-256
+  kopije i tek tada premjesta izvor u `.processed`.
+- Rucni final upload moze se direktno usmjeriti na svjezi Media Edge. TUS
+  token je vezan za cvor i izdanje, neuspjela finalizacija se ponavlja bez
+  ponovnog slanja bajtova, a HLS ticket vodi na proxy cvora koji ga posjeduje.
+- Zaseban queue generise HLS 720p/480p, access MP4 Range fallback, thumbnail i
+  scrub. Master nema HTTP streaming ili download endpoint.
+- `mark-aired` sada emituje Program Final dogadjaj: povezani final ide u
+  arhivski pregled, a nedostajuci final kreira placeholder i notifikaciju
+  Arhivisti.
+- Arhivska potvrda zahtijeva potvrdjeno emitovanje, klasifikovan program,
+  checksum, spreman proxy i najmanje jednog clana ekipe. Nedostajuce
+  preporucene funkcije traze warning override sa razlogom.
+- Credits koriste `ProductionPerson` i `ProductionRole`, ali arhivirani
+  zapis cuva snapshot imena i funkcije.
+- Sve prijavljene role mogu gledati samo aktivnu arhiviranu proxy verziju.
+  Download finalne emisije nije dostupan nijednoj roli.
+- Admin dobija katalog tipova programa, osoba i funkcija, verzije, karantin,
+  restore, odgodjeni purge i rucnu fixity provjeru.
+- Rolling SHA-256 provjera obradjuje jedan master dnevno; mismatch ili missing
+  master stavlja verziju u karantin i salje critical signal Arhivisti/Adminu.
+- Novi storage folderi su `program-finals/masters`,
+  `program-finals-inbox`, `program-final-previews` i
+  `program-finals-quarantine`.
+- Rollout ne dira postojeci media storage. Nakon backupa koriste se
+  `npm run program-finals:migrate:dry-run`,
+  `npm run program-finals:migrate` i `npm run indexes:create`.
+- Puni workflow je u `docs/FINALNE_EMISIJE_ARHIVA.md`, a sigurnosni i
+  retencijski model u `docs/FINALNI_MASTER_ZASTITA_I_RETENCIJA.md`.
+
 ## 2026-06-28
 
 ### Trajni correction queue za oznaku Potrebna ispravka
@@ -567,3 +608,40 @@ Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje ut
   štiti nesačuvan nacrt, a postojeća verzijska `409` zaštita ostaje aktivna.
 - Prvo slanje novog Storyboarda automatski kreira verziju 1 prije slanja
   notifikacije montažeru.
+
+## V2 stabilizacija uz mali resursni budžet
+
+- Admin `Desktop i Edge` dobija lagani health pregled: Mongo ping, disk,
+  Node memoriju/event loop, spore rute, uređaje, transfere i outbox backlog.
+- Desktop final upload koristi tus nastavak u komadima i SQLite recovery red;
+  token je vezan za jedan aktivni transfer, korisnika i video.
+- `Moj rad` izdvaja do 12 critical/action-required sljedećih akcija, uključujući
+  rundown promjene nakon air-package downloada i correction događaje.
+- Tehnički QC je ručna, serijska i preview-first analiza sa jednim FFmpeg
+  threadom; automatsko pokretanje je isključeno po defaultu.
+- Montažer potvrđuje `Preuzmi u montažu` za Storyboard, a Producent/Admin ga
+  mogu ponovo otvoriti uz razlog i Audit Log.
+- Desktop release build sada zahtijeva HTTPS updater, Tauri ključ i Windows
+  potpis; Admin može izvesti desktop dijagnostički JSON bez tajni.
+- AI/transcript/OCR/semantic search tačka nije implementirana zbog trenutnog
+  hardverskog budžeta.
+- Detalji i reference: `docs/V2_STABILIZACIJA_I_RESURSNI_BUDZET.md`.
+
+## Arhivistički radni prostor i grupisane video greške
+
+- Archive Desk je prebačen na dvopanelni `Radni red`, `Pretragu arhive` i
+  `Duplikate`; samo selektovani video pokreće HLS.
+- Uveden je atomski claim lease od 120 minuta sa pogledima `Moj red`,
+  `Nepreuzeto` i `Sve aktivno`.
+- Metadata, tagovi i review produžavaju claim; završetak, slanje u montažu i
+  release ga uklanjaju. Admin može preraspodijeliti stavku uz Audit Log.
+- Završetak nepotpunog pregleda koristi warning + obrazloženi override, bez
+  tvrdog blokiranja dnevnog rada.
+- Jedan video sada grupiše više vremenskih grešaka u jedan CorrectionRequest i
+  jedan correction job. Legacy `note/timestamp` ostaje kompatibilan.
+- Video Details dobija panel `Kontrola i ispravke`, playhead-aware composer,
+  izbor montažera i tabove `Metadata`, `QC i greške`, `Historija`.
+- Editor correction queue prikazuje pojedinačne issue stavke i vodi na tačan
+  timestamp.
+- Tehnički opis, rollout, QA i reference:
+  `docs/ARHIVISTA_WORKFLOW_I_VIDEO_GRESKE.md`.

@@ -17,6 +17,64 @@ Ova aplikacija sluzi za evidenciju, ingest, obradu, pregled i pripremu video mat
 7. Producent ili Admin odobrava materijal za eter.
 8. Materijal se moze oznaciti kao aired ili archived.
 
+## 1.1 Finali emisija
+
+`Finali emisija` su kompletne emisije koje su emitovane u eter. Potpuno su
+odvojene od priloga, inserata i ostalih videa.
+
+### Pregled arhiviranih finala
+
+Sve prijavljene role mogu otvoriti `Finali emisija > Arhiva`, pretrazivati
+po programu, tipu, datumu, terminu, osobi ili funkciji i gledati aktivni HLS
+preview. Download nije dostupan.
+
+### Arhivista
+
+Arhivista u `Radnom redu` vidi:
+
+- nedostaje final;
+- ingest ili obradu;
+- ceka emitovanje;
+- spremno za arhivski pregled;
+- integrity/karantin problem.
+
+Za novi final bira tip programa, emisiju, datum, termin, naslov i najmanje
+jednog clana ekipe. Master moze dodati sa racunara kroz resumable upload.
+Nakon obrade i potvrde emitovanja pregleda proxy, checksum, tehnicke podatke i
+credits, zatim bira `Arhiviraj final`.
+
+Sistem pokusava automatski povezati novi final sa odgovarajucim ShowDayem.
+Za stari materijal bez rundown zapisa treba ukljuciti
+`Historijski unos bez rundown veze`. Kada je takav final stvarno emitovan,
+Arhivista, Admin ili Realizator koristi `Potvrdi emitovanje`; tek poslije toga
+Arhivista ga moze arhivirati.
+
+Ako nedostaje preporucena funkcija ekipe, sistem upozorava. Arhivista moze
+zavrsiti uz kratko obrazlozenje. Nedostatak fajla, checksum-a, confirmed-air
+signala ili najmanje jednog clana ekipe blokira arhiviranje.
+
+### Watched folder
+
+Fajl nazvan
+`program-slug__YYYY-MM-DD__HH-mm__naslov.ext` Media Edge automatski
+prepoznaje nakon sto je stabilan najmanje 60 sekundi. Neispravno ili
+neprepoznato ime ostaje u `Watched folder` redu, gdje ga Arhivista rucno
+povezuje sa emisijom. Fajl se premjesta u `.processed` tek nakon sigurne
+kopije i checksum provjere.
+
+Producent i Realizator u tabu `Moje emisije` vide pending finale povezane sa
+njihovim ShowDayima. Sve role u `Arhivi` vide samo aktivne arhivirane verzije.
+
+### Admin
+
+Admin u katalogu finala upravlja tipovima programa, imenikom osoba,
+produkcijskim funkcijama i klasifikacijom emisija. Admin moze pregledati sve
+verzije, pokrenuti fixity provjeru, staviti verziju u karantin, vratiti je ili
+je trajno ukloniti tek nakon obaveznog perioda i druge potvrde.
+
+Detaljan radni tok i troubleshooting:
+`docs/FINALNE_EMISIJE_ARHIVA.md`.
+
 ## 2. Role u sistemu
 
 ### Reporter
@@ -848,15 +906,15 @@ ispravku ili kontrolisano odbaci pogresnu prijavu.
 
 ## 15. Sta jos treba poboljsati
 
-Preporucene sljedece funkcije:
+Preporučene sljedeće funkcije nakon mjerenja pilot sistema:
 
-- automatski tehnicki QC preko FFprobe
-- loudness provjera po EBU R128
+- kontrolisani pilot automatskog tehničkog QC-a (ručni QC je već dostupan)
+- kalibracija loudness pragova prema stvarnom EBU R128/stanica profilu
 - direktne QC akcije iz Production Dashboard tabele
-- live status update preko WebSocket ili SSE
-- server-side pagination za velike arhive
+- dodatna server-side paginacija/virtualizacija za liste koje prerastu pilot obim
 - definisani broadcast output profili prema playout sistemu televizije
-- export izvjestaja po danu, emisiji ili reporteru
+- export izvještaja po danu, emisiji ili reporteru
+- AI/transkript/OCR pretraga tek nakon odvojenog hardverskog i storage mjerenja
 
 ## 16. Aplikacija v2 na Windowsu
 
@@ -867,3 +925,75 @@ Preporucene sljedece funkcije:
 - Reporter otvara `Storyboard` iz aktivnog joba. Lijevo bira i pomjera klipove, a desno na velikom scrub previewu podešava IN/OUT i napomenu. Gornja traka prikazuje fazu rada, autosave status, verziju i ukupno trajanje. `Pošalji montaži` potvrđuje i šalje posljednju sačuvanu verziju.
 - Montažer u jobu bira `Otvori u Premiere`; desktop priprema `Media`, `OFF`, `Brief` i `Exports` folder. UXP panel učitava `manifest.json`.
 - Admin u modulu `Desktop i Edge` vidi računare, verziju, heartbeat, dozvolu za notifikacije, update kanal i Media Edge stanje.
+
+## 21. Stabilizovani v2 dnevni rad
+
+### Montažer i resumable upload
+
+Final upload u desktop aplikaciji može se pauzirati. Nakon restarta otvori
+Upload manager, izaberi `Odaberi fajl` i ponovo odaberi isti lokalni fajl.
+Naziv i veličina moraju biti isti; slanje se nastavlja od potvrđenog dijela.
+
+### Sljedeća akcija
+
+Na vrhu `Moj rad` prikazuje se najvažnija obaveza: critical rundown promjena,
+ispravka, istekao/blizak rok ili nova akcijska notifikacija. Otvaranje akcije
+vodi direktno na job ili video, bez traženja kroz module.
+
+### Tehnički QC
+
+U Video Details ovlašteni korisnik može izabrati `Pokreni tehnički QC`.
+Rezultat upozorava na crne/zamrznute kadrove, tišinu i nivo zvuka. To je pomoć
+za pregled; korisnik i dalje mora pogledati klip i donijeti QC odluku.
+
+### Storyboard preuzimanje
+
+Kada reporter pošalje Storyboard, dodijeljeni montažer bira `Preuzmi u
+montažu`. Reporter dobija potvrdu, a verzija ostaje zaključana referenca.
+Producent ili Admin može je ponovo otvoriti samo uz upisan razlog.
+
+### Admin health i dijagnostika
+
+`Admin > Desktop i Edge` prikazuje status servera i desktop uređaja. Akcija za
+dijagnostiku sprema JSON u Windows Downloads folder. Fajl ne sadrži lozinku ili
+session token i može se poslati sistem administratoru uz opis problema.
+
+## 22. Novi Archive Desk
+
+### Preuzimanje materijala
+
+1. Otvori `Radni red`.
+2. Izaberi `Nepreuzeto` i klikni materijal.
+3. U desnom panelu izaberi `Preuzmi`.
+4. Materijal se pojavljuje u `Moj red`; claim traje 120 minuta i produžava se
+   tokom rada.
+5. `Oslobodi` vraća materijal u zajednički red.
+
+Ako je materijal preuzeo drugi Arhivista, prikazuju se njegovo ime i vrijeme
+isteka. Paralelne izmjene nisu dozvoljene.
+
+### Pregled i metadata
+
+Lijeva lista služi za brzo biranje, a desni panel sadrži HLS preview, metadata,
+statuse i akcije. `Uredi metadata` obuhvata naslov, event, datum, kategoriju i
+tagove. `Treba metadata` ostavlja stavku u arhivističkom redu bez slanja u
+montažu.
+
+Akcija `Pregledano` može prikazati upozorenja za nepotpune podatke ili otvorenu
+ispravku. Podatke popravi ili upiši razlog i izaberi `Završi ipak`.
+
+### Slanje greške montažeru
+
+1. Zaustavi player na problematičnom kadru.
+2. Izaberi `Označi grešku`.
+3. Odaberi tip, ozbiljnost, početak/kraj i napiši opis.
+4. Po potrebi dodaj još problema, najviše 20 u jednom slanju.
+5. Potvrdi predloženog montažera ili izaberi drugog.
+6. Izaberi `Pošalji montažeru`.
+
+Sve greške istog videa ostaju u jednom zahtjevu i jednom correction jobu.
+Klik na timestamp vraća player na tačan kadar. Kada montažer završi, stavka se
+pojavljuje pod `Spremno za potvrdu`.
+
+U Video Details isti tok je u panelu `Kontrola i ispravke`; tab `Historija`
+prikazuje ranije prijave i odgovorne korisnike.

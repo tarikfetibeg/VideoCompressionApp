@@ -12,6 +12,8 @@ const MediaNodeSchema = new mongoose.Schema({
     nvenc: { type: Boolean, default: false },
     hls: { type: Boolean, default: true },
     resumableUploads: { type: Boolean, default: true },
+    programFinalWatch: { type: Boolean, default: false },
+    programFinalWatchRoot: { type: String, default: '' },
     codecs: [{ type: String }],
   },
   storage: {

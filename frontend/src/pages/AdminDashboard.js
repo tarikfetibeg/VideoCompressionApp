@@ -22,6 +22,7 @@ import FeedbackInbox from '../components/admin/FeedbackInbox';
 import StorageMaintenance from '../components/admin/StorageMaintenance';
 import EditJobManagement from '../components/admin/EditJobManagement';
 import DesktopFleetManagement from '../components/admin/DesktopFleetManagement';
+import ProgramFinalCatalogManagement from '../components/admin/ProgramFinalCatalogManagement';
 import {
   FilterBar,
   KpiStrip,
@@ -76,6 +77,7 @@ const AdminDashboard = () => {
       { id: 'ffmpeg', label: 'FFmpeg', description: 'Codec, bitrate i raw retention' },
       { id: 'maintenance', label: 'Maintenance', description: 'OFF, raw manifesti i servisni fajlovi' },
       { id: 'broadcast', label: 'Programi', description: 'Emisije i content type katalog' },
+      { id: 'program-finals', label: 'Finali emisija', description: 'Tipovi programa, funkcije ekipe i imenik' },
       { id: 'feedback', label: 'Feedback', description: 'Prijave, trijaza i odgovori korisnicima' },
       { id: 'logs', label: 'Audit', description: 'Osjetljive promjene i sistemski logovi' },
     ],
@@ -194,6 +196,8 @@ const AdminDashboard = () => {
         return <StorageMaintenance />;
       case 'broadcast':
         return <BroadcastProgramManagement />;
+      case 'program-finals':
+        return <ProgramFinalCatalogManagement />;
       case 'feedback':
         return <FeedbackInbox />;
       case 'logs':

@@ -5,10 +5,11 @@ const MediaTaskSchema = new mongoose.Schema({
   node: { type: mongoose.Schema.Types.ObjectId, ref: 'MediaNode', required: true },
   kind: {
     type: String,
-    enum: ['video_processing', 'hls_build', 'preview_rebuild', 'proxy_sync', 'checksum'],
+    enum: ['video_processing', 'hls_build', 'preview_rebuild', 'program_final_ingest', 'program_final_processing', 'program_final_fixity', 'proxy_sync', 'checksum'],
     required: true,
   },
   video: { type: mongoose.Schema.Types.ObjectId, ref: 'Video' },
+  programFinalVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'ProgramFinalVersion', default: null },
   payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   status: {
     type: String,

@@ -38,6 +38,26 @@ if (!useLocalQueue) {
     command: process.execPath,
     args: ['backend/workers/previewMaintenanceWorker.js'],
   });
+  processes.push({
+    name: 'technical-qc-worker',
+    command: process.execPath,
+    args: ['backend/workers/technicalQcWorker.js'],
+  });
+  if (process.env.PROGRAM_FINAL_WORKER_EXTERNAL !== 'true') {
+    processes.push({
+      name: 'program-final-worker',
+      command: process.execPath,
+      args: ['backend/workers/programFinalWorker.js'],
+    });
+  }
+}
+
+if (process.env.EVENT_OUTBOX_MODE === 'worker') {
+  processes.push({
+    name: 'event-worker',
+    command: process.execPath,
+    args: ['backend/workers/eventOutboxWorker.js'],
+  });
 }
 
 const children = [];

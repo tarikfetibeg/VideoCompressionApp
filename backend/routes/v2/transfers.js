@@ -1,11 +1,10 @@
 const crypto = require('crypto');
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const authenticateToken = require('../../middleware/authenticateToken');
 const MediaAsset = require('../../models/MediaAsset');
-const MediaNode = require('../../models/MediaNode');
 const TransferSession = require('../../models/TransferSession');
+const { chooseAvailableMediaEdge, signEdgeTransfer } = require('../../services/edgeTransferService');
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -14,7 +13,7 @@ const createSchema = z.object({
   idempotencyKey: z.string().min(8).max(200),
   direction: z.enum(['upload', 'download']),
   kind: z.string().min(1).max(80),
-  entityType: z.enum(['video', 'edit_job', 'show_day', 'off_audio']),
+  entityType: z.enum(['video', 'edit_job', 'show_day', 'off_audio', 'program_final']),
   entityId: z.string().min(1),
   filename: z.string().min(1).max(500),
   totalBytes: z.number().int().nonnegative().default(0),
@@ -24,22 +23,8 @@ const createSchema = z.object({
   site: z.string().default('primary'),
 });
 
-function signTransferToken(transfer, node) {
-  const secret = process.env.EDGE_TRANSFER_SECRET || process.env.JWT_SECRET;
-  return jwt.sign({
-    tokenType: 'edge-transfer',
-    transferId: transfer.transferId,
-    userId: transfer.user,
-    nodeId: node.nodeId,
-    direction: transfer.direction,
-    mediaAssetId: transfer.mediaAsset ? transfer.mediaAsset.toString() : undefined,
-  }, secret, { expiresIn: '24h' });
-}
-
 async function chooseNode(input) {
-  if (input.nodeId) return MediaNode.findOne({ nodeId: input.nodeId, status: { $in: ['online', 'degraded'] } });
-  return MediaNode.findOne({ site: input.site, kind: 'edge', status: { $in: ['online', 'degraded'] } })
-    .sort({ lastSeenAt: -1 });
+  return chooseAvailableMediaEdge({ nodeId: input.nodeId, site: input.site });
 }
 
 router.post('/', async (req, res) => {
@@ -85,7 +70,7 @@ router.post('/', async (req, res) => {
       status: 'queued',
       expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
     });
-    const token = signTransferToken(transfer, node);
+    const token = signEdgeTransfer(transfer, node);
     transfer.resumableUrl = parsed.data.direction === 'upload'
       ? `${node.baseUrl.replace(/\/$/, '')}/files`
       : `${node.baseUrl.replace(/\/$/, '')}/api/edge/assets/${asset?._id}`;

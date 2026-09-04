@@ -33,6 +33,35 @@ Za lokalni desktop QA dovoljna je jedna komanda:
 npm run desktop:dev
 ```
 
+### Odvojeno pokretanje servera i desktop aplikacije
+
+U glavnom folderu projekta dostupne su dvije Windows skripte:
+
+- `POKRENI_V2_SERVER.cmd` pokrece backend API, media obradu i workere koje zahtijeva
+  trenutna `.env` konfiguracija. Ovaj prozor treba ostati otvoren na server racunaru.
+- `POKRENI_V2_APLIKACIJU.cmd` pokrece samo Vite/Tauri desktop klijent. Ne pokrece niti
+  zaustavlja backend, pa se moze koristiti na svakom klijentskom racunaru nakon sto je
+  API adresa pravilno konfigurisana.
+
+Kod lokalnog razvoja prvo pokrenuti server skriptu, zatim aplikacijsku skriptu u drugom
+prozoru. Obje se mogu pokrenuti dvoklikom ili iz PowerShella:
+
+```powershell
+.\POKRENI_V2_SERVER.cmd
+.\POKRENI_V2_APLIKACIJU.cmd
+```
+
+Provjera preduvjeta bez zauzimanja portova dostupna je sa `--check`:
+
+```powershell
+.\POKRENI_V2_SERVER.cmd --check
+.\POKRENI_V2_APLIKACIJU.cmd --check
+```
+
+Server se uredno gasi sa `Ctrl+C`. Zatvaranje Tauri prozora moze aplikaciju sakriti u
+system tray; za potpuno gasenje koristiti `Quit` iz tray menija ili `Ctrl+C` u prozoru
+desktop skripte.
+
 Komanda provjerava port `5000`, pokreće lokalni backend samo kada već nije aktivan,
 čeka da API bude spreman i zatim pokreće Vite/Tauri. Pri zatvaranju development sesije
 gasi samo backend i workere koje je sama pokrenula. Za test samo Tauri klijenta uz već
@@ -108,3 +137,22 @@ Tek nakon potpisane feature-parity matrice deployati `DESKTOP_ONLY_MODE=true`. A
 - Role permission, ack/escalation, offline catch-up, checksum, disk full, Edge/cloud outage.
 - Windows 1366x768 i 1920x1080, scaling 125/150%, tastatura, tray, updater i signed installer.
 - Nakon QA ugasiti sve dev servere i workere.
+
+## Resursno ograničeni pilot profil
+
+Za trenutni server prvi pilot mora koristiti:
+
+```env
+TECHNICAL_QC_AUTO=false
+TECHNICAL_QC_MAX_SECONDS=300
+PROCESSING_QUEUE=local
+```
+
+Technical QC ostaje concurrency 1 i pokreće se ručno. Ne pokretati veliki HLS
+rebuild, preview rebuild i technical QC batch istovremeno. Admin health koristi
+kratke in-process agregate i ne zahtijeva Prometheus/OpenTelemetry collector.
+
+Prije prvog resumable testa provjeriti da `storage/temp/resumable-uploads` ima
+dovoljno prostora. Testni prekid ne čistiti ručno: ponovo odabrati isti fajl i
+potvrditi nastavak. Detaljan sigurnosni i rollback tok je u
+`docs/V2_STABILIZACIJA_I_RESURSNI_BUDZET.md`.

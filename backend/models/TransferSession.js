@@ -9,7 +9,7 @@ const TransferSessionSchema = new mongoose.Schema({
   mediaAsset: { type: mongoose.Schema.Types.ObjectId, ref: 'MediaAsset' },
   direction: { type: String, enum: ['upload', 'download'], required: true },
   kind: { type: String, required: true },
-  entityType: { type: String, enum: ['video', 'edit_job', 'show_day', 'off_audio'], required: true },
+  entityType: { type: String, enum: ['video', 'edit_job', 'show_day', 'off_audio', 'program_final'], required: true },
   entityId: { type: mongoose.Schema.Types.ObjectId },
   status: {
     type: String,
@@ -24,6 +24,7 @@ const TransferSessionSchema = new mongoose.Schema({
   resumableUrl: { type: String, default: '' },
   ticketExpiresAt: { type: Date, default: null },
   error: { type: String, default: '' },
+  metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   completedAt: { type: Date, default: null },
   expiresAt: { type: Date, required: true },
 }, { timestamps: true });

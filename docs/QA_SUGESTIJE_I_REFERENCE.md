@@ -640,3 +640,107 @@ Reference:
   mogućnosti promjene reporterskog prijedloga.
 - Na 1366x768 provjeriti da lista klipova ima vlastiti scroll, detalji ostaju
   vidljivi i nijedan tekst ili kontrola ne izlazi iz panela.
+
+## V2 stabilizacija i ograničeni hardver QA
+
+- Health endpoint ne smije upisivati novi dokument po requestu niti držati
+  neograničenu historiju u memoriji.
+- Admin health polling mora stati kada je tab skriven.
+- Prekinuti tus upload nakon više chunkova; HEAD mora vratiti tačan offset i
+  nastavak ne smije poslati već potvrđene bajtove.
+- Token transfera A mora dobiti 403 za upload ID transfera B; otkazan ili
+  istekao transfer ne smije prihvatiti novi PATCH.
+- Nakon restarta desktopa korisnik ponovo bira fajl; pogrešan naziv ili veličina
+  moraju biti odbijeni bez promjene originalnog/finalnog media storagea.
+- `TECHNICAL_QC_AUTO` mora ostati `false` u početnom rollout-u. Ručni queue mora
+  imati concurrency 1 i FFmpeg `threads=1`.
+- QC na klipu dužem od limita mora zapisati `partial_analysis`; FFmpeg greška ne
+  smije promijeniti processing/HLS status videa.
+- Critical rundown promjena nakon package downloada mora biti prva u `Moj rad`;
+  isti deep link ne smije biti dupliran nižim prioritetom.
+- Storyboard može zaključati samo dodijeljeni montažer, Producent ili Admin;
+  reopen zahtijeva razlog i obavještava reportera i montažera.
+- Release provjera mora pasti bez HTTPS updater endpointa, Tauri signing ključa
+  ili Windows certificate thumbprinta.
+- Puni runbook i primarne reference su u
+  `docs/V2_STABILIZACIJA_I_RESURSNI_BUDZET.md`.
+
+## Archive claim i grupisane greške QA
+
+- Paralelni claim mora dati tačno jedan uspješan odgovor i jedan HTTP `409`.
+- Istek claim-a ne zahtijeva scheduler; query ga mora prikazati kao
+  `Nepreuzeto`.
+- Metadata/tag/review izmjena bez vlastitog claim-a mora biti odbijena.
+- Warning završetak mora prvo vratiti listu problema, a override mora tražiti
+  razlog i ostaviti Audit Log.
+- Metadata problem ne smije kreirati correction job.
+- Više media problema mora završiti u jednom requestu i jednom jobu; legacy
+  prijava mora ostati vidljiva kao virtualni issue.
+- Nova greška tokom `ready_for_review` mora ponovo aktivirati isti job i
+  obavijestiti montažera.
+- Arhivista ne smije reroutati zahtjev koji je `in_edit`; Producent/Admin smije.
+- Na 1366x768 Archive lista ne smije imati horizontalni scroll, a samo
+  selektovani video smije pokrenuti HLS media ticket.
+- Kontrolisano kreiranje indeksa: `npm run indexes:create` nakon backupa.
+
+Primarne reference i puni testni runbook nalaze se u
+`docs/ARHIVISTA_WORKFLOW_I_VIDEO_GRESKE.md`. Posebno su korišteni MongoDB
+single-document atomicity i `findOneAndUpdate`, compound indexi, Mongoose
+subdocuments/populate te MUI Grid/Drawer/Tabs dokumentacija.
+
+## Program Final arhiva QA i reference
+
+- Potvrditi strogu separaciju: nijedan `ProgramFinal` ne smije izaci kroz
+  Video workspace, TV arhivu priloga, Video Management ili legacy download.
+- Dva termina iste emisije istog datuma moraju ostati zasebna; samo termin
+  koji odgovara defaultnom terminu smije automatski zauzeti slobodan ShowDay.
+- Rucni upload prekinuti poslije vise chunkova, nastaviti sa potvrdjenog
+  offseta i potvrditi SHA-256 izvora i kopije.
+- Potpuno prenesenu sesiju kojoj je finalizacija pala ponovo pokrenuti bez
+  ponovnog uploada; limit finala provjeriti kroz `MAX_PROGRAM_FINAL_SIZE_GB`.
+- Watched fajl mijenjati tokom stability prozora; import ne smije krenuti dok
+  su velicina ili mtime promjenjivi.
+- Simulirati prekinuti `importing` kandidat i novi fajl sa ranije koristenim
+  imenom; oba moraju ponovo uci u kontrolisani tok.
+- Testirati ispravan sidecar, neispravan JSON, nepoznat program, checksum
+  duplikat i drugi master za isto izdanje.
+- Arhiviranje prije confirmed-air signala, bez credits, checksum-a ili proxyja
+  mora biti blokirano. Missing recommended role je warning sa auditovanim
+  override razlogom.
+- Historijski final bez ShowDaya mora koristiti eksplicitnu akciju
+  `Potvrdi emitovanje`; sama oznaka historijskog unosa nije dovoljan signal.
+- Sve role mogu gledati samo aktivni archived proxy. Master download endpoint
+  ne smije postojati.
+- Ticket izdat prije karantina mora odmah prestati raditi. Path traversal
+  izvan proxy root-a mora vratiti 404/403 bez otkrivanja putanje.
+- Ticket traje 120 minuta po defaultu, player ga obnavlja bez gubitka
+  timestampa, a segmenti ne smiju izazivati DB write pri svakom zahtjevu.
+- Fixity mismatch mora sacuvati zabiljezeni hash, izolovati verziju i poslati
+  critical notifikaciju Arhivisti i Adminu.
+- Restore dijeljenog mastera ne smije ukloniti bajtove druge reference. Purge
+  prije 30 dana ili bez tacne druge potvrde mora biti odbijen.
+- Sa 100k metadata zapisa provjeriti explain plan za status/date,
+  program/date, credits person/role i prefix search upite.
+- Rollout prvo koristi `npm run program-finals:migrate:dry-run`, zatim
+  backup, migraciju i kontrolisani `npm run indexes:create`.
+
+Primarne reference:
+
+- PBCore Instantiation:
+  https://pbcore.org/elements/pbcoreinstantiation.html
+- PBCore Essence Track:
+  https://pbcore.org/elements/instantiationessencetrack.html
+- EBUCore 1.8:
+  https://tech.ebu.ch/docs/tech/tech3293v1_8.pdf
+- PREMIS 3.0:
+  https://www.loc.gov/standards/premis/v3/premis-3-0-final.pdf
+- Library of Congress file fixity:
+  https://blogs.loc.gov/thesignal/2014/04/protect-your-data-file-fixity-and-data-integrity/
+- tus resumable upload:
+  https://tus.io/protocols/resumable-upload
+- HLS RFC 8216:
+  https://datatracker.ietf.org/doc/html/rfc8216
+
+Puni runbook:
+`docs/FINALNE_EMISIJE_ARHIVA.md` i
+`docs/FINALNI_MASTER_ZASTITA_I_RETENCIJA.md`.

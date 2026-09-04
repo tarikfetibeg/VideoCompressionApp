@@ -27,6 +27,9 @@ const updateSchema = z.object({
 const submitSchema = z.object({
   version: z.number().int().positive(),
 });
+const reopenSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+});
 
 function idOf(value) {
   if (!value) return '';
@@ -46,6 +49,12 @@ function canView(user, job) {
 function canEdit(user, job) {
   return user?.role === 'Admin'
     || (user?.role === 'Reporter' && idOf(job.reporter) === user.id);
+}
+
+function canAcknowledge(user, job) {
+  if (['Admin', 'Producer'].includes(user?.role)) return true;
+  return ['Editor', 'VideoEditor'].includes(user?.role)
+    && idOf(job?.assignedEditor) === user.id;
 }
 
 function serialize(roughCut) {
@@ -68,6 +77,8 @@ function serialize(roughCut) {
     createdBy: roughCut.createdBy,
     updatedBy: roughCut.updatedBy,
     submittedAt: roughCut.submittedAt,
+    lockedAt: roughCut.lockedAt,
+    lockedBy: roughCut.lockedBy,
     createdAt: roughCut.createdAt,
     updatedAt: roughCut.updatedAt,
   };
@@ -143,6 +154,8 @@ router.get('/:jobId/rough-cut', async (req, res) => {
         view: true,
         edit: canEdit(req.user, job) && roughCut?.status !== 'locked',
         submit: canEdit(req.user, job) && roughCut?.status !== 'locked',
+        acknowledge: canAcknowledge(req.user, job) && roughCut?.status === 'submitted',
+        reopen: ['Admin', 'Producer'].includes(req.user.role) && roughCut?.status === 'locked',
       },
     });
   } catch (error) {
@@ -264,6 +277,87 @@ router.post('/:jobId/rough-cut/submit', async (req, res) => {
   } catch (error) {
     console.error('Rough cut submit failed:', error);
     return res.status(500).json({ message: 'Storyboard se ne može poslati montaži.' });
+  }
+});
+
+router.post('/:jobId/rough-cut/acknowledge', async (req, res) => {
+  try {
+    const job = await findJob(req.params.jobId);
+    if (!job) return res.status(404).json({ message: 'Job nije pronađen.' });
+    if (!canAcknowledge(req.user, job)) {
+      return res.status(403).json({ message: 'Storyboard može preuzeti dodijeljeni montažer ili Producent.' });
+    }
+    const now = new Date();
+    const roughCut = await RoughCut.findOneAndUpdate(
+      { job: job._id, status: 'submitted' },
+      { $set: { status: 'locked', lockedAt: now, lockedBy: req.user.id, updatedBy: req.user.id } },
+      { new: true, sort: { version: -1 } }
+    );
+    if (!roughCut) return res.status(409).json({ message: 'Nema poslanog Storyboarda koji čeka preuzimanje.' });
+    await enqueueDomainEvent({
+      type: 'rough_cut.acknowledged',
+      severity: 'info',
+      actor: req.user.id,
+      recipients: [job.reporter].filter(Boolean),
+      entityType: 'edit_job',
+      entityId: job._id,
+      entityVersion: roughCut.version,
+      title: 'Montaža je preuzela Storyboard',
+      bodyPreview: `${job.title}: verzija ${roughCut.version} je preuzeta u montažu.`,
+      deepLink: `vca://job/${job._id}?view=storyboard`,
+      payload: { jobId: job._id, roughCutVersion: roughCut.version },
+      dedupeKey: `rough-cut-acknowledged:${roughCut._id}`,
+    });
+    await AuditLog.create({
+      action: 'Acknowledge Rough Cut',
+      performedBy: req.user.id,
+      details: { jobId: job._id, version: roughCut.version },
+    });
+    return res.json({ message: 'Storyboard je preuzet u montažu i reporter je obaviješten.', roughCut: serialize(await latestForJob(job._id)) });
+  } catch (error) {
+    console.error('Rough cut acknowledge failed:', error);
+    return res.status(500).json({ message: 'Storyboard se ne može preuzeti u montažu.' });
+  }
+});
+
+router.post('/:jobId/rough-cut/reopen', async (req, res) => {
+  const parsed = reopenSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: 'Razlog ponovnog otvaranja je obavezan.' });
+  if (!['Admin', 'Producer'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Samo Producent ili Admin može ponovo otvoriti Storyboard.' });
+  }
+  try {
+    const job = await findJob(req.params.jobId);
+    if (!job) return res.status(404).json({ message: 'Job nije pronađen.' });
+    const roughCut = await RoughCut.findOneAndUpdate(
+      { job: job._id, status: 'locked' },
+      { $set: { status: 'submitted', lockedAt: null, lockedBy: null, updatedBy: req.user.id } },
+      { new: true, sort: { version: -1 } }
+    );
+    if (!roughCut) return res.status(409).json({ message: 'Storyboard nije zaključan.' });
+    await enqueueDomainEvent({
+      type: 'rough_cut.reopened',
+      severity: 'action_required',
+      actor: req.user.id,
+      recipients: [job.reporter, job.assignedEditor].filter(Boolean),
+      entityType: 'edit_job',
+      entityId: job._id,
+      entityVersion: roughCut.version,
+      title: 'Storyboard je ponovo otvoren',
+      bodyPreview: `${job.title}: ${parsed.data.reason}`,
+      deepLink: `vca://job/${job._id}?view=storyboard`,
+      payload: { jobId: job._id, roughCutVersion: roughCut.version, reason: parsed.data.reason },
+      dedupeKey: `rough-cut-reopened:${roughCut._id}:${Date.now()}`,
+    });
+    await AuditLog.create({
+      action: 'Reopen Rough Cut',
+      performedBy: req.user.id,
+      details: { jobId: job._id, version: roughCut.version, reason: parsed.data.reason },
+    });
+    return res.json({ message: 'Storyboard je ponovo otvoren.', roughCut: serialize(await latestForJob(job._id)) });
+  } catch (error) {
+    console.error('Rough cut reopen failed:', error);
+    return res.status(500).json({ message: 'Storyboard se ne može ponovo otvoriti.' });
   }
 });
 

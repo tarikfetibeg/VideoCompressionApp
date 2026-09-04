@@ -14,7 +14,7 @@ export const notificationSeveritySchema = z.enum(['info', 'action_required', 'cr
 export const notificationStateSchema = z.enum(['unread', 'read', 'acknowledged', 'resolved']);
 
 export const entityReferenceSchema = z.object({
-  type: z.enum(['edit_job', 'video', 'show_day', 'correction', 'transfer', 'system']),
+  type: z.enum(['edit_job', 'video', 'show_day', 'correction', 'transfer', 'program_final', 'system']),
   id: z.string().min(1),
 });
 
@@ -70,6 +70,24 @@ export const mediaAssetKindSchema = z.enum([
   'off_audio',
 ]);
 
+export const programFinalStatusSchema = z.enum([
+  'draft',
+  'waiting_for_file',
+  'ingesting',
+  'processing',
+  'waiting_for_air',
+  'ready_for_archive_review',
+  'archived',
+  'quarantined',
+]);
+
+export const programFinalCreditSchema = z.object({
+  personId: z.string().min(1),
+  roleId: z.string().min(1),
+  personNameSnapshot: z.string().min(1),
+  roleNameSnapshot: z.string().min(1),
+});
+
 export type UserRole = z.infer<typeof roleSchema>;
 export type NotificationSeverity = z.infer<typeof notificationSeveritySchema>;
 export type NotificationState = z.infer<typeof notificationStateSchema>;
@@ -78,3 +96,5 @@ export type RoughCut = z.infer<typeof roughCutSchema>;
 export type RoughCutItem = z.infer<typeof roughCutItemSchema>;
 export type TransferStatus = z.infer<typeof transferStatusSchema>;
 export type MediaAssetKind = z.infer<typeof mediaAssetKindSchema>;
+export type ProgramFinalStatus = z.infer<typeof programFinalStatusSchema>;
+export type ProgramFinalCredit = z.infer<typeof programFinalCreditSchema>;

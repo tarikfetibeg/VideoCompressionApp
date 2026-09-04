@@ -8,6 +8,7 @@ const Notification = require('../../models/Notification');
 const TransferSession = require('../../models/TransferSession');
 const Device = require('../../models/Device');
 const MediaNode = require('../../models/MediaNode');
+const { buildMyWorkActionQueue } = require('../../services/myWorkActionService');
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -136,6 +137,14 @@ router.get('/', async (req, res) => {
       platform = { devicesTotal, devicesOnline, nodes };
     }
 
+    const serializedShowDays = showDays.map((item) => serializeShowDay(item, req.user.id));
+    const actionQueue = buildMyWorkActionQueue({
+      jobs,
+      corrections,
+      showDays: serializedShowDays,
+      notifications,
+    });
+
     return res.json({
       generatedAt: new Date(),
       role: req.user.role,
@@ -146,11 +155,13 @@ router.get('/', async (req, res) => {
         critical: criticalCount,
         activeTransfers: activeTransferCount,
         archivePending: archivePendingCount,
+        actionRequired: actionQueue.length,
       },
       jobs,
       corrections,
-      showDays: showDays.map((item) => serializeShowDay(item, req.user.id)),
+      showDays: serializedShowDays,
       notifications,
+      actionQueue,
       transfers,
       archiveItems,
       platform,

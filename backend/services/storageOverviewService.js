@@ -14,6 +14,9 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 
 const folderCategories = [
   { id: 'final', label: 'Finalni masteri', group: 'media', target: paths.final },
+  { id: 'program-final-masters', label: 'Masteri kompletnih emisija', group: 'media', target: paths.programFinalMasters },
+  { id: 'program-final-previews', label: 'Previewi kompletnih emisija', group: 'media', target: paths.programFinalPreviews },
+  { id: 'program-final-quarantine', label: 'Karantin finalnih emisija', group: 'media', target: paths.programFinalQuarantine },
   { id: 'compressed', label: 'Kompresovani materijal', group: 'media', target: paths.compressed },
   { id: 'raw', label: 'Raw materijal', group: 'media', target: paths.raw },
   { id: 'mp4-previews', label: 'MP4 previewi', group: 'media', target: paths.previews },
@@ -22,6 +25,7 @@ const folderCategories = [
   { id: 'thumbnails', label: 'Thumbnail slike', group: 'media', target: paths.thumbnails },
   { id: 'off-audio', label: 'OFF audio', group: 'media', target: paths.offAudio },
   { id: 'temp', label: 'Privremeni fajlovi', group: 'operational', target: paths.temp },
+  { id: 'program-final-inbox', label: 'Watched folder finalnih emisija', group: 'operational', target: paths.programFinalInbox },
   { id: 'raw-manifests', label: 'Raw manifesti', group: 'operational', target: paths.rawManifests },
   { id: 'admin-metrics', label: 'Admin metrics', group: 'operational', target: paths.adminMetrics },
   { id: 'frontend-build', label: 'Frontend build', group: 'application', target: path.join(PROJECT_ROOT, 'frontend', 'build') },

@@ -22,6 +22,7 @@ const RoughCutSchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   submittedAt: { type: Date, default: null },
   lockedAt: { type: Date, default: null },
+  lockedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
 RoughCutSchema.index({ job: 1, version: -1 }, { name: 'rough_cut_job_version_unique_idx', unique: true });

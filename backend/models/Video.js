@@ -125,6 +125,46 @@ const PlaybackCompatibilitySchema = new mongoose.Schema({
   reason: { type: String },
 }, { _id: false });
 
+const TechnicalQcFindingSchema = new mongoose.Schema({
+  code: { type: String, required: true },
+  severity: { type: String, enum: ['info', 'warning', 'error'], default: 'info' },
+  label: { type: String, default: '' },
+  detail: { type: String, default: '' },
+}, { _id: false });
+
+const TechnicalQcIntervalSchema = new mongoose.Schema({
+  start: { type: Number, default: null },
+  end: { type: Number, default: null },
+  duration: { type: Number, default: 0 },
+}, { _id: false });
+
+const TechnicalQcSchema = new mongoose.Schema({
+  status: {
+    type: String,
+    enum: ['not_run', 'queued', 'processing', 'passed', 'warning', 'failed'],
+    default: 'not_run',
+  },
+  profileVersion: { type: Number, default: 1 },
+  sourceKind: { type: String, enum: ['none', 'mp4_preview', 'compressed', 'master', 'raw'], default: 'none' },
+  requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  startedAt: { type: Date, default: null },
+  completedAt: { type: Date, default: null },
+  analyzedDuration: { type: Number, default: null },
+  mediaDuration: { type: Number, default: null },
+  processingMs: { type: Number, default: null },
+  findings: { type: [TechnicalQcFindingSchema], default: [] },
+  metrics: {
+    blackSeconds: { type: Number, default: 0 },
+    freezeSeconds: { type: Number, default: 0 },
+    silenceSeconds: { type: Number, default: 0 },
+    integratedLufs: { type: Number, default: null },
+    truePeakDbfs: { type: Number, default: null },
+    blackIntervals: { type: [TechnicalQcIntervalSchema], default: [] },
+    silenceIntervals: { type: [TechnicalQcIntervalSchema], default: [] },
+  },
+  error: { type: String, default: '' },
+}, { _id: false });
+
 const VideoSchema = new mongoose.Schema({
   filename: String,
   filepath: String,
@@ -215,11 +255,15 @@ const VideoSchema = new mongoose.Schema({
   archiveReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   archiveReviewedAt: { type: Date },
   archiveReviewNotes: { type: String },
+  archiveAssignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  archiveAssignedAt: { type: Date },
+  archiveAssignmentExpiresAt: { type: Date },
   archiveTagsUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   archiveTagsUpdatedAt: { type: Date },
   duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Video' },
 
   rawPath: { type: String },
+  rawRelativePath: { type: String, default: '' },
   compressedPath: { type: String },
   previewPath: { type: String },
   thumbnailPath: { type: String },
@@ -229,6 +273,7 @@ const VideoSchema = new mongoose.Schema({
   scrubPreview: ScrubPreviewSchema,
   hlsPreview: HlsPreviewSchema,
   playbackCompatibility: PlaybackCompatibilitySchema,
+  technicalQc: { type: TechnicalQcSchema, default: () => ({}) },
 
   codec: { type: String },
   resolution: { type: String },
@@ -300,6 +345,10 @@ VideoSchema.index({ status: 1, processingStatus: 1, uploadDate: -1 }, { name: 'v
 VideoSchema.index({ uploader: 1, uploadDate: -1 }, { name: 'video_uploader_upload_idx' });
 VideoSchema.index({ status: 1, processingStatus: 1, broadcastStatus: 1, uploadDate: -1 }, { name: 'video_broadcast_workspace_idx' });
 VideoSchema.index({ status: 1, processingStatus: 1, archiveReviewStatus: 1, uploadDate: -1 }, { name: 'video_archive_review_idx' });
+VideoSchema.index(
+  { archiveReviewStatus: 1, archiveAssignedTo: 1, archiveAssignmentExpiresAt: 1, uploadDate: -1 },
+  { name: 'video_archive_assignment_idx' }
+);
 VideoSchema.index({ contentType: 1, status: 1, processingStatus: 1, broadcastStatus: 1, uploadDate: -1 }, { name: 'video_content_type_library_idx' });
 VideoSchema.index({ sourceJob: 1, uploadDate: -1 }, { name: 'video_source_job_idx', sparse: true });
 VideoSchema.index({ program: 1, airDate: 1, uploadDate: -1 }, { name: 'video_program_air_date_idx', sparse: true });
@@ -308,5 +357,6 @@ VideoSchema.index(
   { correctionStatus: 1, activeCorrectionRequest: 1, correctionReportedAt: -1 },
   { name: 'video_correction_active_reported_idx' }
 );
+VideoSchema.index({ 'technicalQc.status': 1, uploadDate: -1 }, { name: 'video_technical_qc_status_idx' });
 
 module.exports = mongoose.model('Video', VideoSchema);

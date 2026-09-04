@@ -1,5 +1,23 @@
 const mongoose = require('mongoose');
 
+const CorrectionIssueSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['picture', 'audio', 'edit', 'graphics', 'wrong_version', 'technical', 'other'],
+    default: 'other',
+  },
+  severity: {
+    type: String,
+    enum: ['minor', 'major', 'blocking'],
+    default: 'major',
+  },
+  startSeconds: { type: Number, min: 0, default: 0 },
+  endSeconds: { type: Number, min: 0 },
+  note: { type: String, required: true, trim: true, maxlength: 1000 },
+  reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  reportedAt: { type: Date, default: Date.now },
+}, { _id: true });
+
 const CorrectionRequestSchema = new mongoose.Schema({
   video: { type: mongoose.Schema.Types.ObjectId, ref: 'Video', required: true, index: true },
   showDay: { type: mongoose.Schema.Types.ObjectId, ref: 'ShowDay', index: true },
@@ -16,6 +34,12 @@ const CorrectionRequestSchema = new mongoose.Schema({
   assignedEditor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   note: { type: String, required: true, trim: true },
   timestamp: { type: Number, min: 0, default: 0 },
+  issues: { type: [CorrectionIssueSchema], default: undefined },
+  highestSeverity: {
+    type: String,
+    enum: ['minor', 'major', 'blocking'],
+    default: 'major',
+  },
   status: {
     type: String,
     enum: ['reported', 'assigned', 'in_edit', 'ready_for_review', 'resolved', 'dismissed'],
@@ -48,6 +72,10 @@ CorrectionRequestSchema.index(
 CorrectionRequestSchema.index(
   { video: 1, status: 1, updatedAt: -1 },
   { name: 'correction_video_status_updated_idx' }
+);
+CorrectionRequestSchema.index(
+  { status: 1, highestSeverity: 1, updatedAt: -1 },
+  { name: 'correction_status_severity_idx' }
 );
 
 module.exports = mongoose.model('CorrectionRequest', CorrectionRequestSchema);

@@ -14,13 +14,30 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ReplayIcon from '@mui/icons-material/Replay';
+import PauseIcon from '@mui/icons-material/Pause';
 import axios from '../axiosConfig';
+import { UserContext } from './UserContext';
+import { isDesktopRuntime } from '../desktop/runtime';
+import { uploadDirectFinalResumable } from '../services/resumableUploadClient';
+import {
+  loadRecoverableUploads,
+  persistUploads,
+  pruneFinishedUploads,
+} from '../desktop/transferStore';
 
 const BackgroundUploadContext = createContext(/** @type {any} */ (null));
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 const createUploadId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const formatBytes = (value) => {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+};
 
 const sortFilesNaturally = (files) =>
   [...files].sort((a, b) => collator.compare(a.name || '', b.name || ''));
@@ -44,12 +61,15 @@ const buildDirectFinalFormData = (job) => {
 };
 
 export const BackgroundUploadProvider = ({ children }) => {
+  const { user } = useContext(UserContext);
   const [uploads, setUploads] = useState([]);
   const [panelOpen, setPanelOpen] = useState(true);
   const uploadingRef = useRef(false);
+  const abortControllerRef = useRef(null);
+  const restoredUserRef = useRef('');
 
   const activeUploads = useMemo(
-    () => uploads.filter((upload) => ['pending', 'uploading'].includes(upload.status)),
+    () => uploads.filter((upload) => ['pending', 'preparing', 'uploading', 'verifying'].includes(upload.status)),
     [uploads]
   );
   const failedUploads = useMemo(
@@ -60,7 +80,11 @@ export const BackgroundUploadProvider = ({ children }) => {
     () => uploads.filter((upload) => upload.status === 'done'),
     [uploads]
   );
-  const currentUpload = uploads.find((upload) => upload.status === 'uploading');
+  const pausedUploads = useMemo(
+    () => uploads.filter((upload) => upload.status === 'paused'),
+    [uploads]
+  );
+  const currentUpload = uploads.find((upload) => ['preparing', 'uploading', 'verifying'].includes(upload.status));
   const hasBlockingUploads = activeUploads.length > 0;
 
   useEffect(() => {
@@ -76,32 +100,127 @@ export const BackgroundUploadProvider = ({ children }) => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasBlockingUploads]);
 
+  useEffect(() => {
+    const userId = user?._id || user?.id;
+    if (!userId || !isDesktopRuntime() || restoredUserRef.current === String(userId)) return;
+    restoredUserRef.current = String(userId);
+    loadRecoverableUploads(String(userId))
+      .then((items) => {
+        if (!items.length) return;
+        setUploads((current) => {
+          const known = new Set(current.map((item) => item.id));
+          return [
+            ...current,
+            ...items.filter((item) => !known.has(item.id)).map((item) => ({
+              ...item,
+              file: null,
+              error: '',
+              requiresFile: true,
+              responseMessage: 'Ponovo odaberi isti fajl za nastavak uploada.',
+            })),
+          ];
+        });
+        setPanelOpen(true);
+      })
+      .catch((error) => console.error('Upload queue recovery failed:', error));
+  }, [user]);
+
+  useEffect(() => {
+    const userId = user?._id || user?.id;
+    if (!userId || !isDesktopRuntime() || uploads.length === 0) return undefined;
+    const timer = window.setTimeout(() => {
+      const now = new Date().toISOString();
+      persistUploads(uploads.map((item) => ({
+        id: item.id,
+        userId: String(userId),
+        filename: item.filename,
+        size: Number(item.size || 0),
+        lastModified: Number(item.lastModified || item.file?.lastModified || 0),
+        status: item.status,
+        progress: Number(item.progress || 0),
+        transferredBytes: Number(item.transferredBytes || 0),
+        transferId: item.transferId || '',
+        videoId: item.videoId || '',
+        uploadUrl: item.uploadUrl || '',
+        metadata: item.metadata || {},
+        createdAt: item.createdAt,
+        updatedAt: now,
+      }))).catch((error) => console.error('Upload queue persistence failed:', error));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [uploads, user]);
+
   const uploadJob = useCallback(async (job) => {
     uploadingRef.current = true;
     setPanelOpen(true);
     setUploads((current) =>
       current.map((upload) =>
         upload.id === job.id
-          ? { ...upload, status: 'uploading', progress: 0, error: '' }
+          ? { ...upload, status: isDesktopRuntime() ? 'preparing' : 'uploading', error: '', requiresFile: false }
           : upload
       )
     );
 
     try {
-      const response = await axios.post('/broadcast/direct-final-upload', buildDirectFinalFormData(job), {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const total = progressEvent.total || 0;
-          if (total > 0) {
-            const progress = Math.round((progressEvent.loaded * 100) / total);
-            setUploads((current) =>
-              current.map((upload) =>
-                upload.id === job.id ? { ...upload, progress } : upload
-              )
-            );
+      let responseMessage = '';
+      if (isDesktopRuntime()) {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const result = await uploadDirectFinalResumable(
+          job.file,
+          job.metadata || {},
+          {
+            clientUploadId: job.id,
+            transferId: job.transferId,
+            videoId: job.videoId,
+            uploadUrl: job.uploadUrl,
+            offset: job.transferredBytes,
+          },
+          {
+            signal: controller.signal,
+            onPrepared: (state) => {
+              setUploads((current) => current.map((upload) => upload.id === job.id ? {
+                ...upload,
+                ...state,
+                status: Number(state.offset || 0) >= Number(upload.size || 0) ? 'verifying' : 'uploading',
+                transferredBytes: Number(state.offset || 0),
+              } : upload));
+            },
+            onProgress: (loaded, total) => {
+              const progress = total > 0 ? Math.round((loaded * 100) / total) : 0;
+              setUploads((current) => current.map((upload) => upload.id === job.id ? {
+                ...upload,
+                status: progress >= 100 ? 'verifying' : 'uploading',
+                progress,
+                transferredBytes: loaded,
+              } : upload));
+            },
           }
-        },
-      });
+        );
+        responseMessage = result.status === 'verifying'
+          ? 'Fajl je poslan; server završava provjeru i pokreće obradu.'
+          : 'Resumable upload je završen i video je poslan na obradu.';
+      } else {
+        const response = await axios.post('/broadcast/direct-final-upload', buildDirectFinalFormData(job), {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (progressEvent) => {
+            const total = progressEvent.total || 0;
+            if (total > 0) {
+              const progress = Math.round((progressEvent.loaded * 100) / total);
+              setUploads((current) =>
+                current.map((upload) =>
+                  upload.id === job.id ? {
+                    ...upload,
+                    progress,
+                    transferredBytes: progressEvent.loaded,
+                  } : upload
+                )
+              );
+            }
+          },
+        });
+        responseMessage = response.data?.message || 'Upload je sačuvan.';
+      }
 
       setUploads((current) =>
         current.map((upload) =>
@@ -111,12 +230,21 @@ export const BackgroundUploadProvider = ({ children }) => {
                 file: null,
                 status: 'done',
                 progress: 100,
-                responseMessage: response.data?.message || 'Upload saved.',
+                transferredBytes: upload.size,
+                responseMessage,
               }
             : upload
         )
       );
     } catch (error) {
+      if (error.name === 'AbortError') {
+        setUploads((current) => current.map((upload) => upload.id === job.id ? {
+          ...upload,
+          status: 'paused',
+          responseMessage: 'Upload je pauziran i može se nastaviti.',
+        } : upload));
+        return;
+      }
       console.error('Background upload failed:', error);
       setUploads((current) =>
         current.map((upload) =>
@@ -125,12 +253,13 @@ export const BackgroundUploadProvider = ({ children }) => {
                 ...upload,
                 status: 'error',
                 progress: 0,
-                error: error.response?.data?.message || 'Upload failed.',
+                error: error.response?.data?.message || error.message || 'Upload nije uspio.',
               }
             : upload
         )
       );
     } finally {
+      abortControllerRef.current = null;
       uploadingRef.current = false;
     }
   }, []);
@@ -151,6 +280,8 @@ export const BackgroundUploadProvider = ({ children }) => {
       file,
       filename: file.name,
       size: file.size,
+      lastModified: file.lastModified,
+      transferredBytes: 0,
       status: 'pending',
       progress: 0,
       error: '',
@@ -173,16 +304,45 @@ export const BackgroundUploadProvider = ({ children }) => {
     setUploads((current) =>
       current.map((upload) =>
         upload.id === uploadId && upload.file
-          ? { ...upload, status: 'pending', progress: 0, error: '' }
+          ? { ...upload, status: 'pending', error: '', requiresFile: false }
           : upload
       )
     );
     setPanelOpen(true);
   }, []);
 
+  const pauseUpload = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
+  const attachUploadFile = useCallback((uploadId, file) => {
+    if (!file) return;
+    setUploads((current) => current.map((upload) => {
+      if (upload.id !== uploadId) return upload;
+      if (upload.filename !== file.name || Number(upload.size) !== Number(file.size)) {
+        return {
+          ...upload,
+          error: 'Odabrani fajl nema isti naziv i veličinu kao pauzirani upload.',
+        };
+      }
+      return {
+        ...upload,
+        file,
+        lastModified: file.lastModified,
+        status: 'pending',
+        requiresFile: false,
+        error: '',
+        responseMessage: 'Nastavljam upload od zadnjeg potvrđenog dijela.',
+      };
+    }));
+    setPanelOpen(true);
+  }, []);
+
   const clearFinishedUploads = useCallback(() => {
     setUploads((current) => current.filter((upload) => !['done', 'error'].includes(upload.status)));
-  }, []);
+    const userId = user?._id || user?.id;
+    if (userId) pruneFinishedUploads(String(userId)).catch(() => {});
+  }, [user]);
 
   const value = useMemo(
     () => ({
@@ -190,8 +350,11 @@ export const BackgroundUploadProvider = ({ children }) => {
       activeUploads,
       failedUploads,
       completedUploads,
+      pausedUploads,
       enqueueDirectFinalUploads,
       retryUpload,
+      pauseUpload,
+      attachUploadFile,
       clearFinishedUploads,
       hasBlockingUploads,
     }),
@@ -200,8 +363,11 @@ export const BackgroundUploadProvider = ({ children }) => {
       activeUploads,
       failedUploads,
       completedUploads,
+      pausedUploads,
       enqueueDirectFinalUploads,
       retryUpload,
+      pauseUpload,
+      attachUploadFile,
       clearFinishedUploads,
       hasBlockingUploads,
     ]
@@ -227,12 +393,12 @@ export const BackgroundUploadProvider = ({ children }) => {
                   <CloudUploadIcon color={hasBlockingUploads ? 'primary' : 'action'} />
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 850 }}>
-                      Background uploads
+                      Upload manager
                     </Typography>
                     <Typography variant="caption" color="text.secondary" noWrap>
                       {hasBlockingUploads
-                        ? 'Uploads continue while you use the app. Do not close this tab.'
-                        : 'Upload queue finished.'}
+                        ? 'Upload radi u pozadini; aplikaciju možeš normalno koristiti.'
+                        : pausedUploads.length > 0 ? 'Pauzirani upload čeka nastavak.' : 'Upload red je završen.'}
                     </Typography>
                   </Box>
                 </Stack>
@@ -242,10 +408,13 @@ export const BackgroundUploadProvider = ({ children }) => {
               </Stack>
 
               <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                <Chip label={`${activeUploads.length} active`} size="small" color={hasBlockingUploads ? 'primary' : 'default'} />
-                <Chip label={`${completedUploads.length} done`} size="small" color="success" variant="outlined" />
+                <Chip label={`${activeUploads.length} aktivno`} size="small" color={hasBlockingUploads ? 'primary' : 'default'} />
+                <Chip label={`${completedUploads.length} završeno`} size="small" color="success" variant="outlined" />
+                {pausedUploads.length > 0 && (
+                  <Chip label={`${pausedUploads.length} pauzirano`} size="small" color="warning" variant="outlined" />
+                )}
                 {failedUploads.length > 0 && (
-                  <Chip label={`${failedUploads.length} failed`} size="small" color="error" variant="outlined" />
+                  <Chip label={`${failedUploads.length} greška`} size="small" color="error" variant="outlined" />
                 )}
               </Stack>
 
@@ -255,10 +424,46 @@ export const BackgroundUploadProvider = ({ children }) => {
                     {currentUpload.filename}
                   </Typography>
                   <LinearProgress variant="determinate" value={Number(currentUpload.progress) || 0} />
-                  <Typography variant="caption" color="text.secondary">
-                    Upload {Number(currentUpload.progress) || 0}%
-                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                    <Typography variant="caption" color="text.secondary">
+                      {currentUpload.status === 'preparing' ? 'Pripremam siguran transfer' : currentUpload.status === 'verifying' ? 'Server provjerava fajl' : `Upload ${Number(currentUpload.progress) || 0}%`}
+                      {currentUpload.transferredBytes > 0 ? ` / ${formatBytes(currentUpload.transferredBytes)} od ${formatBytes(currentUpload.size)}` : ''}
+                    </Typography>
+                    {currentUpload.status === 'uploading' && isDesktopRuntime() && (
+                      <Button size="small" startIcon={<PauseIcon />} onClick={pauseUpload}>Pauziraj</Button>
+                    )}
+                  </Stack>
                 </Box>
+              )}
+
+              {pausedUploads.length > 0 && (
+                <Stack spacing={0.75} sx={{ mt: 1 }}>
+                  {pausedUploads.slice(0, 3).map((upload) => (
+                    <Alert
+                      key={upload.id}
+                      severity="warning"
+                      action={upload.file ? (
+                        <Button color="inherit" size="small" startIcon={<ReplayIcon />} onClick={() => retryUpload(upload.id)}>
+                          Nastavi
+                        </Button>
+                      ) : (
+                        <Button color="inherit" size="small" component="label">
+                          Odaberi fajl
+                          <input
+                            type="file"
+                            hidden
+                            onChange={(event) => {
+                              attachUploadFile(upload.id, event.target.files?.[0]);
+                              event.target.value = '';
+                            }}
+                          />
+                        </Button>
+                      )}
+                    >
+                      {upload.filename}: {Number(upload.progress) || 0}% sačuvano
+                    </Alert>
+                  ))}
+                </Stack>
               )}
 
               {failedUploads.length > 0 && (
@@ -275,7 +480,7 @@ export const BackgroundUploadProvider = ({ children }) => {
                             startIcon={<ReplayIcon />}
                             onClick={() => retryUpload(upload.id)}
                           >
-                            Retry
+                            Pokušaj ponovo
                           </Button>
                         ) : null
                       }
@@ -288,7 +493,7 @@ export const BackgroundUploadProvider = ({ children }) => {
 
               {!hasBlockingUploads && uploads.length > 0 && (
                 <Button size="small" sx={{ mt: 1 }} onClick={clearFinishedUploads}>
-                  Clear finished
+                  Očisti završeno
                 </Button>
               )}
             </Paper>

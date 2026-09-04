@@ -7,6 +7,10 @@ import {
   ButtonBase,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   IconButton,
   Paper,
@@ -25,6 +29,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -80,8 +86,15 @@ const workflowSteps = ['Redoslijed klipova', 'Rezovi i napomene', 'Spremno za mo
 const statusLabels: Record<RoughCut['status'], string> = {
   draft: 'Nacrt',
   submitted: 'Poslano montaži',
-  locked: 'Zaključano',
+  locked: 'Preuzeto u montažu',
   superseded: 'Zamijenjena verzija',
+};
+
+type StoryboardPermissions = {
+  edit: boolean;
+  submit: boolean;
+  acknowledge: boolean;
+  reopen: boolean;
 };
 
 const toMilliseconds = (value: unknown) => Math.max(0, Math.round(Number(value || 0) * 1000));
@@ -180,10 +193,19 @@ const StoryboardPage = () => {
   const [status, setStatus] = useState<RoughCut['status']>('draft');
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const [editable, setEditable] = useState(false);
+  const [permissions, setPermissions] = useState<StoryboardPermissions>({
+    edit: false,
+    submit: false,
+    acknowledge: false,
+    reopen: false,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -238,11 +260,18 @@ const StoryboardPage = () => {
       ]);
       const nextJob = jobResponse.data;
       const roughCut = roughCutResponse.data?.roughCut as RoughCut | null;
+      const nextPermissions = roughCutResponse.data?.permissions || {};
       const nextItems = roughCut?.items?.length
         ? withClientKeys(roughCut.items)
         : buildInitialItems(nextJob.segments);
       setJob(nextJob);
-      setEditable(Boolean(roughCutResponse.data?.permissions?.edit));
+      setEditable(Boolean(nextPermissions.edit));
+      setPermissions({
+        edit: Boolean(nextPermissions.edit),
+        submit: Boolean(nextPermissions.submit),
+        acknowledge: Boolean(nextPermissions.acknowledge),
+        reopen: Boolean(nextPermissions.reopen),
+      });
       setVersion(roughCut?.version || 0);
       setStatus(roughCut?.status || 'draft');
       setLastSavedAt(roughCut?.updatedAt);
@@ -364,6 +393,49 @@ const StoryboardPage = () => {
     }
   };
 
+  const acknowledge = async () => {
+    setWorkflowBusy(true);
+    setError('');
+    try {
+      const response = await axiosInstance.post(`/v2/edit-jobs/${jobId}/rough-cut/acknowledge`);
+      setStatus(response.data?.roughCut?.status || 'locked');
+      setLastSavedAt(response.data?.roughCut?.updatedAt || new Date().toISOString());
+      setPermissions((current) => ({
+        ...current,
+        acknowledge: false,
+        reopen: ['Admin', 'Producer'].includes(user?.role || ''),
+      }));
+      setMessage('Storyboard je preuzet u montažu. Reporter je obaviješten.');
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Storyboard se ne može preuzeti u montažu.');
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const reopen = async () => {
+    const reason = reopenReason.trim();
+    if (reason.length < 3) {
+      setError('Upiši razlog ponovnog otvaranja Storyboarda.');
+      return;
+    }
+    setWorkflowBusy(true);
+    setError('');
+    try {
+      const response = await axiosInstance.post(`/v2/edit-jobs/${jobId}/rough-cut/reopen`, { reason });
+      setStatus(response.data?.roughCut?.status || 'submitted');
+      setLastSavedAt(response.data?.roughCut?.updatedAt || new Date().toISOString());
+      setPermissions((current) => ({ ...current, acknowledge: true, reopen: false }));
+      setReopenDialogOpen(false);
+      setReopenReason('');
+      setMessage('Storyboard je ponovo otvoren. Reporter i montažer su obaviješteni.');
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Storyboard se ne može ponovo otvoriti.');
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
   const selectedIndex = useMemo(
     () => items.findIndex((item) => item.clientKey === selectedKey),
     [items, selectedKey]
@@ -420,6 +492,26 @@ const StoryboardPage = () => {
                 {saving ? 'Čuvam...' : 'Sačuvaj'}
               </Button>
             )}
+            {permissions.acknowledge && (
+              <Button
+                startIcon={<AssignmentTurnedInIcon />}
+                onClick={acknowledge}
+                variant="contained"
+                disabled={workflowBusy}
+              >
+                {workflowBusy ? 'Preuzimam...' : 'Preuzmi u montažu'}
+              </Button>
+            )}
+            {permissions.reopen && (
+              <Button
+                startIcon={<LockOpenIcon />}
+                onClick={() => setReopenDialogOpen(true)}
+                variant="outlined"
+                disabled={workflowBusy}
+              >
+                Ponovo otvori
+              </Button>
+            )}
             {editable && (
               <Button
                 startIcon={<CheckCircleOutlineIcon />}
@@ -450,6 +542,11 @@ const StoryboardPage = () => {
       {editable && status === 'submitted' && (
         <Alert severity="info" sx={{ mb: 2 }}>
           Ova verzija je već poslana montaži. Nova promjena će napraviti sljedeću draft verziju.
+        </Alert>
+      )}
+      {status === 'locked' && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Montaža je potvrdila preuzimanje ove verzije. Storyboard ostaje dostupan kao referenca uz originalne sirovine.
         </Alert>
       )}
       {conflict && (
@@ -756,6 +853,39 @@ const StoryboardPage = () => {
         onClose={() => setSubmitDialogOpen(false)}
         onConfirm={submit}
       />
+      <Dialog
+        open={reopenDialogOpen}
+        onClose={workflowBusy ? undefined : () => setReopenDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Ponovo otvori Storyboard</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Reporter i dodijeljeni montažer dobit će notifikaciju sa razlogom.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={3}
+            label="Razlog"
+            value={reopenReason}
+            onChange={(event) => setReopenReason(event.target.value)}
+            inputProps={{ maxLength: 1000 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReopenDialogOpen(false)} disabled={workflowBusy}>Odustani</Button>
+          <Button
+            onClick={reopen}
+            variant="contained"
+            disabled={workflowBusy || reopenReason.trim().length < 3}
+          >
+            {workflowBusy ? 'Otvaram...' : 'Ponovo otvori'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

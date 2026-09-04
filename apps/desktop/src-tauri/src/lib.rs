@@ -480,6 +480,45 @@ fn set_transfer_guard(active: bool, state: State<'_, DesktopState>) {
 }
 
 #[tauri::command]
+async fn create_diagnostics_report(
+    app: tauri::AppHandle,
+    state: State<'_, DesktopState>,
+    snapshot: serde_json::Value,
+) -> Result<String, String> {
+    let download_directory = app.path().download_dir().map_err(|error| error.to_string())?;
+    tokio::fs::create_dir_all(&download_directory).await.map_err(|error| error.to_string())?;
+    let target = available_path(
+        &download_directory,
+        &format!("Aplikacija-v2-dijagnostika-{}.json", chrono_free_timestamp()),
+    );
+    let guarded = state.transfer_guard.load(Ordering::Relaxed);
+    let watched_workspaces = state.watched_exports
+        .lock()
+        .map(|items| items.len())
+        .unwrap_or_default();
+    let report = serde_json::json!({
+        "schema": "vca-desktop-diagnostics/v1",
+        "createdAtEpochMs": chrono_free_timestamp(),
+        "device": {
+            "hostname": std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows računar".into()),
+            "platform": std::env::consts::OS,
+            "platformVersion": std::env::var("OS").unwrap_or_default(),
+            "architecture": std::env::consts::ARCH,
+            "appVersion": app.package_info().version.to_string()
+        },
+        "desktop": {
+            "transferGuardActive": guarded,
+            "watchedPremiereWorkspaces": watched_workspaces,
+            "appLocalDataDir": app.path().app_local_data_dir().ok().map(|path| path.to_string_lossy().to_string())
+        },
+        "snapshot": snapshot
+    });
+    let bytes = serde_json::to_vec_pretty(&report).map_err(|error| error.to_string())?;
+    tokio::fs::write(&target, bytes).await.map_err(|error| error.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn secure_set(key: String, value: String) -> Result<(), String> {
     keyring::Entry::new(CREDENTIAL_SERVICE, &key)
         .map_err(|error| error.to_string())?
@@ -662,6 +701,7 @@ pub fn run() {
             start_native_download,
             cancel_native_download,
             prepare_premiere_workspace,
+            create_diagnostics_report,
             quit_app,
         ])
         .run(tauri::generate_context!())

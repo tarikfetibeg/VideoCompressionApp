@@ -92,6 +92,8 @@ const MyWorkPage = () => {
   const notifications = data.notifications || [];
   const transfers = data.transfers || [];
   const archiveItems = data.archiveItems || [];
+  const actionQueue = data.actionQueue || [];
+  const primaryAction = actionQueue[0] || null;
   const urgentJobs = useMemo(() => jobs.filter((job: any) => (
     job.priority === 'urgent' || job.jobKind === 'correction' || (job.deadline && new Date(job.deadline) <= new Date())
   )).length, [jobs]);
@@ -125,6 +127,43 @@ const MyWorkPage = () => {
         { label: 'Transferi', value: summary.activeTransfers || 0, color: summary.activeTransfers ? 'primary.main' : 'text.primary' },
         ...(user?.role === 'Archivist' ? [{ label: 'Čeka arhivu', value: summary.archivePending || 0 }] : []),
       ]} />
+
+      {primaryAction && (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 2,
+            mb: 2,
+            borderRadius: 1.5,
+            borderColor: primaryAction.severity === 'critical' ? 'error.main' : 'warning.main',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5 }}>
+                <StatusChip
+                  label={primaryAction.severity === 'critical' ? 'Odmah reaguj' : 'Sljedeća akcija'}
+                  tone={primaryAction.severity === 'critical' ? 'error' : 'warning'}
+                />
+                {actionQueue.length > 1 && (
+                  <Typography variant="caption" color="text.secondary">+{actionQueue.length - 1} nakon ove</Typography>
+                )}
+              </Stack>
+              <Typography variant="h6" sx={{ fontWeight: 900 }}>{primaryAction.title}</Typography>
+              <Typography variant="body2" color="text.secondary">{primaryAction.description}</Typography>
+            </Box>
+            <Button
+              variant="contained"
+              color={primaryAction.severity === 'critical' ? 'error' : 'primary'}
+              endIcon={<ArrowForwardIcon />}
+              onClick={() => navigate(notificationPath(primaryAction))}
+            >
+              Otvori zadatak
+            </Button>
+          </Stack>
+        </Paper>
+      )}
 
       {notifications.length > 0 && (
         <WorkSection title="Traži tvoju pažnju" subtitle="Kritični događaji ostaju aktivni dok ih ne potvrdiš.">
