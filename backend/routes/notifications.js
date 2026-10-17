@@ -20,7 +20,9 @@ function parsePagination(query = {}) {
 function populateNotification(query) {
   return query
     .populate('actor', 'username role')
-    .populate('job', 'title status workspaceState');
+    .populate('job', 'title status workspaceState jobKind')
+    .populate('video', 'filename originalFilename finalTitle correctionStatus')
+    .populate('correctionRequest', 'status origin assignedEditor timestamp');
 }
 
 router.get('/workspace', async (req, res) => {

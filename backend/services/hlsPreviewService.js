@@ -6,6 +6,7 @@ const Video = require('../models/Video');
 const { probeFile, resolveExistingPath } = require('./mediaCompatibilityService');
 const { getMediaSettings } = require('./mediaProfileService');
 const { paths, ensureFolderExists } = require('../utils/storagePaths');
+const { renameWithRetry } = require('../utils/atomicRename');
 
 const HLS_PREVIEW_VERSION = 'hls-v2-single-pass';
 const HLS_SEGMENT_DURATION = 4;
@@ -262,8 +263,16 @@ function validateHlsBuild(folderPath, renditions = HLS_RENDITIONS) {
     if (!fs.existsSync(playlistPath)) throw new Error(`${rendition.name} playlist is missing.`);
     const playlist = fs.readFileSync(playlistPath, 'utf8');
     if (!playlist.includes('#EXT-X-ENDLIST')) throw new Error(`${rendition.name} VOD playlist is incomplete.`);
-    const segments = fs.readdirSync(variantFolder).filter((name) => name.endsWith('.ts'));
+    const segments = playlist.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
     if (segments.length === 0) throw new Error(`${rendition.name} has no HLS segments.`);
+    for (const segment of segments) {
+      const segmentPath = path.resolve(variantFolder, segment);
+      if (!isPathInside(variantFolder, segmentPath) || !segment.endsWith('.ts') || !fs.existsSync(segmentPath)) {
+        throw new Error(`${rendition.name} playlist references a missing or unsafe segment.`);
+      }
+      const stat = fs.statSync(segmentPath);
+      if (!stat.isFile() || stat.size === 0) throw new Error(`${rendition.name} has an empty HLS segment.`);
+    }
   }
 }
 
@@ -390,7 +399,7 @@ async function buildHlsPreviewForVideo(videoOrId, { force = false, onProgress } 
 
     writeMasterPlaylist(buildingFolder, settings.renditions);
     validateHlsBuild(buildingFolder, settings.renditions);
-    fs.renameSync(buildingFolder, activeFolder);
+    await renameWithRetry(buildingFolder, activeFolder);
     const renditions = settings.renditions.map((rendition) => ({
       name: rendition.name,
       width: rendition.width,

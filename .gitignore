@@ -9,6 +9,8 @@ backend/.env
 frontend/.env
 .env.local
 .env.production.local
+.env.*
+!.env.example
 
 # Build folders
 build/
@@ -39,3 +41,20 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .qodo/
+
+# Isolated QA runtime, credentials and unsanitized browser artifacts
+.qa-runtime/
+.qa-private/
+qa/test-results/
+
+# Local thesis documents, render caches and scratch work (keep existing tracked files)
+/.doc_work/
+/deliverables/
+/tmp/
+__pycache__/
+
+# Keep final QA summaries/inventory, not generated runs, traces or browser artifacts
+/analysis/*
+!/analysis/qa/
+/analysis/qa/*/
+!/analysis/qa/inventory/

@@ -1,8 +1,74 @@
 # QA sugestije i profesionalne reference
 
-Zadnja izmjena: 2026-06-17
+Zadnja izmjena: 2026-10-17
+
+## Windows launcher - 17.10.2026.
+
+Dodani su root `.cmd` ulaz i `scripts/windowsLauncher.ps1`, bez izmjena
+app/worker koda ili zavisnosti. Ciljani regresijski testovi su u
+`tests/launcher/windowsLauncher.test.js`: izolovani fake npm/start procesi
+provjeravaju mapiranje komandi, sigurnu potvrdu instalacije i zaustavljanje
+build-start lanca pri gresci. Stvarni `.cmd` build i lokalna provjera sluze
+kao dodatni smoke, bez pokretanja aplikacije ili pristupa bazi.
+
+Rezultati: osam launcher testova, stvarni frontend build, 12 backend i 50
+frontend testova su prolazni. Backend/frontend testovi ponovljeni su izvan
+sandboxa nakon ogranicenja za loopback/junction/Jest cache. Nema dependency
+nadogradnji; postojeci Browserslist/React act warningi ostaju evidentirani.
+
+Kompletan funkcionalni QA, dugi soak i stvarni Ctrl+C tokom media obrade
+nisu ponovljeni u ovom ciklusu. Postojeci `startAll.js` shutdown mehanizam
+ostaje nepromijenjen. [Uputstvo i granice](WINDOWS_LAUNCHER.md).
+
+## Header i kontinuitet QA dokaza - 11.10.2026.
+
+Korisnik je odobrio popravku niskog headera, a zatim izricito preskakanje
+novih dugotrajnih testova.30/75m rezultati prije header promjene su sacuvani
+i oznaceni prethodnim buildom. Nisu predstavljeni kao novi finalni soak.
+Aktuelni component/native zoom/scroll dokazi i preostale blokade su u
+[QA predaji](../analysis/qa/PREDAJA_QA_2026_10.md).
+
+Provjerene reference11.10.2026:
+
+- [MDN: height media feature](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/height):
+  u AppShell.js `max-height:400px` reaguje na raspolozivu visinu, a ne samo sirinu.
+- [MDN: position](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/position):
+  static header ostaje u toku dokumenta i moze napustiti viewport; normalni
+  desktop zadrzava sticky. Izmjerene47,3% i106px vrijednosti dolaze iz QA
+  native-zoom.json, ne iz ove reference.
+
+## Funkcionalni retest i prihvaceni rizici - 10.10.2026.
+
+[Novi izvjestaj](QA_FUNKCIONALNI_CIKLUS_2026_10.md) povezuje globalni
+same-account relogin, Reporter scope, storage integrity, native browser
+zoom, 120s HLS/Range network test i real-device tok sa kodom i rezultatima.
+Stari runovi ispod ostaju historijski baseline. Za najnovije rezultate
+koristiti `analysis/qa/ZAVRSNI_REZULTATI.json` i source/build hash svakog runa.
+
+Korisnik je odgodio sigurnosne dependency nadogradnje, trenutnu revokaciju
+JWT-a i blokadu brisanja aktivno povezanih videa. To su dokumentovani rizici,
+ne zatvoreni nalazi. Node 20 je EOL od 30.04.2026. prema pregledanom
+[sluzbenom rasporedu](https://github.com/nodejs/Release#release-schedule).
+Za novu Node LTS migraciju prvo konsultovati korisnika.
+
+Testovi i emulacija nisu dokaz svakog uredjaja. Android/LAN odgovori moraju
+biti zasebno zabiljezeni. Druga mreza je blokirana jer postoji samo pristup
+produkcijskom portu 5000; ne preusmjeravati ga samostalno. Firefox runtime i
+izolovani Redis ostaju zasebne blokade. Svaka nepokrivena kontrola ostaje
+inventory-only, bez laznog pretvaranja shared handler testa u puni UI coverage.
 
 Ovaj dokument je radni backlog za QA, buduce sugestije i reference koje se mogu koristiti u Word dokumentu/prezentaciji za VideoCompressionApp.
+
+## Izvrsivi sveobuhvatni QA plan - 03.10.2026.
+
+Detaljan plan po fazama, funkcionalna/role matrica, desktop/mobile viewporti,
+UI inventory, izolacija testne baze/storagea, performance pragovi i izlazni
+artefakti su u [QA_PLAN_FUNKCIONALNOST_RESPONSIVE_PERFORMANSE.md](QA_PLAN_FUNKCIONALNOST_RESPONSIVE_PERFORMANSE.md).
+Lokalni ciklus je izveden; rezultati i otvoreni kriteriji su u
+[QA izvrsenju](QA_IZVRSENJE_WEB_OPTIMIZACIJA.md). To nije potvrda svih
+feature-a/uredjaja. Rezultati su u `analysis/qa/<run-id>/`; 60-minutni soak
+otkrio je jednosatni istek JWT sesije, a NVENC speed i mobilni TBT ciljevi
+nisu prosli. Nadogradnje zavisnosti odgodene su odlukom korisnika.
 
 ## Namjena
 
@@ -581,6 +647,19 @@ Reference:
   dobiti `409` ako pokusa preuzeti vec dodijeljenu ispravku.
 - Arhivista moze poslati legacy oznaku u produkciju bez dupliranja requesta
   ili correction joba.
+- Arhivista mora moci prijaviti novu gresku i kada klip prethodno nema
+  `needs_correction` status. Opis je obavezan, a timestamp prihvata `42.5` i
+  `42,5` te se u API salje kao broj.
+- Arhivska prijava sa poznatim montazerom mora kreirati jednu neprocitanu
+  `video_correction` notifikaciju tom montazeru i correction job mora biti
+  dostupan direktno iz notifikacije.
+- Arhivska prijava bez montazera mora ostati u zajednickom produkcijskom
+  queueu i obavijestiti Producent korisnike; Admin je fallback ako Producent
+  ne postoji.
+- Ponovljeno osiguravanje istog otvorenog zahtjeva ne smije kreirati duplikat
+  notifikacije za istog primaoca.
+- Kada Producent naknadno usmjeri zahtjev, odabrani montazer mora dobiti novu
+  notifikaciju.
 - Povlacenje oznake zahtijeva razlog i mora biti blokirano za `in_edit` i
   `ready_for_review`, osim za Admina.
 - Final upload iz correction joba mora postaviti `correctedBy`,
@@ -604,3 +683,23 @@ Reference:
   https://www.mongodb.com/docs/manual/reference/method/db.collection.updateOne/
 - Mongoose populate:
   https://mongoosejs.com/docs/populate.html
+
+## Izvrseni lokalni QA: 03.10.2026.
+
+Izvrsenje plana i novi harness na `codex/Web-Optimizacija` dokumentovani su
+u [QA izvrsenju](QA_IZVRSENJE_WEB_OPTIMIZACIJA.md), sa stvarnim run ID-evima,
+format matricom, viewportima, 10k/50k upitima, soakom i referencama koje su
+povezane s konkretnim testnim ili aplikacijskim modulom.
+
+Ne oznacavati cijeli roadmap kao zavrsen: Redis, fizicki mobilni uredjaji,
+Firefox launch, druga mreza i dio maintenance grana nisu potvrdeni.
+NVENC kvalitet prolazi, ali 30% speed cilj na kratkim fixtureima ne prolazi.
+Dependency rizici su sacuvani u `analysis/qa/dependencies/`; korisnik je
+odlucio da se nadogradnje rade kasnije, bez automatskog audit fixa.
+
+Referentni QA metod: Playwright viewport/touch/DPR i condition assertions,
+MongoDB executionStats, Lighthouse ponavljanja sa eksplicitnim profilima,
+W3C kontrast/reflow i MUI labelId. Linkovi i mjesta primjene nalaze se u
+odjeljku 8 novog QA dokumenta. Lab score ne predstavlja field INP ili WCAG
+certifikat. Za sljedeci ciklus koristiti konkretnu F01-F24 coverage tabelu u
+`analysis/qa/POKRIVENO_I_NEPOKRIVENO.md`.

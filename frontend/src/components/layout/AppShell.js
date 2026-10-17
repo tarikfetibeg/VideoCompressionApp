@@ -103,7 +103,7 @@ const DrawerContent = ({ visibleItems, pathname, onNavigate }) => (
   <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
     <Toolbar sx={{ alignItems: 'center' }}>
       <Box>
-        <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1 }}>
+        <Typography variant="h6" component="div" sx={{ fontWeight: 900, lineHeight: 1 }}>
           VideoCompressionApp
         </Typography>
         <Typography variant="caption" color="text.secondary">
@@ -117,8 +117,8 @@ const DrawerContent = ({ visibleItems, pathname, onNavigate }) => (
         {visibleItems.map((item) => {
           const selected = matchesPath(pathname, item.to);
           return (
+            <Box component="li" key={item.to} sx={{ listStyle: 'none' }}>
             <ListItemButton
-              key={item.to}
               component={Link}
               to={item.to}
               selected={selected}
@@ -146,6 +146,7 @@ const DrawerContent = ({ visibleItems, pathname, onNavigate }) => (
                 secondaryTypographyProps={{ fontSize: 12 }}
               />
             </ListItemButton>
+            </Box>
           );
         })}
       </List>
@@ -171,6 +172,13 @@ const GlobalStatusBar = () => {
         borderBottom: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
+        '@media (max-height: 400px)': {
+          px: 1,
+          py: 0.5,
+          '& .MuiStack-root': { gap: 0.5 },
+          '& .MuiChip-root': { height: 22, fontSize: 11 },
+          '& .MuiChip-label': { px: 0.75 },
+        },
       }}
     >
       <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap alignItems="center">
@@ -203,7 +211,7 @@ const GlobalStatusBar = () => {
         {failedDownloads.length > 0 && (
           <Chip label={`${failedDownloads.length} problem`} size="small" color="error" variant="outlined" />
         )}
-        <Chip label="Polling samo kad ima obrade" size="small" variant="outlined" />
+        <Chip label="Polling samo kad ima obrade" size="small" variant="outlined" sx={{ '@media (max-height: 400px)': { display: 'none' } }} />
       </Stack>
       {hasActiveTransfers && <LinearProgress sx={{ mt: 0.75 }} />}
     </Box>
@@ -212,6 +220,7 @@ const GlobalStatusBar = () => {
 
 const NotificationCenter = () => {
   const navigate = useNavigate();
+  const { user } = useContext(UserContext);
   const {
     notifications,
     unreadCount,
@@ -230,9 +239,21 @@ const NotificationCenter = () => {
   };
 
   const openNotification = async (notification) => {
-    await markRead(notification._id);
+    if (await markRead(notification._id) === false) return;
     setAnchorEl(null);
     const jobId = notification.job?._id || notification.job;
+    if (notification.kind === 'video_correction') {
+      if (['Producer', 'Admin'].includes(user?.role)) {
+        navigate('/producer-dashboard#correction-queue');
+        return;
+      }
+      if (jobId) {
+        navigate(`/edit-jobs/${jobId}`);
+        return;
+      }
+      navigate('/editor-dashboard?view=corrections#correction-queue');
+      return;
+    }
     if (jobId) navigate(`/edit-jobs/${jobId}#comments`);
   };
 
@@ -305,11 +326,18 @@ const NotificationCenter = () => {
         autoHideDuration={6000}
         onClose={dismissLatest}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        sx={{ maxWidth: 'calc(100vw - 16px)' }}
       >
         <Alert
           severity="info"
           variant="filled"
           onClose={dismissLatest}
+          sx={{
+            width: '100%',
+            minWidth: 0,
+            '& .MuiAlert-message': { minWidth: 0, overflowWrap: 'anywhere' },
+            '& .MuiAlert-action': { flexShrink: 0 },
+          }}
           action={latestNotification ? (
             <Button
               color="inherit"
@@ -364,6 +392,7 @@ const AppShell = ({ children }) => {
         sx={{
           width: drawerWidth,
           flexShrink: 0,
+          zIndex: (currentTheme) => isDesktop ? currentTheme.zIndex.drawer : currentTheme.zIndex.modal,
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
@@ -390,11 +419,12 @@ const AppShell = ({ children }) => {
             borderColor: 'divider',
             bgcolor: 'background.paper',
             zIndex: (currentTheme) => currentTheme.zIndex.drawer + 1,
+            '@media (max-height: 400px)': { position: 'static' },
           }}
         >
-          <Toolbar sx={{ gap: 1.25 }}>
+          <Toolbar sx={{ gap: 1.25, '@media (max-height: 400px)': { minHeight: 48, gap: 0.75 } }}>
             {!isDesktop && (
-              <IconButton edge="start" onClick={() => setMobileOpen(true)}>
+              <IconButton edge="start" onClick={() => setMobileOpen(true)} aria-label="Otvori navigaciju">
                 <MenuIcon />
               </IconButton>
             )}
@@ -402,7 +432,7 @@ const AppShell = ({ children }) => {
               <Typography variant="subtitle1" noWrap sx={{ fontWeight: 900 }}>
                 {activeItem?.label || 'Radni prostor'}
               </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ '@media (max-height: 400px)': { display: 'none' } }}>
                 {activeItem?.description || 'Dnevni produkcijski workflow'}
               </Typography>
             </Box>
@@ -425,7 +455,7 @@ const AppShell = ({ children }) => {
                 Feedback
               </Button>
               <Tooltip title="Odjava">
-                <IconButton onClick={handleLogout} color="inherit">
+                <IconButton onClick={handleLogout} color="inherit" aria-label="Odjava">
                   <LogoutIcon />
                 </IconButton>
               </Tooltip>

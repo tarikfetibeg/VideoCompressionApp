@@ -70,6 +70,7 @@ const resolveDownloadUrl = (downloadUrl) => {
 };
 
 const getNetworkMessage = (error) => {
+  if (error.code === 'SESSION_REAUTH_REQUIRED' || error.code === 'SESSION_CANCELLED') return error.message;
   if (error.response?.data?.message) return error.response.data.message;
 
   if (error.code === 'ECONNABORTED') {
@@ -163,15 +164,16 @@ export const BackgroundDownloadProvider = ({ children }) => {
     const run = async () => {
       try {
         const response = await axios.get(`/downloads/tickets/${ticketId}/status`);
-        const status = response.data?.status || 'streaming';
+        const serverStatus = response.data?.status || 'created';
+        const status = serverStatus === 'created' ? 'opening' : serverStatus === 'started' ? 'streaming' : serverStatus;
         const serverError = response.data?.error || '';
 
         updateDownload(downloadId, {
           status,
-          serverStatus: status,
+          serverStatus,
           message: terminalStatuses.has(status)
             ? serverError || (status === 'completed' ? 'Server je zavrsio slanje fajla.' : statusLabels[status])
-            : 'Browser download manager preuzima fizicko skidanje.',
+            : response.data?.message || (status === 'opening' ? 'Cekam potvrdu servera da je slanje pocelo.' : 'Browser download manager preuzima fizicko skidanje.'),
           error: ['failed', 'aborted', 'expired'].includes(status) ? serverError : '',
           startedAt: response.data?.startedAt,
           finishedAt: response.data?.finishedAt,
@@ -226,8 +228,8 @@ export const BackgroundDownloadProvider = ({ children }) => {
       handoffToBrowser(downloadUrl);
 
       updateDownload(download.id, {
-        status: 'streaming',
-        message: 'Download je pokrenut. Mozes nastaviti koristiti aplikaciju.',
+        status: 'opening',
+        message: 'Link je predat browseru. Cekam potvrdu pocetka slanja.',
       });
 
       if (response.data?.ticketId) {
@@ -373,7 +375,7 @@ export const BackgroundDownloadProvider = ({ children }) => {
                           color="inherit"
                           size="small"
                           startIcon={<ReplayIcon />}
-                          onClick={() => retryDownload(download.id)}
+                          onClick={() => retryDownload(download.id).catch(() => {})}
                         >
                           Ponovi
                         </Button>

@@ -59,6 +59,7 @@ import {
   processingLabels,
 } from '../utils/uiLabels';
 import { getSearchParam } from '../utils/searchParams';
+import { stackedTableSx } from '../utils/responsiveTable';
 
 const pageSize = 40;
 const duplicatePageSize = 8;
@@ -156,6 +157,13 @@ const ArchivistDashboard = () => {
   const [metadataDialog, setMetadataDialog] = useState({ open: false, video: null, draft: {} });
   const [reviewDialog, setReviewDialog] = useState({ open: false, video: null, status: 'needs_metadata', notes: '' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, video: null, keeper: null, reason: '' });
+  const [correctionReportDialog, setCorrectionReportDialog] = useState({
+    open: false,
+    video: null,
+    note: '',
+    timestamp: '',
+    busy: false,
+  });
   const [correctionDialog, setCorrectionDialog] = useState({
     open: false,
     mode: 'dismiss',
@@ -248,19 +256,40 @@ const ArchivistDashboard = () => {
     fetchVideos();
   }, [activeView, fetchDuplicates, fetchOverview, fetchVideos]);
 
-  const sendCorrectionToProduction = (video) => {
+  const submitCorrectionReport = () => {
+    const { video, note, timestamp } = correctionReportDialog;
+    if (!video || !note.trim()) return;
+
+    const normalizedTimestamp = timestamp === ''
+      ? undefined
+      : Number(String(timestamp).trim().replace(',', '.'));
+    if (normalizedTimestamp !== undefined && (!Number.isFinite(normalizedTimestamp) || normalizedTimestamp < 0)) {
+      setErrorMessage('Vrijeme greške mora biti broj veći ili jednak nuli.');
+      return;
+    }
+
     setMessage('');
     setErrorMessage('');
+    setCorrectionReportDialog((current) => ({ ...current, busy: true }));
     axiosInstance
       .post(`/corrections/video/${video._id}/ensure`, {
-        note: video.correctionNote || 'Arhiva je potvrdila da je klipu potrebna ispravka.',
+        note: note.trim(),
+        ...(normalizedTimestamp === undefined ? {} : { timestamp: normalizedTimestamp }),
       })
       .then((response) => {
         setMessage(response.data?.message || 'Ispravka je poslana u produkciju.');
+        setCorrectionReportDialog({
+          open: false,
+          video: null,
+          note: '',
+          timestamp: '',
+          busy: false,
+        });
         refreshCurrentView();
       })
       .catch((error) => {
         setErrorMessage(error.response?.data?.message || 'Ispravku nije moguće poslati u produkciju.');
+        setCorrectionReportDialog((current) => ({ ...current, busy: false }));
       });
   };
 
@@ -460,10 +489,13 @@ const ArchivistDashboard = () => {
     const correctionRequestStatus = correctionRequest?.status || '';
     const correctionInProgress = ['reported', 'assigned', 'in_edit', 'ready_for_review'].includes(correctionRequestStatus);
     const correctionCanBeWithdrawn = !['in_edit', 'ready_for_review'].includes(correctionRequestStatus);
+    const canReportCorrection = video.status === 'edited'
+      && video.processingStatus === 'completed'
+      && !correctionInProgress;
 
     return (
       <TableRow key={video._id} hover>
-        <TableCell sx={{ width: '36%', verticalAlign: 'top' }}>
+        <TableCell data-label="Materijal" sx={{ width: '34%', verticalAlign: 'top' }}>
           <Stack direction="row" spacing={1} alignItems="flex-start">
             <VideoThumbnailPreview
               videoId={video._id}
@@ -482,7 +514,7 @@ const ArchivistDashboard = () => {
             </Box>
           </Stack>
         </TableCell>
-        <TableCell sx={{ width: '28%', verticalAlign: 'top' }}>
+        <TableCell data-label="Metadata" sx={{ width: '28%', verticalAlign: 'top' }}>
           <Stack spacing={1}>
             <FormControl fullWidth size="small">
               <InputLabel>Kategorija</InputLabel>
@@ -527,7 +559,7 @@ const ArchivistDashboard = () => {
             </Box>
           </Stack>
         </TableCell>
-        <TableCell sx={{ width: '20%', verticalAlign: 'top' }}>
+        <TableCell data-label="Status" sx={{ width: '20%', verticalAlign: 'top' }}>
           <Stack spacing={0.75} alignItems="flex-start">
             <StatusChip value={reviewValue} maps={archiveReviewLabels} />
             <StatusChip value={video.processingStatus} maps={processingLabels} variant="outlined" />
@@ -557,8 +589,8 @@ const ArchivistDashboard = () => {
             </Typography>
           </Stack>
         </TableCell>
-        <TableCell align="right" sx={{ width: '18%', verticalAlign: 'top' }}>
-          <Stack direction="row" justifyContent="flex-end" spacing={0.75} flexWrap="wrap" useFlexGap>
+        <TableCell data-label="Akcije" align="right" sx={{ width: '18%', verticalAlign: 'top' }}>
+          <Stack direction="row" justifyContent={{ xs: 'flex-start', sm: 'flex-end' }} spacing={0.75} flexWrap="wrap" useFlexGap>
             <Tooltip title="Otvori detalje">
               <IconButton size="small" component={Link} to={`/video-details/${video._id}`}>
                 <OpenInNewIcon fontSize="small" />
@@ -583,15 +615,21 @@ const ArchivistDashboard = () => {
             >
               Review
             </Button>
-            {video.correctionStatus === 'needs_correction' && !correctionInProgress && (
+            {canReportCorrection && (
               <Button
                 size="small"
-                variant="contained"
+                variant={video.correctionStatus === 'needs_correction' ? 'contained' : 'outlined'}
                 color="warning"
                 startIcon={<SendIcon />}
-                onClick={() => sendCorrectionToProduction(video)}
+                onClick={() => setCorrectionReportDialog({
+                  open: true,
+                  video,
+                  note: video.correctionNote || '',
+                  timestamp: '',
+                  busy: false,
+                })}
               >
-                Pošalji u montažu
+                {video.correctionStatus === 'needs_correction' ? 'Pošalji u montažu' : 'Prijavi grešku'}
               </Button>
             )}
             {video.correctionStatus === 'needs_correction' && correctionRequestStatus === 'ready_for_review' && (
@@ -643,7 +681,7 @@ const ArchivistDashboard = () => {
         />
       ) : (
         <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-          <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
+          <Table size="small" sx={{ tableLayout: 'fixed', width: '100%', ...stackedTableSx }}>
             <TableHead>
               <TableRow>
                 <TableCell>Materijal</TableCell>
@@ -1080,6 +1118,82 @@ const ArchivistDashboard = () => {
           <Button onClick={() => setDeleteDialog({ open: false, video: null, keeper: null, reason: '' })}>Odustani</Button>
           <Button color="error" variant="contained" startIcon={<DeleteOutlineIcon />} onClick={deleteDuplicate}>
             Obrisi duplikat
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={correctionReportDialog.open}
+        onClose={correctionReportDialog.busy
+          ? undefined
+          : () => setCorrectionReportDialog({
+            open: false,
+            video: null,
+            note: '',
+            timestamp: '',
+            busy: false,
+          })}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Prijavi grešku produkciji</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 0.75, fontWeight: 800 }}>
+            {getVideoTitle(correctionReportDialog.video)}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Sistem će ispravku automatski dodijeliti odgovornom montažeru. Ako montažer nije poznat,
+            prijava ostaje u produkcijskom redu, a producent dobija notifikaciju za dodjelu.
+          </Typography>
+          <Stack spacing={2}>
+            <TextField
+              autoFocus
+              label="Opis problema"
+              value={correctionReportDialog.note}
+              onChange={(event) => setCorrectionReportDialog((current) => ({
+                ...current,
+                note: event.target.value,
+              }))}
+              multiline
+              minRows={3}
+              fullWidth
+              required
+              helperText="Navedite šta treba ispraviti kako bi montažer mogao odmah započeti rad."
+            />
+            <TextField
+              label="Vrijeme greške u sekundama (opcionalno)"
+              value={correctionReportDialog.timestamp}
+              onChange={(event) => setCorrectionReportDialog((current) => ({
+                ...current,
+                timestamp: event.target.value,
+              }))}
+              inputProps={{ inputMode: 'decimal' }}
+              fullWidth
+              helperText="Primjer: 42,5 označava problem na 42,5 sekundi snimka."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setCorrectionReportDialog({
+              open: false,
+              video: null,
+              note: '',
+              timestamp: '',
+              busy: false,
+            })}
+            disabled={correctionReportDialog.busy}
+          >
+            Odustani
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={<SendIcon />}
+            disabled={correctionReportDialog.busy || !correctionReportDialog.note.trim()}
+            onClick={submitCorrectionReport}
+          >
+            {correctionReportDialog.busy ? 'Šaljem...' : 'Pošalji u montažu'}
           </Button>
         </DialogActions>
       </Dialog>

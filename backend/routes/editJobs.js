@@ -1,4 +1,5 @@
 const express = require('express');
+const { removeOffFile } = require('../services/offFileDeletionService');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
@@ -1231,7 +1232,7 @@ function buildJobSort(query = {}) {
     title: 'title',
   };
   const field = sortFields[sortBy] || 'updatedAt';
-  return { [field]: sortOrder, updatedAt: -1, createdAt: -1 };
+  return { [field]: sortOrder, ...(field !== 'updatedAt' ? { updatedAt: -1 } : {}), ...(field !== 'createdAt' ? { createdAt: -1 } : {}) };
 }
 
 async function buildJobSummary(filter, user) {
@@ -1264,7 +1265,11 @@ async function buildJobSummary(filter, user) {
       deadline: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 60 * 60 * 1000) },
     }),
     EditJob.countDocuments({ ...filter, jobKind: 'correction' }),
-    populateJob(EditJob.find(filter).sort({ updatedAt: -1 }).limit(500)),
+    EditJob.find(filter)
+      .select('reporter changeLog viewerStates downloadStates segments._id offFiles._id workspaceState deadline expiresAt')
+      .sort({ updatedAt: -1 })
+      .limit(500)
+      .lean(),
   ]);
 
   const serializedSample = sampleJobs.map((job) => serializeJob(job, user));
@@ -1351,6 +1356,11 @@ router.get('/', async (req, res) => {
 
 router.post('/admin/apply-sla', authorize(['Admin']), async (req, res) => {
   try {
+    if (req.body?.jobIds !== undefined && (!Array.isArray(req.body.jobIds)
+      || req.body.jobIds.length === 0 || req.body.jobIds.length > 500
+      || req.body.jobIds.some((id) => !mongoose.Types.ObjectId.isValid(id)))) {
+      return res.status(400).json({ message: 'Odaberi 1-500 validnih job ID-eva ili izostavi odabir za postojeći batch režim.' });
+    }
     const requestedIds = Array.isArray(req.body?.jobIds)
       ? req.body.jobIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).slice(0, 500)
       : [];
@@ -1585,6 +1595,14 @@ router.post('/', handleOffAudioUpload, async (req, res) => {
       return res.status(400).json({ message: 'One or more selected videos do not exist.' });
     }
 
+    if (req.user.role === 'Reporter') {
+      const availableCount = await Video.countDocuments(buildAppendableVideoFilter(req.user, videoIds));
+      if (availableCount !== videoIds.length) {
+        await removeUploadedFiles(req.files);
+        return res.status(403).json({ message: 'Odabrati možete samo vlastiti materijal ili odobrene klipove iz TV arhive.' });
+      }
+    }
+
     const offFiles = (req.files || []).map((file) => ({
       originalName: file.originalname,
       filename: file.filename,
@@ -1699,23 +1717,9 @@ router.delete('/:jobId', async (req, res) => {
       offFileCount: job.offFiles?.length || 0,
     };
 
-    await Promise.all((job.offFiles || []).map((offFile) => {
-      const sourcePath = resolveExistingPath(offFile.storagePath || offFile.path);
-      if (!sourcePath) return Promise.resolve();
-
-      const resolvedOffRoot = path.resolve(paths.offAudio);
-      const resolvedSource = path.resolve(sourcePath);
-      if (
-        resolvedSource !== resolvedOffRoot &&
-        !resolvedSource.startsWith(`${resolvedOffRoot}${path.sep}`)
-      ) {
-        return Promise.resolve();
-      }
-
-      return fs.promises.unlink(resolvedSource).catch((error) => {
-        console.warn(`Could not delete OFF file for deleted job "${job._id}":`, error.message);
-      });
-    }));
+    deletedInfo.offFileCleanup = await Promise.all((job.offFiles || []).map((offFile) =>
+      removeOffFile(job._id, offFile.storagePath || offFile.path, { wholeJob: true })
+    ));
 
     await job.deleteOne();
 
@@ -2547,17 +2551,28 @@ router.patch('/:jobId/status', async (req, res) => {
   }
 });
 
-router.patch('/:jobId/claim', authorize(productionRoles), async (req, res) => {
+router.patch('/:jobId/claim', authorize(['Editor', 'VideoEditor', 'Admin']), async (req, res) => {
   try {
     const job = await EditJob.findById(req.params.jobId);
     if (!job) return res.status(404).json({ message: 'Edit job not found' });
 
-    job.assignedEditor = req.user.id;
-    if (['draft', 'submitted', 'needs_info'].includes(job.status)) {
-      job.status = 'claimed';
+    if (job.assignedEditor && getObjectIdString(job.assignedEditor) !== req.user.id) {
+      return res.status(409).json({ message: 'Job je već dodijeljen drugom montažeru.' });
     }
-
-    await job.save();
+    const claimed = await EditJob.findOneAndUpdate({
+      _id: job._id,
+      status: job.status,
+      $or: [{ assignedEditor: null }, { assignedEditor: req.user.id }],
+    }, {
+      $set: {
+        assignedEditor: req.user.id,
+        status: ['draft', 'submitted', 'needs_info'].includes(job.status) ? 'claimed' : job.status,
+        updatedAt: new Date(),
+      },
+    }, { new: true, runValidators: true });
+    if (!claimed) {
+      return res.status(409).json({ message: 'Job je u međuvremenu preuzeo drugi montažer.' });
+    }
     if (job.jobKind === 'correction' && job.correctionRequest) {
       await CorrectionRequest.findByIdAndUpdate(job.correctionRequest, {
         $set: {

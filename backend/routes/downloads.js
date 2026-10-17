@@ -4,6 +4,7 @@ const DownloadTicket = require('../models/DownloadTicket');
 const User = require('../models/User');
 const authenticateToken = require('../middleware/authenticateToken');
 const { DownloadHttpError, streamDownloadByKind } = require('../services/downloadService');
+const { DOWNLOAD_HEARTBEAT_MS, downloadRetentionDeadline } = require('../utils/downloadTicketRetention');
 
 const router = express.Router();
 
@@ -122,10 +123,11 @@ router.get('/tickets/:ticketId/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    if (ticketIsExpired(ticket) && !['completed', 'failed', 'aborted', 'expired'].includes(ticket.status)) {
+    if (ticketIsExpired(ticket) && ticket.status === 'created') {
       ticket.status = 'expired';
       ticket.finishedAt = new Date();
       ticket.error = 'Download ticket expired before it was used.';
+      ticket.purgeAt = downloadRetentionDeadline();
       await ticket.save();
     }
 
@@ -139,6 +141,9 @@ router.get('/tickets/:ticketId/status', authenticateToken, async (req, res) => {
       finishedAt: ticket.finishedAt,
       error: ticket.error || '',
       useCount: ticket.useCount || 0,
+      activityStale: ticket.status === 'started' && Date.now() - new Date(ticket.lastUsedAt || ticket.startedAt).getTime() > DOWNLOAD_HEARTBEAT_MS * 3,
+      message: ticket.status === 'started' && Date.now() - new Date(ticket.lastUsedAt || ticket.startedAt).getTime() > DOWNLOAD_HEARTBEAT_MS * 3
+        ? 'Server duze ne potvrdjuje aktivnost. Provjeri browser download manager prije ponovnog pokretanja.' : '',
     });
   } catch (error) {
     console.error('Error reading download ticket status:', error);
@@ -154,10 +159,13 @@ router.get('/tickets/:token', async (req, res) => {
     if (!ticket) return res.status(404).json({ message: 'Download link was not found.' });
 
     if (ticketIsExpired(ticket)) {
-      ticket.status = 'expired';
-      ticket.finishedAt = ticket.finishedAt || new Date();
-      ticket.error = ticket.error || 'Download ticket expired.';
-      await ticket.save();
+      if (ticket.status === 'created') {
+        ticket.status = 'expired';
+        ticket.finishedAt = new Date();
+        ticket.error = 'Download ticket expired.';
+        ticket.purgeAt = downloadRetentionDeadline();
+        await ticket.save();
+      }
       return res.status(410).json({ message: 'Download link has expired.' });
     }
 
@@ -166,19 +174,25 @@ router.get('/tickets/:token', async (req, res) => {
       ticket.status = 'failed';
       ticket.finishedAt = new Date();
       ticket.error = 'Ticket owner no longer exists.';
+      ticket.purgeAt = downloadRetentionDeadline();
       await ticket.save();
       return res.status(403).json({ message: 'Download owner was not found.' });
     }
 
     let settled = false;
+    let heartbeat;
+    let heartbeatInFlight = false;
     const markSettled = async (status, error = '') => {
       if (settled) return;
       settled = true;
+      clearInterval(heartbeat);
 
       try {
         const nextStatus = status === 'completed' && res.statusCode >= 400 ? 'failed' : status;
         ticket.status = nextStatus;
         ticket.finishedAt = new Date();
+        ticket.lastUsedAt = ticket.finishedAt;
+        ticket.purgeAt = downloadRetentionDeadline(ticket.finishedAt);
         if (error) ticket.error = error;
         await ticket.save();
       } catch (statusError) {
@@ -202,9 +216,22 @@ router.get('/tickets/:token', async (req, res) => {
     ticket.status = 'started';
     ticket.startedAt = ticket.startedAt || new Date();
     ticket.lastUsedAt = new Date();
+    ticket.purgeAt = downloadRetentionDeadline();
     ticket.useCount = Number(ticket.useCount || 0) + 1;
     ticket.error = '';
     await ticket.save();
+    heartbeat = setInterval(async () => {
+      if (settled || heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      try {
+        await DownloadTicket.updateOne({ _id: ticket._id, status: 'started' }, {
+          $set: { lastUsedAt: new Date(), purgeAt: downloadRetentionDeadline() },
+        });
+      } catch (heartbeatError) {
+        console.warn('Download activity update failed:', heartbeatError.name);
+      } finally { heartbeatInFlight = false; }
+    }, DOWNLOAD_HEARTBEAT_MS);
+    heartbeat.unref();
 
     await streamDownloadByKind({
       kind: ticket.kind,
@@ -224,6 +251,7 @@ router.get('/tickets/:token', async (req, res) => {
           status: 'failed',
           finishedAt: new Date(),
           error: message,
+          purgeAt: downloadRetentionDeadline(),
         },
       }
     ).catch((statusError) => {

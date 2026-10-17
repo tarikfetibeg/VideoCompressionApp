@@ -2,6 +2,60 @@
 
 Ova aplikacija sluzi za evidenciju, ingest, obradu, pregled i pripremu video materijala za TV produkciju. Osnovna ideja je da sirovi materijal udje u sistem, bude kompresovan i pripremljen za pregled, zatim prodje QC i tek onda dobije status da moze ici u eter.
 
+## Dopuna 11.10.2026: niski ekrani i veliki zoom
+
+Pri visini radnog prozora do400CSSpx (npr. veliki browser zoom ili landscape
+prikaz), zaglavlje je kompaktnije i pomjera se zajedno sa stranicom. Za
+navigaciju/odjavu se vrati na vrh; sve akcije i upload/download brojaci
+ostaju dostupni. Na visim ekranima zaglavlje ostaje sticky. Promjena ne
+resetuje nacrt, sesiju, player niti pozadinske transfere.
+
+## Dopune nakon QA ciklusa 10.10.2026.
+
+- Veliki download moze trajati duze od vazenja linka: vec zapoceto slanje se
+  ne oznacava isteklim. Ako server dugo ne potvrdi aktivnost, provjeri stvarni
+  download u browseru prije ponovnog pokretanja. Admin prvo treba izvrsiti
+  [kontrolisanu TTL migraciju](DOWNLOAD_TICKET_RETENCIJA_RUNBOOK.md).
+
+- Kada sesija istekne, ne osvjezavaj stranicu: unesi lozinku u globalni
+  dijalog. Isti racun i uloga vracaju otvoreni ekran i nespremljeni unos.
+  Ako je upload/submit/delete prekinut, provjeri rezultat i namjerno ponovi
+  akciju; aplikacija je ne salje automatski ponovo.
+- Ako se prijava promijeni u drugom tabu, stari radni prostor se zakljucava.
+  Kontrolisani izlaz ima upozorenje; stari nacrt ne prelazi novom korisniku.
+- Reporter moze pregledati vlastiti upload/autorski materijal i odobrenu TV
+  arhivu, ne tudje neodobrene sirovine. Stari `/uploads` linkovi vise nisu javni.
+- Download panel razlikuje cekanje pocetka i serverovo aktivno slanje.
+  Zavrseno slanje nije potvrda sacuvanog fajla; provjeri browser Downloads.
+  Ponovni download je novi transfer, ne garantovan nastavak ZIP-a.
+- Admin raw cleanup trazi potvrdu i prikazuje preskocene zapise s razlozima.
+  Queued/processing/failed, master/fallback i dijeljeni fajlovi se cuvaju.
+- Ne brisi video iz aktivnog rundown-a ili nezavrsenog joba: blokada takvog
+  brisanja jos nije uvedena. Promjena role ne opoziva stari JWT odmah.
+- QA instrukcije i ogranicenja: [Funkcionalni ciklus](QA_FUNKCIONALNI_CIKLUS_2026_10.md).
+
+## Dopune nakon QA ciklusa 03.10.2026.
+
+- Liste koriste stranice: na dnu izaberi narednu stranicu za starije jobove,
+  materijal, biblioteku ili ispravke. Manje vidljivih redova ne znaci da su
+  ostali zapisi nestali. Promjena filtera vraca prikaz na pocetnu stranicu.
+- Reporterova sekcija `Novi prilog` ucitava se kada se prvi put otvori.
+  Sklapanje te sekcije ne brise uneseni nacrt; bez aktivnih jobova otvara se
+  automatski. Ovo nije obecanje cuvanja lokalnog nacrta poslije reload-a.
+- Dopuna klipova iz brzog job pregleda zatvara sidebar i otvara zaseban
+  dijalog. Dodavanje own/TV archive materijala i dalje koristi isti job.
+- Producent i Realizator mogu mijenjati redoslijed preko gore/dolje dugmadi,
+  ukljucujuci touch i tastaturu; drag i dalje radi.
+- Ako drugi montazer vec preuzme posao, aplikacija vraca konflikt: osvjezi
+  listu prije sljedece akcije. Istovremena arhivska prijava moze zatraziti
+  ponavljanje; ne treba praviti novi video samo zbog takvog konflikta.
+- Pri brisanju duplicate/Admin/own zapisa, shared fajl drugog videa ostaje
+  sacuvan. Ova zastita ne mijenja postojecu politiku povezanih DB zapisa.
+- Ispravka ostaje u `Ispravke` dok se ne potvrdi/odbaci, cak i ako njen
+  correction job vise nije u aktivnoj produkcijskoj listi.
+- Detaljan QA obuhvat i ogranicenja nisu korisnicka garancija svih uredjaja:
+  [QA izvrsenje](QA_IZVRSENJE_WEB_OPTIMIZACIJA.md).
+
 ## 1. Osnovni workflow
 
 1. Reporter ili Admin uploaduje sirovi video materijal.
@@ -114,6 +168,13 @@ Korisnik moze nastaviti koristiti aplikaciju dok se veliki ZIP ili video skida. 
 Ako se aplikacija koristi sa drugog racunara, preporuceni pristup je backend-servirani URL, npr. `http://server-u-tv-kuci:5000`. U tom modu frontend koristi relativni `/api`, pa login, API i download ticketi idu preko istog hosta. Ako se koristi odvojeni React dev server, `ALLOWED_ORIGINS` i `REACT_APP_API_BASE_URL` moraju pokazivati na stvarni backend, ne na `localhost` drugog racunara.
 
 ## 3. Pokretanje aplikacije
+
+Na Windowsu otvori `Pokreni aplikaciju.cmd` u glavnom folderu. Opcija **1**
+pokrece postojeci build, **2** kompajlira frontend, a **3** kompajlira pa
+pokrece aplikaciju. Zaustavljanje je preko **Ctrl+C** u tom prozoru.
+Opcija **4** provjerava lokalne preduslove bez spajanja na bazu; **5**
+reinstalira zavisnosti tek nakon potvrde. Opcije **6/7** su kratki testovi,
+ne puni dugotrajni QA ciklus. Detalji: [Windows launcher](WINDOWS_LAUNCHER.md).
 
 Za puni lokalni rad moraju biti dostupni:
 
@@ -812,7 +873,18 @@ zvono. Reporterov odgovor na isti nacin obavjestava dodijeljenog montazera.
 
 ### Arhivista
 
-Klip sa crvenom oznakom `Potrebna ispravka` nudi sljedece akcije:
+Svaki zavrsen i obradjen klip nudi akciju `Prijavi gresku`. U dijalogu treba:
+
+- opisati sta montazer treba ispraviti;
+- po potrebi upisati vrijeme greske u sekundama, sa tackom ili zarezom kao
+  decimalnim separatorom;
+- potvrditi akciju `Posalji u montazu`.
+
+Ako je poznat montazer izvornog joba ili videa, sistem mu automatski kreira
+urgentni correction job i salje notifikaciju. Ako montazer nije poznat,
+prijava ostaje nedodijeljena, a Producent dobija notifikaciju da je usmjeri.
+
+Klip sa crvenom oznakom `Potrebna ispravka` dodatno nudi sljedece akcije:
 
 - `Posalji u montazu` kreira ili povezuje correction zahtjev i correction
   job. Ako je poznat odgovorni montazer, zahtjev mu se automatski dodjeljuje.
@@ -835,6 +907,10 @@ intervenisati kada postoji opravdan operativni razlog.
 - `Zapocni` mijenja status u `U montazi`.
 - `Spremno` predaje ispravku Producentu/Arhivi na potvrdu.
 
+Dodijeljeni montazer dobija notifikaciju u zvonu. Klik na nju otvara njegov
+correction job. Naslov `Ispravke materijala` i polje `Izvor` razlikuju prijave
+koje dolaze iz Arhive, Realizacije ili sistemskog statusa.
+
 Klip ostaje u ovom tabu dok Producent, Arhivista ili Admin ne potvrdi
 ispravku ili kontrolisano odbaci pogresnu prijavu.
 
@@ -845,6 +921,8 @@ ispravku ili kontrolisano odbaci pogresnu prijavu.
   zatvorio zahtjev.
 - Correction zahtjev, correction job i Audit Log ostaju sacuvani nakon
   uklanjanja aktivne oznake sa videa.
+- Audit zapis slanja sadrzi opis i timestamp, a statusne promjene cuvaju
+  `correctedBy` (ko je ispravio) i `resolvedBy` (ko je potvrdio/zatvorio).
 
 ## 15. Sta jos treba poboljsati
 
@@ -854,6 +932,6 @@ Preporucene sljedece funkcije:
 - loudness provjera po EBU R128
 - direktne QC akcije iz Production Dashboard tabele
 - live status update preko WebSocket ili SSE
-- server-side pagination za velike arhive
+- prosirenje postojece server-side paginacije na preostale legacy/event prikaze
 - definisani broadcast output profili prema playout sistemu televizije
 - export izvjestaja po danu, emisiji ili reporteru

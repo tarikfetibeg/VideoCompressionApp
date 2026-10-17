@@ -7,6 +7,7 @@ const Video = require('../models/Video');
 const AuditLog = require('../models/AuditLog');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
+const { createCorrectionNotifications } = require('../services/correctionNotificationService');
 const {
   ensureCorrectionJob,
   ensureVideoCorrectionRequest,
@@ -118,8 +119,29 @@ router.post('/video/:videoId/ensure', authorize(['Archivist', 'Producer', 'Admin
   try {
     const video = await Video.findById(req.params.videoId);
     if (!video) return res.status(404).json({ message: 'Video nije pronađen.' });
+    if (
+      req.user.role === 'Archivist'
+      && (video.status !== 'edited' || video.processingStatus !== 'completed')
+    ) {
+      return res.status(409).json({
+        message: 'Arhivista može prijaviti ispravku samo za završen i obrađen video.',
+      });
+    }
+
+    const rawTimestamp = req.body?.timestamp;
+    if (
+      rawTimestamp !== undefined
+      && rawTimestamp !== null
+      && rawTimestamp !== ''
+      && (!Number.isFinite(Number(rawTimestamp)) || Number(rawTimestamp) < 0)
+    ) {
+      return res.status(400).json({ message: 'Vrijeme greške mora biti broj veći ili jednak nuli.' });
+    }
 
     const note = String(req.body?.note || video.correctionNote || '').trim();
+    if (!note) {
+      return res.status(400).json({ message: 'Opis problema je obavezan.' });
+    }
     const now = new Date();
     if (video.correctionStatus !== 'needs_correction') {
       video.correctionStatus = 'needs_correction';
@@ -128,15 +150,16 @@ router.post('/video/:videoId/ensure', authorize(['Archivist', 'Producer', 'Admin
       video.correctionResolvedBy = null;
       video.correctionResolvedAt = null;
       video.correctionResolvedNote = '';
-      if (note) video.correctionNote = note;
-      await video.save();
     }
+    video.correctionNote = note;
+    await video.save();
 
     const result = await ensureVideoCorrectionRequest({
       video,
       user: req.user,
       note,
       origin: req.user.role === 'Archivist' ? 'archive' : 'admin',
+      timestamp: rawTimestamp,
     });
     if (!result.request) {
       return res.status(409).json({ message: 'Correction zahtjev nije moguće kreirati za ovaj video.' });
@@ -151,6 +174,9 @@ router.post('/video/:videoId/ensure', authorize(['Archivist', 'Producer', 'Admin
         correctionJobId: result.correctionJob?._id || null,
         assignedEditorId: result.request.assignedEditor || null,
         note: result.request.note,
+        timestamp: result.request.timestamp,
+        notificationsCreated: result.notifications?.created || 0,
+        notificationRecipients: result.notifications?.recipients || 0,
       },
     });
 
@@ -158,10 +184,14 @@ router.post('/video/:videoId/ensure', authorize(['Archivist', 'Producer', 'Admin
     return res.status(201).json({
       message: result.request.assignedEditor
         ? 'Ispravka je poslana odgovornom montažeru.'
-        : 'Ispravka je dodana u produkcijski queue.',
+        : 'Ispravka je dodana u produkcijski queue, a producent je obaviješten.',
       correction: populated,
+      notificationsCreated: result.notifications?.created || 0,
     });
   } catch (error) {
+    if (error.name === 'VersionError') {
+      return res.status(409).json({ message: 'Drugi korisnik je upravo ažurirao ovaj video. Osvježi pregled i ponovi prijavu ako je potrebna.' });
+    }
     console.error('Error ensuring video correction:', error);
     return res.status(500).json({ message: 'Ispravku nije moguće poslati u produkciju.' });
   }
@@ -239,7 +269,7 @@ router.patch('/video/:videoId/dismiss', authorize(['Archivist', 'Admin']), async
 
 router.patch('/:requestId/claim', authorize(['Editor', 'VideoEditor', 'Admin']), async (req, res) => {
   try {
-    const request = await CorrectionRequest.findById(req.params.requestId);
+    let request = await CorrectionRequest.findById(req.params.requestId);
     if (!request) return res.status(404).json({ message: 'Prijava ispravke nije pronađena.' });
     if (!['reported', 'assigned'].includes(request.status)) {
       return res.status(409).json({ message: 'Ova ispravka više nije dostupna za preuzimanje.' });
@@ -255,10 +285,14 @@ router.patch('/:requestId/claim', authorize(['Editor', 'VideoEditor', 'Admin']),
     const video = await Video.findById(request.video);
     if (!video) return res.status(404).json({ message: 'Video za ispravku nije pronađen.' });
     const sourceJob = request.sourceJob ? await EditJob.findById(request.sourceJob) : null;
-    request.assignedEditor = req.user.id;
-    request.status = 'assigned';
-    request.seenBy = [];
-    await request.save();
+    request = await CorrectionRequest.findOneAndUpdate({
+      _id: request._id,
+      status: request.status,
+      assignedEditor: request.assignedEditor || null,
+    }, { $set: { assignedEditor: req.user.id, status: 'assigned', seenBy: [] } }, { new: true, runValidators: true });
+    if (!request) {
+      return res.status(409).json({ message: 'Ispravku je u međuvremenu preuzeo drugi montažer ili je njen status promijenjen.' });
+    }
     await ensureCorrectionJob(request, {
       video,
       sourceJob,
@@ -300,20 +334,41 @@ router.patch('/:requestId/route', authorize(['Producer', 'Admin']), async (req, 
     request.status = 'assigned';
     request.seenBy = [req.user.id];
     await request.save();
-    await ensureCorrectionJob(request, {
+    const correctionJob = await ensureCorrectionJob(request, {
       video,
       sourceJob,
       assignedEditor: editor._id,
       actor: req.user.id,
     });
 
+    let notifications = { created: 0, refreshed: 0, recipients: 0 };
+    try {
+      notifications = await createCorrectionNotifications({
+        request,
+        correctionJob,
+        video,
+        actor: req.user,
+      });
+    } catch (notificationError) {
+      console.warn('Correction routing notification failed:', notificationError.message);
+    }
+
     await AuditLog.create({
       action: 'Route Correction To Editor',
       performedBy: req.user.id,
-      details: { correctionRequestId: request._id, editorId: editor._id, videoId: request.video },
+      details: {
+        correctionRequestId: request._id,
+        editorId: editor._id,
+        videoId: request.video,
+        notificationsCreated: notifications.created || 0,
+      },
     });
     const populated = await populateRequest(CorrectionRequest.findById(request._id));
-    res.json({ message: 'Ispravka je poslana montažeru.', correction: populated });
+    res.json({
+      message: 'Ispravka je poslana montažeru.',
+      correction: populated,
+      notificationsCreated: notifications.created || 0,
+    });
   } catch (error) {
     console.error('Error routing correction:', error);
     res.status(500).json({ message: 'Ispravku nije moguće proslijediti.' });

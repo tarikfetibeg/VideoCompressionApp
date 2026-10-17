@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -9,6 +9,7 @@ import {
   Drawer,
   IconButton,
   Paper,
+  Pagination,
   Stack,
   TextField,
   Tooltip,
@@ -20,6 +21,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axiosInstance from '../../axiosConfig';
+import { canPollSession } from '../../utils/sessionRecovery';
 import { useNotifications } from '../../contexts/NotificationContext';
 import {
   formatDateTimeBs,
@@ -47,6 +49,8 @@ const attentionScore = (job) => {
 const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) => {
   const { markJobRead } = useNotifications();
   const [jobs, setJobs] = useState([]);
+  const [page, setPage] = useState(1);
+  const [workspace, setWorkspace] = useState({ total: 0, totalPages: 1 });
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -55,41 +59,57 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
   const [comment, setComment] = useState('');
   const [commentSaving, setCommentSaving] = useState(false);
   const [panelMessage, setPanelMessage] = useState('');
+  const requestVersion = useRef(0);
+  const panelVersion = useRef(0);
+  const countCallback = useRef(onCountChange);
+  countCallback.current = onCountChange;
 
   const fetchJobs = useCallback(({ silent = false } = {}) => {
+    const version = ++requestVersion.current;
     if (!silent) setLoading(true);
     setErrorMessage('');
     return axiosInstance
       .get('/edit-jobs/workspace', {
         params: {
           workspaceState: 'active',
-          page: 1,
+          page,
           limit: 50,
           sortBy: 'updatedAt',
           sortOrder: 'desc',
         },
       })
       .then((response) => {
+        if (version !== requestVersion.current) return;
         const items = Array.isArray(response.data?.items) ? response.data.items : [];
         setJobs(items);
+        setWorkspace(response.data || { total: items.length, totalPages: 1 });
         setSummary(response.data?.summary || {});
-        if (onCountChange) onCountChange(items.length);
+        if (countCallback.current) countCallback.current(response.data?.total ?? items.length);
         setSelectedJob((current) => (
           current ? items.find((item) => item._id === current._id) || current : null
         ));
       })
       .catch((error) => {
+        if (version !== requestVersion.current) return;
         console.error('Error loading reporter jobs:', error);
         setErrorMessage(error.response?.data?.message || 'Aktivni jobovi se ne mogu učitati.');
       })
       .finally(() => {
-        if (!silent) setLoading(false);
+        if (version === requestVersion.current) setLoading(false);
       });
-  }, [onCountChange]);
+  }, [page]);
 
   useEffect(() => {
     fetchJobs();
+    return () => { requestVersion.current += 1; };
   }, [fetchJobs, refreshToken]);
+
+  useEffect(() => {
+    const refresh = () => { if (canPollSession()) fetchJobs({ silent: true }); };
+    const timer = window.setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+  }, [fetchJobs]);
 
   const orderedJobs = useMemo(
     () => [...jobs].sort((first, second) => {
@@ -101,12 +121,14 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
   );
 
   const openQuickPanel = (job) => {
+    const version = ++panelVersion.current;
     setSelectedJob(job);
     setPanelMessage('');
     markJobRead(job._id);
     axiosInstance
       .get(`/edit-jobs/${job._id}`)
       .then((response) => {
+        if (version !== panelVersion.current) return;
         const updatedJob = response.data;
         setSelectedJob(updatedJob);
         setJobs((current) => current.map((item) => (
@@ -116,6 +138,11 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
       .catch((error) => {
         console.error('Error loading quick job details:', error);
       });
+  };
+
+  const closeQuickPanel = () => {
+    panelVersion.current += 1;
+    setSelectedJob(null);
   };
 
   const handleAddComment = () => {
@@ -175,7 +202,7 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
           sx={{ mb: 1.5 }}
         >
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 900 }}>
+            <Typography variant="h6" component="h2" sx={{ fontWeight: 900 }}>
               Aktivni jobovi
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -238,7 +265,10 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
                     tabIndex={0}
                     onClick={() => openQuickPanel(job)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') openQuickPanel(job);
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openQuickPanel(job);
+                      }
                     }}
                     sx={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
                   >
@@ -254,7 +284,7 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
                       {job.deadlineState === 'due_soon' && <StatusChip label="Rok uskoro" tone="warning" variant="outlined" />}
                       {['overdue', 'expired'].includes(job.deadlineState) && <StatusChip label="Rok istekao" tone="error" />}
                     </Stack>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }} noWrap>
+                    <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 900 }} noWrap>
                       {job.title}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
@@ -293,10 +323,15 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
         )}
       </Box>
 
+      {workspace.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ my: 2 }}>
+          <Pagination count={workspace.totalPages} page={page} onChange={(event, value) => setPage(value)} size="small" />
+        </Stack>
+      )}
       <Drawer
         anchor="right"
         open={Boolean(selectedJob)}
-        onClose={() => setSelectedJob(null)}
+        onClose={closeQuickPanel}
         sx={(currentTheme) => ({
           zIndex: currentTheme.zIndex.modal + 1,
         })}
@@ -309,7 +344,7 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
                 <Typography variant="overline" color="text.secondary">Brzi pregled joba</Typography>
                 <Typography variant="h6" sx={{ fontWeight: 900 }}>{selectedJob.title}</Typography>
               </Box>
-              <IconButton onClick={() => setSelectedJob(null)} aria-label="Zatvori panel">
+              <IconButton onClick={closeQuickPanel} aria-label="Zatvori panel">
                 <CloseIcon />
               </IconButton>
             </Stack>
@@ -332,7 +367,7 @@ const ReporterActiveJobs = ({ refreshToken = 0, onCountChange, onJobUpdated }) =
               <Button
                 variant="contained"
                 startIcon={<AddCircleOutlineIcon />}
-                onClick={() => setMaterialJob(selectedJob)}
+                onClick={() => { setMaterialJob(selectedJob); closeQuickPanel(); }}
               >
                 Dodaj klipove
               </Button>

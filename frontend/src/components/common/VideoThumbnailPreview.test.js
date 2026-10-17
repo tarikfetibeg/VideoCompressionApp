@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import VideoThumbnailPreview from './VideoThumbnailPreview';
 import axiosInstance from '../../axiosConfig';
 
@@ -158,5 +158,38 @@ describe('VideoThumbnailPreview', () => {
 
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-0');
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1');
+  });
+
+  it('does not display or cache an old scrub response after switching videos', async () => {
+    let finishOldFrame;
+    axiosInstance.get.mockImplementation((url) => {
+      if (url.includes('/thumbnail/')) return Promise.resolve({ data: createBlob(url) });
+      if (url.endsWith('/manifest')) return Promise.resolve({ data: { available: true, frameCount: 2 } });
+      return new Promise((resolve) => { finishOldFrame = resolve; });
+    });
+    const { rerender } = render(<VideoThumbnailPreview videoId="old" enableScrubPreview />);
+    await waitFor(() => expect(screen.getByTestId('video-thumbnail-image')).toHaveAttribute('src', 'blob:mock-0'));
+    const preview = screen.getByTestId('video-thumbnail-preview');
+    preview.getBoundingClientRect = () => ({ left: 0, width: 100 });
+    fireEvent.mouseMove(preview, { clientX: 75 });
+    await waitFor(() => expect(finishOldFrame).toBeDefined());
+    rerender(<VideoThumbnailPreview videoId="new" enableScrubPreview />);
+    await waitFor(() => expect(screen.getByTestId('video-thumbnail-image')).toHaveAttribute('src', 'blob:mock-1'));
+    await act(async () => { finishOldFrame({ data: createBlob('old frame') }); });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('video-thumbnail-image')).toHaveAttribute('src', 'blob:mock-1');
+  });
+
+  it('does not fetch media until the thumbnail enters the viewport', async () => {
+    let enterViewport;
+    window.IntersectionObserver = jest.fn((callback) => {
+      enterViewport = callback;
+      return { observe: jest.fn(), disconnect: jest.fn() };
+    });
+    axiosInstance.get.mockResolvedValue({ data: createBlob('thumbnail') });
+    render(<VideoThumbnailPreview videoId="lazy" />);
+    expect(axiosInstance.get).not.toHaveBeenCalled();
+    act(() => enterViewport([{ isIntersecting: true }]));
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalledTimes(1));
   });
 });

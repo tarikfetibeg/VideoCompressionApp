@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const Video = require('../models/Video');
-const { hasReadyHlsPreview } = require('./hlsPreviewService');
+const { hasReadyHlsPreview, getActiveHlsFolder, validateHlsBuild } = require('./hlsPreviewService');
+const { isPathReferencedByAnotherVideo } = require('./videoFileDeletionService');
 const {
   getAlternativePlaybackPath,
   inspectBrowserCompatibility,
@@ -32,19 +33,25 @@ async function assessPreviewRetentionCandidate(video) {
   if (!isPathInside(paths.previews, previewPath)) {
     return { eligible: false, reason: 'preview_outside_storage', size };
   }
+  if (fs.lstatSync(previewPath).isSymbolicLink() || !isPathInside(fs.realpathSync(paths.previews), fs.realpathSync(previewPath))) {
+    return { eligible: false, reason: 'preview_resolves_outside_storage', size };
+  }
   if (!hasReadyHlsPreview(video)) {
     return { eligible: false, reason: 'hls_not_ready', size };
   }
-
-  const sharedCount = await Video.countDocuments({
-    _id: { $ne: video._id },
-    previewPath: video.previewPath,
-  });
-  if (sharedCount > 0) {
-    return { eligible: false, reason: 'preview_path_shared', size, sharedCount };
+  try {
+    validateHlsBuild(getActiveHlsFolder(video));
+  } catch (_) {
+    return { eligible: false, reason: 'hls_invalid', size };
+  }
+  if (await isPathReferencedByAnotherVideo(video._id, previewPath)) {
+    return { eligible: false, reason: 'preview_path_shared', size };
   }
 
   const alternativePath = getAlternativePlaybackPath(video);
+  if (alternativePath && path.resolve(alternativePath) === previewPath) {
+    return { eligible: false, reason: 'preview_is_master', size };
+  }
   const compatibility = await inspectBrowserCompatibility(alternativePath);
   if (!compatibility.compatible) {
     return {

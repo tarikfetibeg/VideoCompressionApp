@@ -35,6 +35,7 @@ import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axiosInstance from '../../axiosConfig';
+import { canPollSession } from '../../utils/sessionRecovery';
 
 const formatBytes = (bytes) => {
   if (!bytes && bytes !== 0) return 'N/A';
@@ -233,7 +234,7 @@ const StorageMaintenance = () => {
   useEffect(() => {
     if (storageOverview?.scan?.status !== 'collecting') return undefined;
     const interval = setInterval(() => {
-      fetchStorageOverview().catch(() => {});
+      if (canPollSession()) fetchStorageOverview().catch(() => {});
     }, 2000);
     return () => clearInterval(interval);
   }, [fetchStorageOverview, storageOverview?.scan?.status]);

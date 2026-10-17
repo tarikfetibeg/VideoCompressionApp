@@ -13,17 +13,27 @@ const NotificationSchema = new mongoose.Schema({
   },
   kind: {
     type: String,
-    enum: ['edit_job_comment'],
+    enum: ['edit_job_comment', 'video_correction'],
     required: true,
   },
   job: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'EditJob',
-    required: true,
+    required() {
+      return this.kind === 'edit_job_comment';
+    },
   },
   commentId: {
     type: mongoose.Schema.Types.ObjectId,
     required: true,
+  },
+  correctionRequest: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CorrectionRequest',
+  },
+  video: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Video',
   },
   title: {
     type: String,
@@ -58,6 +68,14 @@ NotificationSchema.index(
 NotificationSchema.index(
   { recipient: 1, commentId: 1 },
   { name: 'notification_recipient_comment_unique_idx', unique: true }
+);
+NotificationSchema.index(
+  { recipient: 1, correctionRequest: 1, kind: 1 },
+  {
+    name: 'notification_recipient_correction_unique_idx',
+    unique: true,
+    partialFilterExpression: { correctionRequest: { $type: 'objectId' } },
+  }
 );
 NotificationSchema.index(
   { expiresAt: 1 },

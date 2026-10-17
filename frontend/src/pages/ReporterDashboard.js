@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -6,23 +6,26 @@ import {
   Box,
   Container,
   Grid,
+  LinearProgress,
   Paper,
   Tab,
   Tabs,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import UploadComponent from '../components/UploadComponent';
-import VideoList from '../components/VideoList';
 import ReporterActiveJobs from '../components/jobs/ReporterActiveJobs';
-import ReporterEventWorkspace from '../components/jobs/ReporterEventWorkspace';
 import { WorkspaceHeader } from '../components/common/WorkspaceChrome';
+
+const UploadComponent = lazy(() => import('../components/UploadComponent'));
+const VideoList = lazy(() => import('../components/VideoList'));
+const ReporterEventWorkspace = lazy(() => import('../components/jobs/ReporterEventWorkspace'));
 
 const ReporterDashboard = () => {
   const [activeTab, setActiveTab] = useState('workspace');
   const [archiveScope, setArchiveScope] = useState('mine');
   const [refreshToken, setRefreshToken] = useState(0);
   const [newStoryOpen, setNewStoryOpen] = useState(false);
+  const [newStoryVisited, setNewStoryVisited] = useState(false);
   const [jobCountInitialized, setJobCountInitialized] = useState(false);
 
   const handleRefreshNeeded = () => {
@@ -31,7 +34,10 @@ const ReporterDashboard = () => {
 
   const handleJobCountChange = (count) => {
     if (!jobCountInitialized) {
-      setNewStoryOpen(count === 0);
+      if (!newStoryVisited) {
+        setNewStoryOpen(count === 0);
+        if (count === 0) setNewStoryVisited(true);
+      }
       setJobCountInitialized(true);
     }
   };
@@ -68,7 +74,11 @@ const ReporterDashboard = () => {
 
           <Accordion
             expanded={newStoryOpen}
-            onChange={(event, expanded) => setNewStoryOpen(expanded)}
+            onChange={(event, expanded) => {
+              setNewStoryOpen(expanded);
+              if (expanded) setNewStoryVisited(true);
+            }}
+            slots={{ heading: 'h2' }}
             disableGutters
             sx={{
               mt: 2,
@@ -81,7 +91,7 @@ const ReporterDashboard = () => {
           >
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 900 }}>
+                <Typography variant="h6" component="span" sx={{ fontWeight: 900 }}>
                   Novi prilog
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -90,6 +100,8 @@ const ReporterDashboard = () => {
               </Box>
             </AccordionSummary>
             <AccordionDetails sx={{ pt: 0 }}>
+              {(newStoryOpen || newStoryVisited) && (
+              <Suspense fallback={<LinearProgress aria-label="Učitavanje pripreme priloga" />}>
               <Grid container spacing={2} alignItems="flex-start">
                 <Grid item xs={12} lg={4}>
                   <UploadComponent onUploadComplete={handleRefreshNeeded} />
@@ -101,6 +113,8 @@ const ReporterDashboard = () => {
                   />
                 </Grid>
               </Grid>
+              </Suspense>
+              )}
             </AccordionDetails>
           </Accordion>
         </Box>
@@ -120,6 +134,7 @@ const ReporterDashboard = () => {
             </Tabs>
           </Paper>
 
+          <Suspense fallback={<LinearProgress aria-label="Učitavanje arhive" />}>
           {archiveScope === 'mine' ? (
             <VideoList
               key="my-archive"
@@ -137,6 +152,7 @@ const ReporterDashboard = () => {
               description="Pregled odobrenih i finalizovanih klipova TV kuće."
             />
           )}
+          </Suspense>
         </Box>
       )}
     </Container>

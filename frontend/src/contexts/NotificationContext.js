@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import axiosInstance from '../axiosConfig';
+import { canPollSession } from '../utils/sessionRecovery';
 import { UserContext } from './UserContext';
 
 const POLL_INTERVAL_MS = 30000;
@@ -81,13 +82,13 @@ export const NotificationProvider = ({ children }) => {
 
     refreshNotifications();
     const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (canPollSession()) {
         refreshNotifications({ silent: true });
       }
     }, POLL_INTERVAL_MS);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (canPollSession()) {
         refreshNotifications({ silent: true });
       }
     };
@@ -100,18 +101,22 @@ export const NotificationProvider = ({ children }) => {
   }, [refreshNotifications, user]);
 
   const markRead = useCallback(async (notificationId) => {
-    if (!notificationId) return;
-    const readAt = new Date().toISOString();
-    setNotifications((current) => current.map((item) => (
-      item._id === notificationId ? { ...item, readAt } : item
-    )));
-    setUnreadCount((current) => Math.max(current - 1, 0));
+    if (!notificationId) return false;
 
     try {
       await axiosInstance.patch(`/notifications/${notificationId}/read`);
+      const readAt = new Date().toISOString();
+      setNotifications((current) => current.map((item) => (
+        item._id === notificationId ? { ...item, readAt } : item
+      )));
+      if (knownUnreadIdsRef.current.delete(notificationId)) {
+        setUnreadCount((current) => Math.max(current - 1, 0));
+      }
+      return true;
     } catch (error) {
       console.error('Error marking notification read:', error);
       refreshNotifications({ silent: true });
+      return false;
     }
   }, [refreshNotifications]);
 
@@ -133,12 +138,12 @@ export const NotificationProvider = ({ children }) => {
   }, [refreshNotifications]);
 
   const markAllRead = useCallback(async () => {
-    const readAt = new Date().toISOString();
-    setNotifications((current) => current.map((item) => ({ ...item, readAt })));
-    setUnreadCount(0);
-
     try {
       await axiosInstance.patch('/notifications/read-all');
+      const readAt = new Date().toISOString();
+      setNotifications((current) => current.map((item) => ({ ...item, readAt })));
+      knownUnreadIdsRef.current.clear();
+      setUnreadCount(0);
     } catch (error) {
       console.error('Error marking all notifications read:', error);
       refreshNotifications({ silent: true });

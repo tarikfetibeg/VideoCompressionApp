@@ -1,0 +1,685 @@
+id,file,line,component,attributes,status
+UI-0001,frontend/src/components/admin/AuditLogs.js,307,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0002,frontend/src/components/admin/AuditLogs.js,310,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0003,frontend/src/components/admin/AuditLogs.js,313,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0004,frontend/src/components/admin/AuditLogs.js,316,Button,variant color startIcon onClick disabled,needs-runtime-mapping
+UI-0005,frontend/src/components/admin/AuditLogs.js,344,TextField,name label value onChange fullWidth size,needs-runtime-mapping
+UI-0006,frontend/src/components/admin/AuditLogs.js,354,TextField,name label value onChange fullWidth size select,needs-runtime-mapping
+UI-0007,frontend/src/components/admin/AuditLogs.js,363,MenuItem,value,needs-runtime-mapping
+UI-0008,frontend/src/components/admin/AuditLogs.js,365,MenuItem,key value,needs-runtime-mapping
+UI-0009,frontend/src/components/admin/AuditLogs.js,372,Select,name value label onChange,needs-runtime-mapping
+UI-0010,frontend/src/components/admin/AuditLogs.js,373,MenuItem,value,needs-runtime-mapping
+UI-0011,frontend/src/components/admin/AuditLogs.js,375,MenuItem,key value,needs-runtime-mapping
+UI-0012,frontend/src/components/admin/AuditLogs.js,383,Select,name value label onChange,needs-runtime-mapping
+UI-0013,frontend/src/components/admin/AuditLogs.js,385,MenuItem,key value,needs-runtime-mapping
+UI-0014,frontend/src/components/admin/AuditLogs.js,393,Select,name value label onChange,needs-runtime-mapping
+UI-0015,frontend/src/components/admin/AuditLogs.js,395,MenuItem,key value,needs-runtime-mapping
+UI-0016,frontend/src/components/admin/AuditLogs.js,401,TextField,name label value onChange fullWidth size type inputProps,needs-runtime-mapping
+UI-0017,frontend/src/components/admin/AuditLogs.js,413,TextField,name label value onChange fullWidth size type InputLabelProps,needs-runtime-mapping
+UI-0018,frontend/src/components/admin/AuditLogs.js,425,TextField,name label value onChange fullWidth size type InputLabelProps,needs-runtime-mapping
+UI-0019,frontend/src/components/admin/AuditLogs.js,486,IconButton,size onClick aria-label,needs-runtime-mapping
+UI-0020,frontend/src/components/admin/AuditLogs.js,542,Pagination,count page onChange,needs-runtime-mapping
+UI-0021,frontend/src/components/admin/BroadcastProgramManagement.js,178,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0022,frontend/src/components/admin/BroadcastProgramManagement.js,184,TextField,label type value onChange InputLabelProps fullWidth,needs-runtime-mapping
+UI-0023,frontend/src/components/admin/BroadcastProgramManagement.js,192,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0024,frontend/src/components/admin/BroadcastProgramManagement.js,211,Checkbox,checked onChange,needs-runtime-mapping
+UI-0025,frontend/src/components/admin/BroadcastProgramManagement.js,219,Button,variant onClick,needs-runtime-mapping
+UI-0026,frontend/src/components/admin/BroadcastProgramManagement.js,222,Button,onClick,needs-runtime-mapping
+UI-0027,frontend/src/components/admin/BroadcastProgramManagement.js,259,Button,size onClick,needs-runtime-mapping
+UI-0028,frontend/src/components/admin/BroadcastProgramManagement.js,274,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0029,frontend/src/components/admin/BroadcastProgramManagement.js,280,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0030,frontend/src/components/admin/BroadcastProgramManagement.js,286,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0031,frontend/src/components/admin/BroadcastProgramManagement.js,294,TextField,label type value onChange inputProps fullWidth,needs-runtime-mapping
+UI-0032,frontend/src/components/admin/BroadcastProgramManagement.js,304,TextField,label type value onChange inputProps fullWidth,needs-runtime-mapping
+UI-0033,frontend/src/components/admin/BroadcastProgramManagement.js,316,Checkbox,checked onChange,needs-runtime-mapping
+UI-0034,frontend/src/components/admin/BroadcastProgramManagement.js,325,Checkbox,checked onChange,needs-runtime-mapping
+UI-0035,frontend/src/components/admin/BroadcastProgramManagement.js,333,Button,variant onClick,needs-runtime-mapping
+UI-0036,frontend/src/components/admin/BroadcastProgramManagement.js,336,Button,onClick,needs-runtime-mapping
+UI-0037,frontend/src/components/admin/BroadcastProgramManagement.js,374,Button,size onClick,needs-runtime-mapping
+UI-0038,frontend/src/components/admin/EditJobManagement.js,201,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0039,frontend/src/components/admin/EditJobManagement.js,204,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0040,frontend/src/components/admin/EditJobManagement.js,211,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0041,frontend/src/components/admin/EditJobManagement.js,223,Select,value label onChange,needs-runtime-mapping
+UI-0042,frontend/src/components/admin/EditJobManagement.js,231,MenuItem,value,needs-runtime-mapping
+UI-0043,frontend/src/components/admin/EditJobManagement.js,233,MenuItem,key value,needs-runtime-mapping
+UI-0044,frontend/src/components/admin/EditJobManagement.js,239,Select,value label onChange,needs-runtime-mapping
+UI-0045,frontend/src/components/admin/EditJobManagement.js,247,MenuItem,value,needs-runtime-mapping
+UI-0046,frontend/src/components/admin/EditJobManagement.js,249,MenuItem,key value,needs-runtime-mapping
+UI-0047,frontend/src/components/admin/EditJobManagement.js,291,Button,size startIcon onClick,needs-runtime-mapping
+UI-0048,frontend/src/components/admin/EditJobManagement.js,292,Button,size color startIcon onClick,needs-runtime-mapping
+UI-0049,frontend/src/components/admin/EditJobManagement.js,311,Pagination,page count onChange,needs-runtime-mapping
+UI-0050,frontend/src/components/admin/EditJobManagement.js,322,Select,value label onChange,needs-runtime-mapping
+UI-0051,frontend/src/components/admin/EditJobManagement.js,323,MenuItem,key value,needs-runtime-mapping
+UI-0052,frontend/src/components/admin/EditJobManagement.js,328,Select,value label onChange,needs-runtime-mapping
+UI-0053,frontend/src/components/admin/EditJobManagement.js,329,MenuItem,key value,needs-runtime-mapping
+UI-0054,frontend/src/components/admin/EditJobManagement.js,334,Select,value label onChange,needs-runtime-mapping
+UI-0055,frontend/src/components/admin/EditJobManagement.js,335,MenuItem,key value,needs-runtime-mapping
+UI-0056,frontend/src/components/admin/EditJobManagement.js,342,Select,value label onChange,needs-runtime-mapping
+UI-0057,frontend/src/components/admin/EditJobManagement.js,343,MenuItem,value,needs-runtime-mapping
+UI-0058,frontend/src/components/admin/EditJobManagement.js,344,MenuItem,key value,needs-runtime-mapping
+UI-0059,frontend/src/components/admin/EditJobManagement.js,349,Select,value label onChange,needs-runtime-mapping
+UI-0060,frontend/src/components/admin/EditJobManagement.js,350,MenuItem,key value,needs-runtime-mapping
+UI-0061,frontend/src/components/admin/EditJobManagement.js,353,TextField,fullWidth size type label value onChange InputLabelProps,needs-runtime-mapping
+UI-0062,frontend/src/components/admin/EditJobManagement.js,363,TextField,label value onChange multiline minRows,needs-runtime-mapping
+UI-0063,frontend/src/components/admin/EditJobManagement.js,373,Button,onClick disabled,needs-runtime-mapping
+UI-0064,frontend/src/components/admin/EditJobManagement.js,374,Button,variant onClick disabled,needs-runtime-mapping
+UI-0065,frontend/src/components/admin/FeedbackInbox.js,200,Select,name value label onChange,needs-runtime-mapping
+UI-0066,frontend/src/components/admin/FeedbackInbox.js,202,MenuItem,key value,needs-runtime-mapping
+UI-0067,frontend/src/components/admin/FeedbackInbox.js,210,Select,name value label onChange,needs-runtime-mapping
+UI-0068,frontend/src/components/admin/FeedbackInbox.js,212,MenuItem,key value,needs-runtime-mapping
+UI-0069,frontend/src/components/admin/FeedbackInbox.js,220,Select,name value label onChange,needs-runtime-mapping
+UI-0070,frontend/src/components/admin/FeedbackInbox.js,221,MenuItem,value,needs-runtime-mapping
+UI-0071,frontend/src/components/admin/FeedbackInbox.js,223,MenuItem,key value,needs-runtime-mapping
+UI-0072,frontend/src/components/admin/FeedbackInbox.js,231,TextField,name label value onChange fullWidth size multiline minRows helperText,needs-runtime-mapping
+UI-0073,frontend/src/components/admin/FeedbackInbox.js,244,TextField,name label value onChange fullWidth size multiline minRows helperText,needs-runtime-mapping
+UI-0074,frontend/src/components/admin/FeedbackInbox.js,258,Button,fullWidth variant startIcon onClick disabled,needs-runtime-mapping
+UI-0075,frontend/src/components/admin/FeedbackInbox.js,267,Button,fullWidth variant startIcon onClick disabled,needs-runtime-mapping
+UI-0076,frontend/src/components/admin/FeedbackInbox.js,325,TextField,value onChange label size fullWidth multiline minRows,needs-runtime-mapping
+UI-0077,frontend/src/components/admin/FeedbackInbox.js,334,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0078,frontend/src/components/admin/FeedbackInbox.js,514,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0079,frontend/src/components/admin/FeedbackInbox.js,542,TextField,name label value onChange fullWidth size,needs-runtime-mapping
+UI-0080,frontend/src/components/admin/FeedbackInbox.js,554,Select,name value label onChange,needs-runtime-mapping
+UI-0081,frontend/src/components/admin/FeedbackInbox.js,556,MenuItem,key value,needs-runtime-mapping
+UI-0082,frontend/src/components/admin/FeedbackInbox.js,564,Select,name value label onChange,needs-runtime-mapping
+UI-0083,frontend/src/components/admin/FeedbackInbox.js,566,MenuItem,key value,needs-runtime-mapping
+UI-0084,frontend/src/components/admin/FeedbackInbox.js,574,Select,name value label onChange,needs-runtime-mapping
+UI-0085,frontend/src/components/admin/FeedbackInbox.js,576,MenuItem,key value,needs-runtime-mapping
+UI-0086,frontend/src/components/admin/FeedbackInbox.js,584,Select,name value label onChange,needs-runtime-mapping
+UI-0087,frontend/src/components/admin/FeedbackInbox.js,586,MenuItem,key value,needs-runtime-mapping
+UI-0088,frontend/src/components/admin/FeedbackInbox.js,613,Pagination,count page onChange,needs-runtime-mapping
+UI-0089,frontend/src/components/admin/FfmpegSettings.js,234,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0090,frontend/src/components/admin/FfmpegSettings.js,237,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0091,frontend/src/components/admin/FfmpegSettings.js,268,Tabs,value onChange variant scrollButtons sx,needs-runtime-mapping
+UI-0092,frontend/src/components/admin/FfmpegSettings.js,275,Tab,value label,needs-runtime-mapping
+UI-0093,frontend/src/components/admin/FfmpegSettings.js,276,Tab,value label,needs-runtime-mapping
+UI-0094,frontend/src/components/admin/FfmpegSettings.js,277,Tab,value label,needs-runtime-mapping
+UI-0095,frontend/src/components/admin/FfmpegSettings.js,278,Tab,value label,needs-runtime-mapping
+UI-0096,frontend/src/components/admin/FfmpegSettings.js,293,Select,name value label onChange,needs-runtime-mapping
+UI-0097,frontend/src/components/admin/FfmpegSettings.js,294,MenuItem,value,needs-runtime-mapping
+UI-0098,frontend/src/components/admin/FfmpegSettings.js,295,MenuItem,value,needs-runtime-mapping
+UI-0099,frontend/src/components/admin/FfmpegSettings.js,296,MenuItem,value disabled,needs-runtime-mapping
+UI-0100,frontend/src/components/admin/FfmpegSettings.js,297,MenuItem,value disabled,needs-runtime-mapping
+UI-0101,frontend/src/components/admin/FfmpegSettings.js,304,Select,name value label onChange,needs-runtime-mapping
+UI-0102,frontend/src/components/admin/FfmpegSettings.js,306,MenuItem,key value,needs-runtime-mapping
+UI-0103,frontend/src/components/admin/FfmpegSettings.js,312,TextField,fullWidth type label name value onChange inputProps,needs-runtime-mapping
+UI-0104,frontend/src/components/admin/FfmpegSettings.js,315,TextField,fullWidth type label name value onChange inputProps,needs-runtime-mapping
+UI-0105,frontend/src/components/admin/FfmpegSettings.js,319,Slider,name value min max step onChange valueLabelDisplay,needs-runtime-mapping
+UI-0106,frontend/src/components/admin/FfmpegSettings.js,322,Button,variant color onClick disabled,needs-runtime-mapping
+UI-0107,frontend/src/components/admin/FfmpegSettings.js,340,Select,name value label onChange,needs-runtime-mapping
+UI-0108,frontend/src/components/admin/FfmpegSettings.js,341,MenuItem,value,needs-runtime-mapping
+UI-0109,frontend/src/components/admin/FfmpegSettings.js,342,MenuItem,value,needs-runtime-mapping
+UI-0110,frontend/src/components/admin/FfmpegSettings.js,349,Select,name value label onChange,needs-runtime-mapping
+UI-0111,frontend/src/components/admin/FfmpegSettings.js,350,MenuItem,value,needs-runtime-mapping
+UI-0112,frontend/src/components/admin/FfmpegSettings.js,351,MenuItem,value disabled,needs-runtime-mapping
+UI-0113,frontend/src/components/admin/FfmpegSettings.js,358,Select,name value label onChange,needs-runtime-mapping
+UI-0114,frontend/src/components/admin/FfmpegSettings.js,359,MenuItem,key value,needs-runtime-mapping
+UI-0115,frontend/src/components/admin/FfmpegSettings.js,364,TextField,fullWidth type label name value onChange inputProps,needs-runtime-mapping
+UI-0116,frontend/src/components/admin/FfmpegSettings.js,369,Select,name value label onChange,needs-runtime-mapping
+UI-0117,frontend/src/components/admin/FfmpegSettings.js,370,MenuItem,key value,needs-runtime-mapping
+UI-0118,frontend/src/components/admin/FfmpegSettings.js,377,Select,name value label onChange,needs-runtime-mapping
+UI-0119,frontend/src/components/admin/FfmpegSettings.js,378,MenuItem,value,needs-runtime-mapping
+UI-0120,frontend/src/components/admin/FfmpegSettings.js,379,MenuItem,value,needs-runtime-mapping
+UI-0121,frontend/src/components/admin/FfmpegSettings.js,386,Select,name value label onChange,needs-runtime-mapping
+UI-0122,frontend/src/components/admin/FfmpegSettings.js,387,MenuItem,key value,needs-runtime-mapping
+UI-0123,frontend/src/components/admin/FfmpegSettings.js,394,Select,name value label onChange,needs-runtime-mapping
+UI-0124,frontend/src/components/admin/FfmpegSettings.js,401,MenuItem,key value,needs-runtime-mapping
+UI-0125,frontend/src/components/admin/FfmpegSettings.js,407,Checkbox,checked onChange,needs-runtime-mapping
+UI-0126,frontend/src/components/admin/FfmpegSettings.js,425,Select,name value label onChange,needs-runtime-mapping
+UI-0127,frontend/src/components/admin/FfmpegSettings.js,426,MenuItem,value,needs-runtime-mapping
+UI-0128,frontend/src/components/admin/FfmpegSettings.js,427,MenuItem,value disabled,needs-runtime-mapping
+UI-0129,frontend/src/components/admin/FfmpegSettings.js,434,Select,name value label onChange,needs-runtime-mapping
+UI-0130,frontend/src/components/admin/FfmpegSettings.js,435,MenuItem,key value,needs-runtime-mapping
+UI-0131,frontend/src/components/admin/FfmpegSettings.js,442,Select,name value label onChange,needs-runtime-mapping
+UI-0132,frontend/src/components/admin/FfmpegSettings.js,443,MenuItem,key value,needs-runtime-mapping
+UI-0133,frontend/src/components/admin/FfmpegSettings.js,452,TextField,fullWidth type name label value onChange inputProps,needs-runtime-mapping
+UI-0134,frontend/src/components/admin/FfmpegSettings.js,462,Select,name value label onChange,needs-runtime-mapping
+UI-0135,frontend/src/components/admin/FfmpegSettings.js,463,MenuItem,key value,needs-runtime-mapping
+UI-0136,frontend/src/components/admin/FfmpegSettings.js,470,Checkbox,checked onChange,needs-runtime-mapping
+UI-0137,frontend/src/components/admin/FfmpegSettings.js,488,Select,name value label onChange,needs-runtime-mapping
+UI-0138,frontend/src/components/admin/FfmpegSettings.js,489,MenuItem,key value,needs-runtime-mapping
+UI-0139,frontend/src/components/admin/FfmpegSettings.js,494,TextField,fullWidth type name label value onChange inputProps,needs-runtime-mapping
+UI-0140,frontend/src/components/admin/FfmpegSettings.js,499,Select,name value label onChange,needs-runtime-mapping
+UI-0141,frontend/src/components/admin/FfmpegSettings.js,500,MenuItem,key value,needs-runtime-mapping
+UI-0142,frontend/src/components/admin/FfmpegSettings.js,505,TextField,fullWidth type name label value onChange inputProps,needs-runtime-mapping
+UI-0143,frontend/src/components/admin/FfmpegSettings.js,508,TextField,fullWidth type name label value onChange inputProps,needs-runtime-mapping
+UI-0144,frontend/src/components/admin/FfmpegSettings.js,525,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0145,frontend/src/components/admin/FfmpegSettings.js,539,Button,onClick,needs-runtime-mapping
+UI-0146,frontend/src/components/admin/FfmpegSettings.js,540,Button,variant onClick,needs-runtime-mapping
+UI-0147,frontend/src/components/admin/StorageMaintenance.js,523,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0148,frontend/src/components/admin/StorageMaintenance.js,531,Button,variant color startIcon onClick disabled,needs-runtime-mapping
+UI-0149,frontend/src/components/admin/StorageMaintenance.js,598,Tabs,value onChange variant scrollButtons sx,needs-runtime-mapping
+UI-0150,frontend/src/components/admin/StorageMaintenance.js,605,Tab,value label,needs-runtime-mapping
+UI-0151,frontend/src/components/admin/StorageMaintenance.js,606,Tab,value label,needs-runtime-mapping
+UI-0152,frontend/src/components/admin/StorageMaintenance.js,607,Tab,value label,needs-runtime-mapping
+UI-0153,frontend/src/components/admin/StorageMaintenance.js,608,Tab,value label,needs-runtime-mapping
+UI-0154,frontend/src/components/admin/StorageMaintenance.js,609,Tab,value label,needs-runtime-mapping
+UI-0155,frontend/src/components/admin/StorageMaintenance.js,610,Tab,value label,needs-runtime-mapping
+UI-0156,frontend/src/components/admin/StorageMaintenance.js,611,Tab,value label,needs-runtime-mapping
+UI-0157,frontend/src/components/admin/StorageMaintenance.js,612,Tab,value label,needs-runtime-mapping
+UI-0158,frontend/src/components/admin/StorageMaintenance.js,666,TextField,label type size value onChange inputProps,needs-runtime-mapping
+UI-0159,frontend/src/components/admin/StorageMaintenance.js,674,TextField,label type size value onChange inputProps,needs-runtime-mapping
+UI-0160,frontend/src/components/admin/StorageMaintenance.js,682,Button,variant onClick disabled,needs-runtime-mapping
+UI-0161,frontend/src/components/admin/StorageMaintenance.js,683,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0162,frontend/src/components/admin/StorageMaintenance.js,783,Button,size color startIcon onClick,needs-runtime-mapping
+UI-0163,frontend/src/components/admin/StorageMaintenance.js,861,Button,size color startIcon onClick,needs-runtime-mapping
+UI-0164,frontend/src/components/admin/StorageMaintenance.js,925,TextField,label type size value onChange inputProps sx,needs-runtime-mapping
+UI-0165,frontend/src/components/admin/StorageMaintenance.js,934,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0166,frontend/src/components/admin/StorageMaintenance.js,942,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0167,frontend/src/components/admin/StorageMaintenance.js,1017,TextField,label type size value onChange inputProps sx,needs-runtime-mapping
+UI-0168,frontend/src/components/admin/StorageMaintenance.js,1026,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0169,frontend/src/components/admin/StorageMaintenance.js,1034,Button,variant color onClick disabled,needs-runtime-mapping
+UI-0170,frontend/src/components/admin/StorageMaintenance.js,1042,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0171,frontend/src/components/admin/StorageMaintenance.js,1100,Select,value label onChange,needs-runtime-mapping
+UI-0172,frontend/src/components/admin/StorageMaintenance.js,1105,MenuItem,value,needs-runtime-mapping
+UI-0173,frontend/src/components/admin/StorageMaintenance.js,1106,MenuItem,value,needs-runtime-mapping
+UI-0174,frontend/src/components/admin/StorageMaintenance.js,1109,TextField,size type label value onChange inputProps sx,needs-runtime-mapping
+UI-0175,frontend/src/components/admin/StorageMaintenance.js,1118,Button,variant onClick disabled,needs-runtime-mapping
+UI-0176,frontend/src/components/admin/StorageMaintenance.js,1121,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0177,frontend/src/components/admin/StorageMaintenance.js,1136,Checkbox,checked onChange,needs-runtime-mapping
+UI-0178,frontend/src/components/admin/StorageMaintenance.js,1160,TextField,label type size value onChange inputProps sx,needs-runtime-mapping
+UI-0179,frontend/src/components/admin/StorageMaintenance.js,1169,Button,variant onClick disabled,needs-runtime-mapping
+UI-0180,frontend/src/components/admin/StorageMaintenance.js,1172,Button,variant color startIcon onClick disabled,needs-runtime-mapping
+UI-0181,frontend/src/components/admin/StorageMaintenance.js,1232,TextField,name label value onChange fullWidth size,needs-runtime-mapping
+UI-0182,frontend/src/components/admin/StorageMaintenance.js,1244,Select,name value label onChange,needs-runtime-mapping
+UI-0183,frontend/src/components/admin/StorageMaintenance.js,1251,MenuItem,key value,needs-runtime-mapping
+UI-0184,frontend/src/components/admin/StorageMaintenance.js,1259,Select,name value label onChange,needs-runtime-mapping
+UI-0185,frontend/src/components/admin/StorageMaintenance.js,1266,MenuItem,key value,needs-runtime-mapping
+UI-0186,frontend/src/components/admin/StorageMaintenance.js,1333,Button,size color startIcon onClick,needs-runtime-mapping
+UI-0187,frontend/src/components/admin/StorageMaintenance.js,1365,Button,onClick disabled,needs-runtime-mapping
+UI-0188,frontend/src/components/admin/StorageMaintenance.js,1366,Button,color variant onClick disabled,needs-runtime-mapping
+UI-0189,frontend/src/components/admin/UserManagement.js,174,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0190,frontend/src/components/admin/UserManagement.js,177,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0191,frontend/src/components/admin/UserManagement.js,185,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0192,frontend/src/components/admin/UserManagement.js,196,Select,value label onChange,needs-runtime-mapping
+UI-0193,frontend/src/components/admin/UserManagement.js,197,MenuItem,value,needs-runtime-mapping
+UI-0194,frontend/src/components/admin/UserManagement.js,199,MenuItem,key value,needs-runtime-mapping
+UI-0195,frontend/src/components/admin/UserManagement.js,240,Select,value label onChange,needs-runtime-mapping
+UI-0196,frontend/src/components/admin/UserManagement.js,246,MenuItem,key value,needs-runtime-mapping
+UI-0197,frontend/src/components/admin/UserManagement.js,253,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0198,frontend/src/components/admin/UserManagement.js,268,TextField,autoFocus label fullWidth value onChange,needs-runtime-mapping
+UI-0199,frontend/src/components/admin/UserManagement.js,275,TextField,label type fullWidth helperText value onChange,needs-runtime-mapping
+UI-0200,frontend/src/components/admin/UserManagement.js,285,Select,value label onChange,needs-runtime-mapping
+UI-0201,frontend/src/components/admin/UserManagement.js,287,MenuItem,key value,needs-runtime-mapping
+UI-0202,frontend/src/components/admin/UserManagement.js,294,Button,onClick,needs-runtime-mapping
+UI-0203,frontend/src/components/admin/UserManagement.js,295,Button,variant onClick,needs-runtime-mapping
+UI-0204,frontend/src/components/admin/UserManagement.js,302,TextField,autoFocus label type fullWidth helperText value onChange sx,needs-runtime-mapping
+UI-0205,frontend/src/components/admin/UserManagement.js,314,Button,onClick,needs-runtime-mapping
+UI-0206,frontend/src/components/admin/UserManagement.js,315,Button,variant onClick,needs-runtime-mapping
+UI-0207,frontend/src/components/admin/VideoManagement.js,758,Checkbox,checked onChange sx,needs-runtime-mapping
+UI-0208,frontend/src/components/admin/VideoManagement.js,840,Select,value label onChange,needs-runtime-mapping
+UI-0209,frontend/src/components/admin/VideoManagement.js,846,MenuItem,key value,needs-runtime-mapping
+UI-0210,frontend/src/components/admin/VideoManagement.js,856,Select,value label onChange,needs-runtime-mapping
+UI-0211,frontend/src/components/admin/VideoManagement.js,861,MenuItem,value disabled,needs-runtime-mapping
+UI-0212,frontend/src/components/admin/VideoManagement.js,865,MenuItem,key value disabled,needs-runtime-mapping
+UI-0213,frontend/src/components/admin/VideoManagement.js,903,Button,size variant href,needs-runtime-mapping
+UI-0214,frontend/src/components/admin/VideoManagement.js,910,Button,size variant onClick,needs-runtime-mapping
+UI-0215,frontend/src/components/admin/VideoManagement.js,914,Button,size variant startIcon onClick,needs-runtime-mapping
+UI-0216,frontend/src/components/admin/VideoManagement.js,923,Button,size color onClick,needs-runtime-mapping
+UI-0217,frontend/src/components/admin/VideoManagement.js,960,Select,value label onChange,needs-runtime-mapping
+UI-0218,frontend/src/components/admin/VideoManagement.js,965,MenuItem,value,needs-runtime-mapping
+UI-0219,frontend/src/components/admin/VideoManagement.js,967,MenuItem,key value,needs-runtime-mapping
+UI-0220,frontend/src/components/admin/VideoManagement.js,973,Button,variant onClick,needs-runtime-mapping
+UI-0221,frontend/src/components/admin/VideoManagement.js,976,Button,variant color onClick disabled,needs-runtime-mapping
+UI-0222,frontend/src/components/admin/VideoManagement.js,984,Button,variant onClick,needs-runtime-mapping
+UI-0223,frontend/src/components/admin/VideoManagement.js,1038,TextField,label fullWidth value onChange placeholder,needs-runtime-mapping
+UI-0224,frontend/src/components/admin/VideoManagement.js,1053,Select,value label onChange,needs-runtime-mapping
+UI-0225,frontend/src/components/admin/VideoManagement.js,1061,MenuItem,value,needs-runtime-mapping
+UI-0226,frontend/src/components/admin/VideoManagement.js,1062,MenuItem,value,needs-runtime-mapping
+UI-0227,frontend/src/components/admin/VideoManagement.js,1063,MenuItem,value,needs-runtime-mapping
+UI-0228,frontend/src/components/admin/VideoManagement.js,1064,MenuItem,value,needs-runtime-mapping
+UI-0229,frontend/src/components/admin/VideoManagement.js,1065,MenuItem,value,needs-runtime-mapping
+UI-0230,frontend/src/components/admin/VideoManagement.js,1066,MenuItem,value,needs-runtime-mapping
+UI-0231,frontend/src/components/admin/VideoManagement.js,1074,Select,value label onChange,needs-runtime-mapping
+UI-0232,frontend/src/components/admin/VideoManagement.js,1082,MenuItem,value,needs-runtime-mapping
+UI-0233,frontend/src/components/admin/VideoManagement.js,1083,MenuItem,value,needs-runtime-mapping
+UI-0234,frontend/src/components/admin/VideoManagement.js,1084,MenuItem,value,needs-runtime-mapping
+UI-0235,frontend/src/components/admin/VideoManagement.js,1085,MenuItem,value,needs-runtime-mapping
+UI-0236,frontend/src/components/admin/VideoManagement.js,1086,MenuItem,value,needs-runtime-mapping
+UI-0237,frontend/src/components/admin/VideoManagement.js,1087,MenuItem,value,needs-runtime-mapping
+UI-0238,frontend/src/components/admin/VideoManagement.js,1095,Select,value label onChange,needs-runtime-mapping
+UI-0239,frontend/src/components/admin/VideoManagement.js,1103,MenuItem,value,needs-runtime-mapping
+UI-0240,frontend/src/components/admin/VideoManagement.js,1104,MenuItem,value,needs-runtime-mapping
+UI-0241,frontend/src/components/admin/VideoManagement.js,1106,MenuItem,key value,needs-runtime-mapping
+UI-0242,frontend/src/components/admin/VideoManagement.js,1117,Select,value label onChange,needs-runtime-mapping
+UI-0243,frontend/src/components/admin/VideoManagement.js,1125,MenuItem,value,needs-runtime-mapping
+UI-0244,frontend/src/components/admin/VideoManagement.js,1127,MenuItem,key value,needs-runtime-mapping
+UI-0245,frontend/src/components/admin/VideoManagement.js,1134,Button,fullWidth variant startIcon onClick disabled,needs-runtime-mapping
+UI-0246,frontend/src/components/admin/VideoManagement.js,1153,Button,variant onClick,needs-runtime-mapping
+UI-0247,frontend/src/components/admin/VideoManagement.js,1156,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0248,frontend/src/components/admin/VideoManagement.js,1163,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0249,frontend/src/components/admin/VideoManagement.js,1170,Button,variant color onClick,needs-runtime-mapping
+UI-0250,frontend/src/components/admin/VideoManagement.js,1199,AccordionSummary,expandIcon sx,needs-runtime-mapping
+UI-0251,frontend/src/components/admin/VideoManagement.js,1218,Checkbox,checked indeterminate onClick onFocus onChange inputProps sx,needs-runtime-mapping
+UI-0252,frontend/src/components/admin/VideoManagement.js,1274,Pagination,count page onChange,needs-runtime-mapping
+UI-0253,frontend/src/components/admin/VideoManagement.js,1293,Button,onClick,needs-runtime-mapping
+UI-0254,frontend/src/components/admin/VideoManagement.js,1294,Button,color variant onClick,needs-runtime-mapping
+UI-0255,frontend/src/components/admin/VideoManagement.js,1308,Button,onClick,needs-runtime-mapping
+UI-0256,frontend/src/components/admin/VideoManagement.js,1309,Button,variant onClick,needs-runtime-mapping
+UI-0257,frontend/src/components/common/WorkspaceChrome.js,219,Button,onClick disabled,needs-runtime-mapping
+UI-0258,frontend/src/components/common/WorkspaceChrome.js,222,Button,variant color onClick disabled,needs-runtime-mapping
+UI-0259,frontend/src/components/editor/BulkActionsComponent.js,108,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0260,frontend/src/components/editor/BulkActionsComponent.js,116,Button,startIcon variant color onClick disabled,needs-runtime-mapping
+UI-0261,frontend/src/components/editor/BulkActionsComponent.js,125,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0262,frontend/src/components/editor/BulkActionsComponent.js,139,Button,onClick,needs-runtime-mapping
+UI-0263,frontend/src/components/editor/BulkActionsComponent.js,140,Button,onClick color variant,needs-runtime-mapping
+UI-0264,frontend/src/components/editor/SearchAndFilterComponent.js,61,Button,startIcon variant onClick,needs-runtime-mapping
+UI-0265,frontend/src/components/editor/SearchAndFilterComponent.js,68,TextField,label fullWidth value onChange InputProps,needs-runtime-mapping
+UI-0266,frontend/src/components/editor/SearchAndFilterComponent.js,85,TextField,label,needs-runtime-mapping
+UI-0267,frontend/src/components/editor/SearchAndFilterComponent.js,95,TextField,label,needs-runtime-mapping
+UI-0268,frontend/src/components/editor/SearchAndFilterComponent.js,105,TextField,label,needs-runtime-mapping
+UI-0269,frontend/src/components/editor/SearchAndFilterComponent.js,110,TextField,label type fullWidth InputLabelProps value onChange,needs-runtime-mapping
+UI-0270,frontend/src/components/editor/SearchAndFilterComponent.js,123,Select,value label onChange,needs-runtime-mapping
+UI-0271,frontend/src/components/editor/SearchAndFilterComponent.js,128,MenuItem,value,needs-runtime-mapping
+UI-0272,frontend/src/components/editor/SearchAndFilterComponent.js,130,MenuItem,key value,needs-runtime-mapping
+UI-0273,frontend/src/components/editor/SearchAndFilterComponent.js,141,Select,value label onChange,needs-runtime-mapping
+UI-0274,frontend/src/components/editor/SearchAndFilterComponent.js,146,MenuItem,value,needs-runtime-mapping
+UI-0275,frontend/src/components/editor/SearchAndFilterComponent.js,147,MenuItem,value,needs-runtime-mapping
+UI-0276,frontend/src/components/editor/SearchAndFilterComponent.js,148,MenuItem,value,needs-runtime-mapping
+UI-0277,frontend/src/components/editor/SearchAndFilterComponent.js,156,Select,value label onChange,needs-runtime-mapping
+UI-0278,frontend/src/components/editor/SearchAndFilterComponent.js,162,MenuItem,key value,needs-runtime-mapping
+UI-0279,frontend/src/components/editor/SearchAndFilterComponent.js,173,Select,value label onChange,needs-runtime-mapping
+UI-0280,frontend/src/components/editor/SearchAndFilterComponent.js,179,MenuItem,key value,needs-runtime-mapping
+UI-0281,frontend/src/components/editor/SearchAndFilterComponent.js,190,Select,value label onChange,needs-runtime-mapping
+UI-0282,frontend/src/components/editor/SearchAndFilterComponent.js,196,MenuItem,key value,needs-runtime-mapping
+UI-0283,frontend/src/components/editor/VideoListComponent.js,120,Checkbox,checked indeterminate onChange,needs-runtime-mapping
+UI-0284,frontend/src/components/editor/VideoListComponent.js,162,Checkbox,checked onChange,needs-runtime-mapping
+UI-0285,frontend/src/components/editor/VideoListComponent.js,264,IconButton,onClick size,needs-runtime-mapping
+UI-0286,frontend/src/components/editor/VideoListComponent.js,272,IconButton,onClick size color disabled,needs-runtime-mapping
+UI-0287,frontend/src/components/editor/VideoListComponent.js,284,IconButton,component to size,needs-runtime-mapping
+UI-0288,frontend/src/components/editor/VideoUploadComponent.js,143,Button,variant component startIcon,needs-runtime-mapping
+UI-0289,frontend/src/components/editor/VideoUploadComponent.js,145,input,type hidden multiple accept onChange,needs-runtime-mapping
+UI-0290,frontend/src/components/editor/VideoUploadComponent.js,172,Select,value label onChange,needs-runtime-mapping
+UI-0291,frontend/src/components/editor/VideoUploadComponent.js,177,MenuItem,value,needs-runtime-mapping
+UI-0292,frontend/src/components/editor/VideoUploadComponent.js,179,MenuItem,key value,needs-runtime-mapping
+UI-0293,frontend/src/components/editor/VideoUploadComponent.js,189,Select,value label onChange,needs-runtime-mapping
+UI-0294,frontend/src/components/editor/VideoUploadComponent.js,195,MenuItem,key value,needs-runtime-mapping
+UI-0295,frontend/src/components/editor/VideoUploadComponent.js,203,TextField,label type value onChange fullWidth InputLabelProps required,needs-runtime-mapping
+UI-0296,frontend/src/components/editor/VideoUploadComponent.js,214,TextField,label value onChange fullWidth disabled helperText,needs-runtime-mapping
+UI-0297,frontend/src/components/editor/VideoUploadComponent.js,226,Select,value label onChange,needs-runtime-mapping
+UI-0298,frontend/src/components/editor/VideoUploadComponent.js,231,MenuItem,value,needs-runtime-mapping
+UI-0299,frontend/src/components/editor/VideoUploadComponent.js,233,MenuItem,key value,needs-runtime-mapping
+UI-0300,frontend/src/components/editor/VideoUploadComponent.js,241,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0301,frontend/src/components/editor/VideoUploadComponent.js,249,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0302,frontend/src/components/editor/VideoUploadComponent.js,267,Button,variant onClick sx,needs-runtime-mapping
+UI-0303,frontend/src/components/jobs/BriefImportButton.js,54,Button,component variant startIcon disabled,needs-runtime-mapping
+UI-0304,frontend/src/components/jobs/BriefImportButton.js,61,input,hidden type accept onChange,needs-runtime-mapping
+UI-0305,frontend/src/components/jobs/CorrectionQueue.js,178,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0306,frontend/src/components/jobs/CorrectionQueue.js,186,Select,value label onChange,needs-runtime-mapping
+UI-0307,frontend/src/components/jobs/CorrectionQueue.js,191,MenuItem,value,needs-runtime-mapping
+UI-0308,frontend/src/components/jobs/CorrectionQueue.js,192,MenuItem,value,needs-runtime-mapping
+UI-0309,frontend/src/components/jobs/CorrectionQueue.js,193,MenuItem,value,needs-runtime-mapping
+UI-0310,frontend/src/components/jobs/CorrectionQueue.js,247,Select,value label onChange,needs-runtime-mapping
+UI-0311,frontend/src/components/jobs/CorrectionQueue.js,255,MenuItem,value,needs-runtime-mapping
+UI-0312,frontend/src/components/jobs/CorrectionQueue.js,257,MenuItem,key value,needs-runtime-mapping
+UI-0313,frontend/src/components/jobs/CorrectionQueue.js,269,Button,component to size startIcon,needs-runtime-mapping
+UI-0314,frontend/src/components/jobs/CorrectionQueue.js,278,Button,component to size,needs-runtime-mapping
+UI-0315,frontend/src/components/jobs/CorrectionQueue.js,283,Button,size startIcon onClick,needs-runtime-mapping
+UI-0316,frontend/src/components/jobs/CorrectionQueue.js,288,Button,size variant onClick,needs-runtime-mapping
+UI-0317,frontend/src/components/jobs/CorrectionQueue.js,293,Button,size variant onClick,needs-runtime-mapping
+UI-0318,frontend/src/components/jobs/CorrectionQueue.js,298,Button,size variant onClick,needs-runtime-mapping
+UI-0319,frontend/src/components/jobs/CorrectionQueue.js,303,Button,size variant color onClick,needs-runtime-mapping
+UI-0320,frontend/src/components/jobs/CorrectionQueue.js,324,Pagination,count page onChange size,needs-runtime-mapping
+UI-0321,frontend/src/components/jobs/CorrectionQueue.js,338,TextField,autoFocus label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0322,frontend/src/components/jobs/CorrectionQueue.js,349,Button,onClick,needs-runtime-mapping
+UI-0323,frontend/src/components/jobs/CorrectionQueue.js,352,Button,variant color disabled onClick,needs-runtime-mapping
+UI-0324,frontend/src/components/jobs/EditJobBoard.js,168,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0325,frontend/src/components/jobs/EditJobBoard.js,174,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0326,frontend/src/components/jobs/EditJobBoard.js,185,Select,labelId value label onChange,needs-runtime-mapping
+UI-0327,frontend/src/components/jobs/EditJobBoard.js,194,MenuItem,value,needs-runtime-mapping
+UI-0328,frontend/src/components/jobs/EditJobBoard.js,196,MenuItem,key value,needs-runtime-mapping
+UI-0329,frontend/src/components/jobs/EditJobBoard.js,204,Select,labelId value label onChange,needs-runtime-mapping
+UI-0330,frontend/src/components/jobs/EditJobBoard.js,213,MenuItem,value,needs-runtime-mapping
+UI-0331,frontend/src/components/jobs/EditJobBoard.js,214,MenuItem,value,needs-runtime-mapping
+UI-0332,frontend/src/components/jobs/EditJobBoard.js,215,MenuItem,value,needs-runtime-mapping
+UI-0333,frontend/src/components/jobs/EditJobBoard.js,324,IconButton,component to size,needs-runtime-mapping
+UI-0334,frontend/src/components/jobs/EditJobBoard.js,329,IconButton,size color onClick,needs-runtime-mapping
+UI-0335,frontend/src/components/jobs/EditJobBoard.js,344,Pagination,page count onChange color,needs-runtime-mapping
+UI-0336,frontend/src/components/jobs/EditJobComposer.js,278,Button,component to variant sx,needs-runtime-mapping
+UI-0337,frontend/src/components/jobs/EditJobComposer.js,286,TextField,label value onChange fullWidth required,needs-runtime-mapping
+UI-0338,frontend/src/components/jobs/EditJobComposer.js,291,Select,value label onChange,needs-runtime-mapping
+UI-0339,frontend/src/components/jobs/EditJobComposer.js,292,MenuItem,value,needs-runtime-mapping
+UI-0340,frontend/src/components/jobs/EditJobComposer.js,294,MenuItem,key value,needs-runtime-mapping
+UI-0341,frontend/src/components/jobs/EditJobComposer.js,302,TextField,label type value onChange InputLabelProps fullWidth,needs-runtime-mapping
+UI-0342,frontend/src/components/jobs/EditJobComposer.js,314,Select,value label onChange,needs-runtime-mapping
+UI-0343,frontend/src/components/jobs/EditJobComposer.js,316,MenuItem,key value,needs-runtime-mapping
+UI-0344,frontend/src/components/jobs/EditJobComposer.js,324,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0345,frontend/src/components/jobs/EditJobComposer.js,332,TextField,label value onChange multiline minRows fullWidth placeholder,needs-runtime-mapping
+UI-0346,frontend/src/components/jobs/EditJobComposer.js,365,Button,component variant startIcon,needs-runtime-mapping
+UI-0347,frontend/src/components/jobs/EditJobComposer.js,367,input,hidden type multiple accept onChange,needs-runtime-mapping
+UI-0348,frontend/src/components/jobs/EditJobComposer.js,392,IconButton,size onClick,needs-runtime-mapping
+UI-0349,frontend/src/components/jobs/EditJobComposer.js,404,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0350,frontend/src/components/jobs/EditJobComposer.js,429,Checkbox,checked onChange,needs-runtime-mapping
+UI-0351,frontend/src/components/jobs/EditJobComposer.js,447,Select,value label onChange,needs-runtime-mapping
+UI-0352,frontend/src/components/jobs/EditJobComposer.js,453,MenuItem,key value,needs-runtime-mapping
+UI-0353,frontend/src/components/jobs/EditJobComposer.js,460,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0354,frontend/src/components/jobs/EditJobComposer.js,473,Button,variant onClick sx,needs-runtime-mapping
+UI-0355,frontend/src/components/jobs/ReporterActiveJobs.js,212,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0356,frontend/src/components/jobs/ReporterActiveJobs.js,297,Button,variant size startIcon onClick,needs-runtime-mapping
+UI-0357,frontend/src/components/jobs/ReporterActiveJobs.js,305,Button,variant size startIcon onClick,needs-runtime-mapping
+UI-0358,frontend/src/components/jobs/ReporterActiveJobs.js,314,IconButton,component to size,needs-runtime-mapping
+UI-0359,frontend/src/components/jobs/ReporterActiveJobs.js,328,Pagination,count page onChange size,needs-runtime-mapping
+UI-0360,frontend/src/components/jobs/ReporterActiveJobs.js,347,IconButton,onClick aria-label,needs-runtime-mapping
+UI-0361,frontend/src/components/jobs/ReporterActiveJobs.js,367,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0362,frontend/src/components/jobs/ReporterActiveJobs.js,374,Button,component to variant,needs-runtime-mapping
+UI-0363,frontend/src/components/jobs/ReporterActiveJobs.js,395,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0364,frontend/src/components/jobs/ReporterActiveJobs.js,403,Button,variant onClick disabled,needs-runtime-mapping
+UI-0365,frontend/src/components/jobs/ReporterEventWorkspace.js,435,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0366,frontend/src/components/jobs/ReporterEventWorkspace.js,442,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0367,frontend/src/components/jobs/ReporterEventWorkspace.js,450,Button,component to variant sx,needs-runtime-mapping
+UI-0368,frontend/src/components/jobs/ReporterEventWorkspace.js,458,TextField,label type value onChange fullWidth InputLabelProps,needs-runtime-mapping
+UI-0369,frontend/src/components/jobs/ReporterEventWorkspace.js,470,Select,value label onChange,needs-runtime-mapping
+UI-0370,frontend/src/components/jobs/ReporterEventWorkspace.js,471,MenuItem,value,needs-runtime-mapping
+UI-0371,frontend/src/components/jobs/ReporterEventWorkspace.js,473,MenuItem,key value,needs-runtime-mapping
+UI-0372,frontend/src/components/jobs/ReporterEventWorkspace.js,481,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0373,frontend/src/components/jobs/ReporterEventWorkspace.js,563,TextField,label value onChange fullWidth required,needs-runtime-mapping
+UI-0374,frontend/src/components/jobs/ReporterEventWorkspace.js,574,Select,value label onChange,needs-runtime-mapping
+UI-0375,frontend/src/components/jobs/ReporterEventWorkspace.js,579,MenuItem,value,needs-runtime-mapping
+UI-0376,frontend/src/components/jobs/ReporterEventWorkspace.js,581,MenuItem,key value,needs-runtime-mapping
+UI-0377,frontend/src/components/jobs/ReporterEventWorkspace.js,591,Select,value label onChange,needs-runtime-mapping
+UI-0378,frontend/src/components/jobs/ReporterEventWorkspace.js,597,MenuItem,key value,needs-runtime-mapping
+UI-0379,frontend/src/components/jobs/ReporterEventWorkspace.js,605,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0380,frontend/src/components/jobs/ReporterEventWorkspace.js,616,Select,value label onChange,needs-runtime-mapping
+UI-0381,frontend/src/components/jobs/ReporterEventWorkspace.js,622,MenuItem,key value,needs-runtime-mapping
+UI-0382,frontend/src/components/jobs/ReporterEventWorkspace.js,630,TextField,label type value onChange fullWidth InputLabelProps,needs-runtime-mapping
+UI-0383,frontend/src/components/jobs/ReporterEventWorkspace.js,640,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0384,frontend/src/components/jobs/ReporterEventWorkspace.js,648,TextField,label value onChange multiline minRows fullWidth placeholder,needs-runtime-mapping
+UI-0385,frontend/src/components/jobs/ReporterEventWorkspace.js,681,Button,component variant startIcon,needs-runtime-mapping
+UI-0386,frontend/src/components/jobs/ReporterEventWorkspace.js,687,input,hidden type multiple accept onChange,needs-runtime-mapping
+UI-0387,frontend/src/components/jobs/ReporterEventWorkspace.js,712,IconButton,size onClick,needs-runtime-mapping
+UI-0388,frontend/src/components/jobs/ReporterEventWorkspace.js,724,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0389,frontend/src/components/jobs/ReporterEventWorkspace.js,736,Button,variant onClick disabled,needs-runtime-mapping
+UI-0390,frontend/src/components/jobs/ReporterEventWorkspace.js,741,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0391,frontend/src/components/jobs/ReporterEventWorkspace.js,777,Checkbox,checked onChange,needs-runtime-mapping
+UI-0392,frontend/src/components/jobs/ReporterEventWorkspace.js,804,TextField,size value onChange fullWidth,needs-runtime-mapping
+UI-0393,frontend/src/components/jobs/ReporterEventWorkspace.js,813,IconButton,component to size,needs-runtime-mapping
+UI-0394,frontend/src/components/jobs/ReporterJobMaterialDialog.js,300,Tabs,value onChange sx,needs-runtime-mapping
+UI-0395,frontend/src/components/jobs/ReporterJobMaterialDialog.js,305,Tab,value label,needs-runtime-mapping
+UI-0396,frontend/src/components/jobs/ReporterJobMaterialDialog.js,306,Tab,value label,needs-runtime-mapping
+UI-0397,frontend/src/components/jobs/ReporterJobMaterialDialog.js,316,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0398,frontend/src/components/jobs/ReporterJobMaterialDialog.js,324,Select,value label onChange,needs-runtime-mapping
+UI-0399,frontend/src/components/jobs/ReporterJobMaterialDialog.js,329,MenuItem,value,needs-runtime-mapping
+UI-0400,frontend/src/components/jobs/ReporterJobMaterialDialog.js,331,MenuItem,key value,needs-runtime-mapping
+UI-0401,frontend/src/components/jobs/ReporterJobMaterialDialog.js,368,Checkbox,checked onChange inputProps,needs-runtime-mapping
+UI-0402,frontend/src/components/jobs/ReporterJobMaterialDialog.js,388,IconButton,component to size aria-label,needs-runtime-mapping
+UI-0403,frontend/src/components/jobs/ReporterJobMaterialDialog.js,399,TextField,size label value onChange disabled fullWidth,needs-runtime-mapping
+UI-0404,frontend/src/components/jobs/ReporterJobMaterialDialog.js,419,Pagination,count page onChange,needs-runtime-mapping
+UI-0405,frontend/src/components/jobs/ReporterJobMaterialDialog.js,423,Button,variant onClick disabled sx,needs-runtime-mapping
+UI-0406,frontend/src/components/jobs/ReporterJobMaterialDialog.js,445,Button,component variant startIcon disabled,needs-runtime-mapping
+UI-0407,frontend/src/components/jobs/ReporterJobMaterialDialog.js,447,input,hidden type multiple accept onChange,needs-runtime-mapping
+UI-0408,frontend/src/components/jobs/ReporterJobMaterialDialog.js,468,TextField,size label value onChange disabled sx,needs-runtime-mapping
+UI-0409,frontend/src/components/jobs/ReporterJobMaterialDialog.js,481,IconButton,onClick disabled size,needs-runtime-mapping
+UI-0410,frontend/src/components/jobs/ReporterJobMaterialDialog.js,499,Button,variant startIcon onClick disabled sx,needs-runtime-mapping
+UI-0411,frontend/src/components/jobs/ReporterJobMaterialDialog.js,513,Button,onClick disabled,needs-runtime-mapping
+UI-0412,frontend/src/components/layout/AppShell.js,121,ListItemButton,component to selected onClick sx,needs-runtime-mapping
+UI-0413,frontend/src/components/layout/AppShell.js,263,IconButton,color onClick aria-label,needs-runtime-mapping
+UI-0414,frontend/src/components/layout/AppShell.js,286,IconButton,size onClick disabled,needs-runtime-mapping
+UI-0415,frontend/src/components/layout/AppShell.js,294,MenuItem,disabled,needs-runtime-mapping
+UI-0416,frontend/src/components/layout/AppShell.js,297,MenuItem,disabled,needs-runtime-mapping
+UI-0417,frontend/src/components/layout/AppShell.js,300,MenuItem,key onClick sx,needs-runtime-mapping
+UI-0418,frontend/src/components/layout/AppShell.js,342,Button,color size onClick,needs-runtime-mapping
+UI-0419,frontend/src/components/layout/AppShell.js,427,IconButton,edge onClick aria-label,needs-runtime-mapping
+UI-0420,frontend/src/components/layout/AppShell.js,448,Button,component to size startIcon sx,needs-runtime-mapping
+UI-0421,frontend/src/components/layout/AppShell.js,458,IconButton,onClick color aria-label,needs-runtime-mapping
+UI-0422,frontend/src/components/SessionRecoveryDialog.js,50,form,onSubmit,needs-runtime-mapping
+UI-0423,frontend/src/components/SessionRecoveryDialog.js,57,TextField,label value InputProps autoComplete,needs-runtime-mapping
+UI-0424,frontend/src/components/SessionRecoveryDialog.js,58,TextField,label type value onChange autoComplete required autoFocus disabled,needs-runtime-mapping
+UI-0425,frontend/src/components/SessionRecoveryDialog.js,62,Button,startIcon onClick disabled,needs-runtime-mapping
+UI-0426,frontend/src/components/SessionRecoveryDialog.js,63,Button,type variant startIcon disabled,needs-runtime-mapping
+UI-0427,frontend/src/components/UploadComponent.js,224,Button,variant component startIcon disabled,needs-runtime-mapping
+UI-0428,frontend/src/components/UploadComponent.js,226,input,key type hidden multiple accept onChange disabled,needs-runtime-mapping
+UI-0429,frontend/src/components/UploadComponent.js,243,TextField,label value onChange fullWidth required,needs-runtime-mapping
+UI-0430,frontend/src/components/UploadComponent.js,252,TextField,label type value onChange fullWidth InputLabelProps required,needs-runtime-mapping
+UI-0431,frontend/src/components/UploadComponent.js,274,Button,variant onClick startIcon disabled,needs-runtime-mapping
+UI-0432,frontend/src/components/UploadComponent.js,282,Button,variant onClick startIcon disabled,needs-runtime-mapping
+UI-0433,frontend/src/components/UploadComponent.js,297,Select,value label onChange,needs-runtime-mapping
+UI-0434,frontend/src/components/UploadComponent.js,298,MenuItem,value,needs-runtime-mapping
+UI-0435,frontend/src/components/UploadComponent.js,299,MenuItem,value,needs-runtime-mapping
+UI-0436,frontend/src/components/UploadComponent.js,300,MenuItem,value,needs-runtime-mapping
+UI-0437,frontend/src/components/UploadComponent.js,301,MenuItem,value,needs-runtime-mapping
+UI-0438,frontend/src/components/UploadComponent.js,308,Select,value label onChange,needs-runtime-mapping
+UI-0439,frontend/src/components/UploadComponent.js,309,MenuItem,value,needs-runtime-mapping
+UI-0440,frontend/src/components/UploadComponent.js,310,MenuItem,value,needs-runtime-mapping
+UI-0441,frontend/src/components/UploadComponent.js,311,MenuItem,value,needs-runtime-mapping
+UI-0442,frontend/src/components/UploadComponent.js,312,MenuItem,value,needs-runtime-mapping
+UI-0443,frontend/src/components/UploadComponent.js,317,TextField,label type fullWidth value onChange,needs-runtime-mapping
+UI-0444,frontend/src/components/UploadComponent.js,329,Slider,value min max step onChange valueLabelDisplay,needs-runtime-mapping
+UI-0445,frontend/src/components/VideoList.js,318,Button,variant onClick,needs-runtime-mapping
+UI-0446,frontend/src/components/VideoList.js,330,TextField,label fullWidth value onChange placeholder,needs-runtime-mapping
+UI-0447,frontend/src/components/VideoList.js,345,Select,value label onChange,needs-runtime-mapping
+UI-0448,frontend/src/components/VideoList.js,353,MenuItem,value,needs-runtime-mapping
+UI-0449,frontend/src/components/VideoList.js,355,MenuItem,key value,needs-runtime-mapping
+UI-0450,frontend/src/components/VideoList.js,367,Select,value label onChange,needs-runtime-mapping
+UI-0451,frontend/src/components/VideoList.js,376,MenuItem,value,needs-runtime-mapping
+UI-0452,frontend/src/components/VideoList.js,378,MenuItem,key value,needs-runtime-mapping
+UI-0453,frontend/src/components/VideoList.js,389,Button,fullWidth variant onClick,needs-runtime-mapping
+UI-0454,frontend/src/components/VideoList.js,403,Button,variant onClick,needs-runtime-mapping
+UI-0455,frontend/src/components/VideoList.js,406,Button,variant color onClick,needs-runtime-mapping
+UI-0456,frontend/src/components/VideoList.js,450,Checkbox,checked onChange sx,needs-runtime-mapping
+UI-0457,frontend/src/components/VideoList.js,544,Button,size variant component to,needs-runtime-mapping
+UI-0458,frontend/src/components/VideoList.js,553,Button,size variant onClick,needs-runtime-mapping
+UI-0459,frontend/src/components/VideoList.js,558,Button,size variant startIcon onClick,needs-runtime-mapping
+UI-0460,frontend/src/components/VideoList.js,568,Button,size color onClick,needs-runtime-mapping
+UI-0461,frontend/src/components/VideoList.js,582,Pagination,count page onChange,needs-runtime-mapping
+UI-0462,frontend/src/components/VideoList.js,597,Button,onClick,needs-runtime-mapping
+UI-0463,frontend/src/components/VideoList.js,598,Button,color variant onClick,needs-runtime-mapping
+UI-0464,frontend/src/components/VideoPlayer.js,348,Select,labelId value label onChange,needs-runtime-mapping
+UI-0465,frontend/src/components/VideoPlayer.js,349,MenuItem,value,needs-runtime-mapping
+UI-0466,frontend/src/components/VideoPlayer.js,351,MenuItem,key value,needs-runtime-mapping
+UI-0467,frontend/src/components/VideoPlayer.js,456,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0468,frontend/src/components/VideoPlayer.js,463,Button,variant startIcon onClick sx,needs-runtime-mapping
+UI-0469,frontend/src/components/VideoPlayer.js,480,Button,key variant color startIcon onClick,needs-runtime-mapping
+UI-0470,frontend/src/components/VideoPlayer.js,526,IconButton,edge size onClick,needs-runtime-mapping
+UI-0471,frontend/src/components/VideoPlayer.js,541,ListItemButton,onClick sx,needs-runtime-mapping
+UI-0472,frontend/src/contexts/BackgroundDownloadContext.js,342,IconButton,size onClick disabled,needs-runtime-mapping
+UI-0473,frontend/src/contexts/BackgroundDownloadContext.js,374,Button,color size startIcon onClick,needs-runtime-mapping
+UI-0474,frontend/src/contexts/BackgroundDownloadContext.js,383,IconButton,color size onClick title,needs-runtime-mapping
+UI-0475,frontend/src/contexts/BackgroundDownloadContext.js,406,Button,size sx onClick,needs-runtime-mapping
+UI-0476,frontend/src/contexts/BackgroundUploadContext.js,239,IconButton,size onClick disabled,needs-runtime-mapping
+UI-0477,frontend/src/contexts/BackgroundUploadContext.js,272,Button,color size startIcon onClick,needs-runtime-mapping
+UI-0478,frontend/src/contexts/BackgroundUploadContext.js,290,Button,size sx onClick,needs-runtime-mapping
+UI-0479,frontend/src/pages/AdminDashboard.js,156,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0480,frontend/src/pages/AdminDashboard.js,211,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0481,frontend/src/pages/AdminDashboard.js,218,Tabs,value onChange variant scrollButtons sx,needs-runtime-mapping
+UI-0482,frontend/src/pages/AdminDashboard.js,226,Tab,key value label sx,needs-runtime-mapping
+UI-0483,frontend/src/pages/ArchivistDashboard.js,521,Select,value label onChange,needs-runtime-mapping
+UI-0484,frontend/src/pages/ArchivistDashboard.js,526,MenuItem,value disabled,needs-runtime-mapping
+UI-0485,frontend/src/pages/ArchivistDashboard.js,530,MenuItem,key value,needs-runtime-mapping
+UI-0486,frontend/src/pages/ArchivistDashboard.js,544,IconButton,size onClick,needs-runtime-mapping
+UI-0487,frontend/src/pages/ArchivistDashboard.js,595,IconButton,size component to,needs-runtime-mapping
+UI-0488,frontend/src/pages/ArchivistDashboard.js,599,Button,size variant startIcon onClick,needs-runtime-mapping
+UI-0489,frontend/src/pages/ArchivistDashboard.js,602,Button,size variant startIcon onClick,needs-runtime-mapping
+UI-0490,frontend/src/pages/ArchivistDashboard.js,610,Button,size variant color onClick,needs-runtime-mapping
+UI-0491,frontend/src/pages/ArchivistDashboard.js,619,Button,size variant color startIcon onClick,needs-runtime-mapping
+UI-0492,frontend/src/pages/ArchivistDashboard.js,636,Button,size variant color onClick,needs-runtime-mapping
+UI-0493,frontend/src/pages/ArchivistDashboard.js,652,Button,size variant color onClick,needs-runtime-mapping
+UI-0494,frontend/src/pages/ArchivistDashboard.js,680,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0495,frontend/src/pages/ArchivistDashboard.js,699,Pagination,count page onChange,needs-runtime-mapping
+UI-0496,frontend/src/pages/ArchivistDashboard.js,773,IconButton,size component to,needs-runtime-mapping
+UI-0497,frontend/src/pages/ArchivistDashboard.js,777,Button,size variant color disabled startIcon onClick,needs-runtime-mapping
+UI-0498,frontend/src/pages/ArchivistDashboard.js,803,Pagination,count page onChange,needs-runtime-mapping
+UI-0499,frontend/src/pages/ArchivistDashboard.js,821,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0500,frontend/src/pages/ArchivistDashboard.js,837,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0501,frontend/src/pages/ArchivistDashboard.js,844,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0502,frontend/src/pages/ArchivistDashboard.js,851,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0503,frontend/src/pages/ArchivistDashboard.js,866,Select,name value label onChange,needs-runtime-mapping
+UI-0504,frontend/src/pages/ArchivistDashboard.js,868,MenuItem,key value,needs-runtime-mapping
+UI-0505,frontend/src/pages/ArchivistDashboard.js,879,Select,name value label onChange,needs-runtime-mapping
+UI-0506,frontend/src/pages/ArchivistDashboard.js,881,MenuItem,key value,needs-runtime-mapping
+UI-0507,frontend/src/pages/ArchivistDashboard.js,889,Select,name value label onChange,needs-runtime-mapping
+UI-0508,frontend/src/pages/ArchivistDashboard.js,890,MenuItem,value,needs-runtime-mapping
+UI-0509,frontend/src/pages/ArchivistDashboard.js,892,MenuItem,key value,needs-runtime-mapping
+UI-0510,frontend/src/pages/ArchivistDashboard.js,900,TextField,name label value onChange fullWidth size,needs-runtime-mapping
+UI-0511,frontend/src/pages/ArchivistDashboard.js,914,Select,name value label onChange,needs-runtime-mapping
+UI-0512,frontend/src/pages/ArchivistDashboard.js,916,MenuItem,key value,needs-runtime-mapping
+UI-0513,frontend/src/pages/ArchivistDashboard.js,924,Select,name value label onChange,needs-runtime-mapping
+UI-0514,frontend/src/pages/ArchivistDashboard.js,925,MenuItem,value,needs-runtime-mapping
+UI-0515,frontend/src/pages/ArchivistDashboard.js,926,MenuItem,value,needs-runtime-mapping
+UI-0516,frontend/src/pages/ArchivistDashboard.js,943,TextField,autoFocus label helperText value onChange fullWidth multiline minRows,needs-runtime-mapping
+UI-0517,frontend/src/pages/ArchivistDashboard.js,955,Button,onClick,needs-runtime-mapping
+UI-0518,frontend/src/pages/ArchivistDashboard.js,956,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0519,frontend/src/pages/ArchivistDashboard.js,965,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0520,frontend/src/pages/ArchivistDashboard.js,977,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0521,frontend/src/pages/ArchivistDashboard.js,989,TextField,type label value onChange fullWidth size InputLabelProps,needs-runtime-mapping
+UI-0522,frontend/src/pages/ArchivistDashboard.js,1005,Select,value label onChange,needs-runtime-mapping
+UI-0523,frontend/src/pages/ArchivistDashboard.js,1013,MenuItem,value,needs-runtime-mapping
+UI-0524,frontend/src/pages/ArchivistDashboard.js,1015,MenuItem,key value,needs-runtime-mapping
+UI-0525,frontend/src/pages/ArchivistDashboard.js,1021,TextField,label value onChange fullWidth multiline minRows size,needs-runtime-mapping
+UI-0526,frontend/src/pages/ArchivistDashboard.js,1035,TextField,label value onChange fullWidth multiline minRows size,needs-runtime-mapping
+UI-0527,frontend/src/pages/ArchivistDashboard.js,1051,Button,onClick,needs-runtime-mapping
+UI-0528,frontend/src/pages/ArchivistDashboard.js,1052,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0529,frontend/src/pages/ArchivistDashboard.js,1064,Select,value label onChange,needs-runtime-mapping
+UI-0530,frontend/src/pages/ArchivistDashboard.js,1070,MenuItem,key value,needs-runtime-mapping
+UI-0531,frontend/src/pages/ArchivistDashboard.js,1074,TextField,label value onChange fullWidth multiline minRows,needs-runtime-mapping
+UI-0532,frontend/src/pages/ArchivistDashboard.js,1084,Button,onClick,needs-runtime-mapping
+UI-0533,frontend/src/pages/ArchivistDashboard.js,1085,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0534,frontend/src/pages/ArchivistDashboard.js,1108,TextField,label value onChange fullWidth multiline minRows,needs-runtime-mapping
+UI-0535,frontend/src/pages/ArchivistDashboard.js,1118,Button,onClick,needs-runtime-mapping
+UI-0536,frontend/src/pages/ArchivistDashboard.js,1119,Button,color variant startIcon onClick,needs-runtime-mapping
+UI-0537,frontend/src/pages/ArchivistDashboard.js,1149,TextField,autoFocus label value onChange multiline minRows fullWidth required helperText,needs-runtime-mapping
+UI-0538,frontend/src/pages/ArchivistDashboard.js,1163,TextField,label value onChange inputProps fullWidth helperText,needs-runtime-mapping
+UI-0539,frontend/src/pages/ArchivistDashboard.js,1177,Button,onClick disabled,needs-runtime-mapping
+UI-0540,frontend/src/pages/ArchivistDashboard.js,1189,Button,variant color startIcon disabled onClick,needs-runtime-mapping
+UI-0541,frontend/src/pages/ArchivistDashboard.js,1216,TextField,autoFocus label value onChange multiline minRows fullWidth required,needs-runtime-mapping
+UI-0542,frontend/src/pages/ArchivistDashboard.js,1228,Button,onClick disabled,needs-runtime-mapping
+UI-0543,frontend/src/pages/ArchivistDashboard.js,1234,Button,variant color disabled onClick,needs-runtime-mapping
+UI-0544,frontend/src/pages/EditJobDetailsPage.js,847,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0545,frontend/src/pages/EditJobDetailsPage.js,877,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0546,frontend/src/pages/EditJobDetailsPage.js,885,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0547,frontend/src/pages/EditJobDetailsPage.js,901,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0548,frontend/src/pages/EditJobDetailsPage.js,911,Button,variant onClick disabled,needs-runtime-mapping
+UI-0549,frontend/src/pages/EditJobDetailsPage.js,917,Select,value label onChange,needs-runtime-mapping
+UI-0550,frontend/src/pages/EditJobDetailsPage.js,919,MenuItem,key value,needs-runtime-mapping
+UI-0551,frontend/src/pages/EditJobDetailsPage.js,925,Button,variant onClick disabled,needs-runtime-mapping
+UI-0552,frontend/src/pages/EditJobDetailsPage.js,989,IconButton,size onClick,needs-runtime-mapping
+UI-0553,frontend/src/pages/EditJobDetailsPage.js,1021,Button,component variant startIcon,needs-runtime-mapping
+UI-0554,frontend/src/pages/EditJobDetailsPage.js,1023,input,hidden type accept onChange,needs-runtime-mapping
+UI-0555,frontend/src/pages/EditJobDetailsPage.js,1036,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0556,frontend/src/pages/EditJobDetailsPage.js,1046,Select,value label onChange,needs-runtime-mapping
+UI-0557,frontend/src/pages/EditJobDetailsPage.js,1052,MenuItem,key value,needs-runtime-mapping
+UI-0558,frontend/src/pages/EditJobDetailsPage.js,1062,Select,value label onChange,needs-runtime-mapping
+UI-0559,frontend/src/pages/EditJobDetailsPage.js,1068,MenuItem,key value,needs-runtime-mapping
+UI-0560,frontend/src/pages/EditJobDetailsPage.js,1076,TextField,label type value onChange InputLabelProps fullWidth,needs-runtime-mapping
+UI-0561,frontend/src/pages/EditJobDetailsPage.js,1086,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0562,frontend/src/pages/EditJobDetailsPage.js,1096,Button,variant onClick disabled,needs-runtime-mapping
+UI-0563,frontend/src/pages/EditJobDetailsPage.js,1177,IconButton,size color onClick,needs-runtime-mapping
+UI-0564,frontend/src/pages/EditJobDetailsPage.js,1182,IconButton,size color onClick,needs-runtime-mapping
+UI-0565,frontend/src/pages/EditJobDetailsPage.js,1189,IconButton,component to size,needs-runtime-mapping
+UI-0566,frontend/src/pages/EditJobDetailsPage.js,1221,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0567,frontend/src/pages/EditJobDetailsPage.js,1233,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0568,frontend/src/pages/EditJobDetailsPage.js,1244,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0569,frontend/src/pages/EditJobDetailsPage.js,1273,Button,component variant startIcon,needs-runtime-mapping
+UI-0570,frontend/src/pages/EditJobDetailsPage.js,1275,input,hidden type multiple accept onChange,needs-runtime-mapping
+UI-0571,frontend/src/pages/EditJobDetailsPage.js,1300,IconButton,size onClick,needs-runtime-mapping
+UI-0572,frontend/src/pages/EditJobDetailsPage.js,1312,Tabs,value onChange variant scrollButtons sx,needs-runtime-mapping
+UI-0573,frontend/src/pages/EditJobDetailsPage.js,1319,Tab,value label,needs-runtime-mapping
+UI-0574,frontend/src/pages/EditJobDetailsPage.js,1320,Tab,value label,needs-runtime-mapping
+UI-0575,frontend/src/pages/EditJobDetailsPage.js,1344,Button,size variant startIcon onClick disabled,needs-runtime-mapping
+UI-0576,frontend/src/pages/EditJobDetailsPage.js,1353,Button,size variant onClick,needs-runtime-mapping
+UI-0577,frontend/src/pages/EditJobDetailsPage.js,1358,TextField,size label value onChange sx,needs-runtime-mapping
+UI-0578,frontend/src/pages/EditJobDetailsPage.js,1395,Checkbox,checked onChange,needs-runtime-mapping
+UI-0579,frontend/src/pages/EditJobDetailsPage.js,1415,IconButton,size component to,needs-runtime-mapping
+UI-0580,frontend/src/pages/EditJobDetailsPage.js,1430,TextField,size value onChange fullWidth disabled,needs-runtime-mapping
+UI-0581,frontend/src/pages/EditJobDetailsPage.js,1464,Button,component variant startIcon disabled,needs-runtime-mapping
+UI-0582,frontend/src/pages/EditJobDetailsPage.js,1466,input,hidden type multiple accept onChange,needs-runtime-mapping
+UI-0583,frontend/src/pages/EditJobDetailsPage.js,1493,TextField,size label value onChange sx disabled,needs-runtime-mapping
+UI-0584,frontend/src/pages/EditJobDetailsPage.js,1503,IconButton,size onClick disabled,needs-runtime-mapping
+UI-0585,frontend/src/pages/EditJobDetailsPage.js,1523,Button,variant startIcon onClick disabled sx,needs-runtime-mapping
+UI-0586,frontend/src/pages/EditJobDetailsPage.js,1536,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0587,frontend/src/pages/EditJobDetailsPage.js,1545,Button,variant onClick disabled sx,needs-runtime-mapping
+UI-0588,frontend/src/pages/EditJobDetailsPage.js,1629,IconButton,component to size,needs-runtime-mapping
+UI-0589,frontend/src/pages/EditJobDetailsPage.js,1641,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0590,frontend/src/pages/EditJobDetailsPage.js,1651,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0591,frontend/src/pages/EditJobDetailsPage.js,1714,TextField,label value onChange multiline minRows fullWidth,needs-runtime-mapping
+UI-0592,frontend/src/pages/EditJobDetailsPage.js,1722,Button,variant onClick,needs-runtime-mapping
+UI-0593,frontend/src/pages/EditorDashboard.js,321,Button,startIcon variant onClick disabled,needs-runtime-mapping
+UI-0594,frontend/src/pages/EditorDashboard.js,325,Button,startIcon variant onClick,needs-runtime-mapping
+UI-0595,frontend/src/pages/EditorDashboard.js,369,Tabs,value onChange variant scrollButtons,needs-runtime-mapping
+UI-0596,frontend/src/pages/EditorDashboard.js,375,Tab,value label,needs-runtime-mapping
+UI-0597,frontend/src/pages/EditorDashboard.js,376,Tab,value label,needs-runtime-mapping
+UI-0598,frontend/src/pages/EditorDashboard.js,377,Tab,value label,needs-runtime-mapping
+UI-0599,frontend/src/pages/EditorDashboard.js,412,Pagination,count page size onChange,needs-runtime-mapping
+UI-0600,frontend/src/pages/EditorDashboard.js,425,TextField,label value onChange minRows multiline fullWidth,needs-runtime-mapping
+UI-0601,frontend/src/pages/EditorDashboard.js,437,Button,onClick disabled,needs-runtime-mapping
+UI-0602,frontend/src/pages/EditorDashboard.js,440,Button,variant onClick disabled,needs-runtime-mapping
+UI-0603,frontend/src/pages/FeedbackPage.js,181,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0604,frontend/src/pages/FeedbackPage.js,209,TextField,name label value onChange fullWidth required,needs-runtime-mapping
+UI-0605,frontend/src/pages/FeedbackPage.js,222,Select,name value label onChange,needs-runtime-mapping
+UI-0606,frontend/src/pages/FeedbackPage.js,224,MenuItem,key value,needs-runtime-mapping
+UI-0607,frontend/src/pages/FeedbackPage.js,232,Select,name value label onChange,needs-runtime-mapping
+UI-0608,frontend/src/pages/FeedbackPage.js,234,MenuItem,key value,needs-runtime-mapping
+UI-0609,frontend/src/pages/FeedbackPage.js,242,Select,name value label onChange,needs-runtime-mapping
+UI-0610,frontend/src/pages/FeedbackPage.js,244,MenuItem,key value,needs-runtime-mapping
+UI-0611,frontend/src/pages/FeedbackPage.js,251,TextField,name label value onChange fullWidth required multiline minRows,needs-runtime-mapping
+UI-0612,frontend/src/pages/FeedbackPage.js,262,Button,type variant startIcon disabled,needs-runtime-mapping
+UI-0613,frontend/src/pages/FeedbackPage.js,334,Pagination,count page onChange,needs-runtime-mapping
+UI-0614,frontend/src/pages/LoginPage.js,85,TextField,label value onChange fullWidth required autoFocus,needs-runtime-mapping
+UI-0615,frontend/src/pages/LoginPage.js,93,TextField,label type value onChange fullWidth required,needs-runtime-mapping
+UI-0616,frontend/src/pages/LoginPage.js,101,Button,type variant startIcon disabled,needs-runtime-mapping
+UI-0617,frontend/src/pages/NotFoundPage.js,19,Button,component to variant startIcon,needs-runtime-mapping
+UI-0618,frontend/src/pages/ProducerDashboard.js,515,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0619,frontend/src/pages/ProducerDashboard.js,518,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0620,frontend/src/pages/ProducerDashboard.js,547,Button,variant size onClick disabled,needs-runtime-mapping
+UI-0621,frontend/src/pages/ProducerDashboard.js,561,Button,key variant size onClick sx,needs-runtime-mapping
+UI-0622,frontend/src/pages/ProducerDashboard.js,586,Select,value label onChange,needs-runtime-mapping
+UI-0623,frontend/src/pages/ProducerDashboard.js,592,MenuItem,key value,needs-runtime-mapping
+UI-0624,frontend/src/pages/ProducerDashboard.js,600,TextField,label type value onChange InputLabelProps fullWidth,needs-runtime-mapping
+UI-0625,frontend/src/pages/ProducerDashboard.js,612,Select,value label onChange,needs-runtime-mapping
+UI-0626,frontend/src/pages/ProducerDashboard.js,617,MenuItem,value,needs-runtime-mapping
+UI-0627,frontend/src/pages/ProducerDashboard.js,619,MenuItem,key value,needs-runtime-mapping
+UI-0628,frontend/src/pages/ProducerDashboard.js,633,TextField,label value onChange fullWidth,needs-runtime-mapping
+UI-0629,frontend/src/pages/ProducerDashboard.js,720,IconButton,size aria-label disabled onClick,needs-runtime-mapping
+UI-0630,frontend/src/pages/ProducerDashboard.js,780,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0631,frontend/src/pages/ProducerDashboard.js,792,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0632,frontend/src/pages/ProducerDashboard.js,803,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0633,frontend/src/pages/ProducerDashboard.js,808,IconButton,size color onClick disabled,needs-runtime-mapping
+UI-0634,frontend/src/pages/ProducerDashboard.js,813,IconButton,component to size,needs-runtime-mapping
+UI-0635,frontend/src/pages/ProducerDashboard.js,836,Button,color size onClick,needs-runtime-mapping
+UI-0636,frontend/src/pages/ProducerDashboard.js,877,IconButton,size color disabled onClick,needs-runtime-mapping
+UI-0637,frontend/src/pages/ProducerDashboard.js,895,Pagination,count page size onChange,needs-runtime-mapping
+UI-0638,frontend/src/pages/RealizatorDashboard.js,460,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0639,frontend/src/pages/RealizatorDashboard.js,463,Button,variant startIcon onClick disabled,needs-runtime-mapping
+UI-0640,frontend/src/pages/RealizatorDashboard.js,471,Button,variant color startIcon onClick disabled,needs-runtime-mapping
+UI-0641,frontend/src/pages/RealizatorDashboard.js,496,Select,value label onChange,needs-runtime-mapping
+UI-0642,frontend/src/pages/RealizatorDashboard.js,502,MenuItem,key value,needs-runtime-mapping
+UI-0643,frontend/src/pages/RealizatorDashboard.js,510,TextField,label type value onChange InputLabelProps fullWidth,needs-runtime-mapping
+UI-0644,frontend/src/pages/RealizatorDashboard.js,623,IconButton,size aria-label disabled onClick,needs-runtime-mapping
+UI-0645,frontend/src/pages/RealizatorDashboard.js,682,Button,size variant startIcon onClick,needs-runtime-mapping
+UI-0646,frontend/src/pages/RealizatorDashboard.js,693,Button,size variant color startIcon onClick,needs-runtime-mapping
+UI-0647,frontend/src/pages/RealizatorDashboard.js,762,Button,onClick,needs-runtime-mapping
+UI-0648,frontend/src/pages/RealizatorDashboard.js,785,Button,variant color startIcon onClick,needs-runtime-mapping
+UI-0649,frontend/src/pages/RealizatorDashboard.js,793,Button,component to variant startIcon,needs-runtime-mapping
+UI-0650,frontend/src/pages/RealizatorDashboard.js,816,TextField,label value onChange placeholder multiline minRows fullWidth,needs-runtime-mapping
+UI-0651,frontend/src/pages/RealizatorDashboard.js,828,Button,onClick disabled,needs-runtime-mapping
+UI-0652,frontend/src/pages/RealizatorDashboard.js,831,Button,variant color startIcon onClick disabled,needs-runtime-mapping
+UI-0653,frontend/src/pages/ReporterDashboard.js,58,Tabs,value onChange sx,needs-runtime-mapping
+UI-0654,frontend/src/pages/ReporterDashboard.js,63,Tab,label value,needs-runtime-mapping
+UI-0655,frontend/src/pages/ReporterDashboard.js,64,Tab,label value,needs-runtime-mapping
+UI-0656,frontend/src/pages/ReporterDashboard.js,92,AccordionSummary,expandIcon,needs-runtime-mapping
+UI-0657,frontend/src/pages/ReporterDashboard.js,126,Tabs,value onChange variant scrollButtons,needs-runtime-mapping
+UI-0658,frontend/src/pages/ReporterDashboard.js,132,Tab,label value,needs-runtime-mapping
+UI-0659,frontend/src/pages/ReporterDashboard.js,133,Tab,label value,needs-runtime-mapping
+UI-0660,frontend/src/pages/VideoDetailsPage.js,400,Button,variant size startIcon onClick,needs-runtime-mapping
+UI-0661,frontend/src/pages/VideoDetailsPage.js,426,Button,color size startIcon onClick,needs-runtime-mapping
+UI-0662,frontend/src/pages/VideoDetailsPage.js,465,Button,variant size startIcon onClick sx,needs-runtime-mapping
+UI-0663,frontend/src/pages/VideoDetailsPage.js,560,Select,value label onChange,needs-runtime-mapping
+UI-0664,frontend/src/pages/VideoDetailsPage.js,565,MenuItem,value,needs-runtime-mapping
+UI-0665,frontend/src/pages/VideoDetailsPage.js,566,MenuItem,value,needs-runtime-mapping
+UI-0666,frontend/src/pages/VideoDetailsPage.js,567,MenuItem,value,needs-runtime-mapping
+UI-0667,frontend/src/pages/VideoDetailsPage.js,570,TextField,label value onChange multiline minRows fullWidth size,needs-runtime-mapping
+UI-0668,frontend/src/pages/VideoDetailsPage.js,579,Button,variant startIcon onClick,needs-runtime-mapping
+UI-0669,frontend/src/pages/VideoDetailsPage.js,593,Button,size variant onClick,needs-runtime-mapping
+UI-0670,frontend/src/pages/VideoDetailsPage.js,600,Button,size variant onClick,needs-runtime-mapping
+UI-0671,frontend/src/pages/VideoDetailsPage.js,607,Button,size variant color onClick,needs-runtime-mapping
+UI-0672,frontend/src/pages/VideoDetailsPage.js,635,TextField,label value onChange fullWidth size,needs-runtime-mapping
+UI-0673,frontend/src/pages/VideoDetailsPage.js,652,TextField,label size fullWidth,needs-runtime-mapping
+UI-0674,frontend/src/pages/VideoDetailsPage.js,657,TextField,label type value onChange fullWidth size InputLabelProps,needs-runtime-mapping
+UI-0675,frontend/src/pages/VideoDetailsPage.js,675,TextField,label size fullWidth,needs-runtime-mapping
+UI-0676,frontend/src/pages/VideoDetailsPage.js,682,Select,value label onChange,needs-runtime-mapping
+UI-0677,frontend/src/pages/VideoDetailsPage.js,687,MenuItem,value,needs-runtime-mapping
+UI-0678,frontend/src/pages/VideoDetailsPage.js,689,MenuItem,key value,needs-runtime-mapping
+UI-0679,frontend/src/pages/VideoDetailsPage.js,704,TextField,label size fullWidth,needs-runtime-mapping
+UI-0680,frontend/src/pages/VideoDetailsPage.js,716,TextField,label size fullWidth,needs-runtime-mapping
+UI-0681,frontend/src/pages/VideoDetailsPage.js,721,TextField,label value onChange helperText fullWidth size multiline minRows,needs-runtime-mapping
+UI-0682,frontend/src/pages/VideoDetailsPage.js,733,TextField,label value onChange fullWidth size multiline minRows,needs-runtime-mapping
+UI-0683,frontend/src/pages/VideoDetailsPage.js,746,Button,onClick,needs-runtime-mapping
+UI-0684,frontend/src/pages/VideoDetailsPage.js,747,Button,variant startIcon onClick disabled,needs-runtime-mapping

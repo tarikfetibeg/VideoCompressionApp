@@ -3,6 +3,7 @@ const CorrectionRequest = require('../models/CorrectionRequest');
 const EditJob = require('../models/EditJob');
 const User = require('../models/User');
 const Video = require('../models/Video');
+const { createCorrectionNotifications } = require('./correctionNotificationService');
 const { applySlaToJob } = require('./editJobLifecycleService');
 
 const OPEN_CORRECTION_STATUSES = [
@@ -131,6 +132,7 @@ async function ensureVideoCorrectionRequest({
   user = null,
   note = '',
   origin = 'video_status',
+  timestamp,
 }) {
   let request = await findOpenRequestForVideo(video._id);
   const sourceJob = video.sourceJob
@@ -146,8 +148,11 @@ async function ensureVideoCorrectionRequest({
   if (!actorId) return { request: null, correctionJob: null, skipped: 'missing_actor' };
 
   const normalizedNote = String(note || video.correctionNote || 'Video je označen kao potrebna ispravka.').trim();
+  const hasTimestamp = timestamp !== undefined && timestamp !== null && timestamp !== '';
+  const normalizedTimestamp = hasTimestamp ? Math.max(Number(timestamp) || 0, 0) : null;
   if (request) {
     if (normalizedNote) request.note = normalizedNote;
+    if (normalizedTimestamp !== null) request.timestamp = normalizedTimestamp;
     if (assignedEditor && !request.assignedEditor) {
       request.assignedEditor = assignedEditor;
       if (request.status === 'reported') request.status = 'assigned';
@@ -163,7 +168,7 @@ async function ensureVideoCorrectionRequest({
       reportedBy: actorId,
       assignedEditor,
       note: normalizedNote,
-      timestamp: 0,
+      timestamp: normalizedTimestamp ?? 0,
       status: assignedEditor ? 'assigned' : 'reported',
       seenBy: [],
     });
@@ -187,7 +192,19 @@ async function ensureVideoCorrectionRequest({
     }
   );
 
-  return { request, correctionJob, skipped: null };
+  let notifications = { created: 0, refreshed: 0, recipients: 0, target: 'none' };
+  try {
+    notifications = await createCorrectionNotifications({
+      request,
+      correctionJob,
+      video,
+      actor: actorId,
+    });
+  } catch (error) {
+    console.warn('Correction notification creation failed:', error.message);
+  }
+
+  return { request, correctionJob, notifications, skipped: null };
 }
 
 async function syncTaggedCorrectionRequests({ limit = 100 } = {}) {
@@ -270,7 +287,20 @@ async function createOrUpdateCorrectionRequest({
     { _id: video._id },
     { $set: { activeCorrectionRequest: request._id } }
   );
-  return { request, correctionJob };
+
+  let notifications = { created: 0, refreshed: 0, recipients: 0, target: 'none' };
+  try {
+    notifications = await createCorrectionNotifications({
+      request,
+      correctionJob,
+      video,
+      actor: user,
+    });
+  } catch (error) {
+    console.warn('Correction notification creation failed:', error.message);
+  }
+
+  return { request, correctionJob, notifications };
 }
 
 module.exports = {

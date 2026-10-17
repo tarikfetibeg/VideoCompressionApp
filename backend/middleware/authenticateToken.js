@@ -11,13 +11,16 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.sendStatus(401); // Unauthorized
+    return res.status(401).json({ code: 'AUTH_TOKEN_MISSING', message: 'Prijava je potrebna.' });
   }
 
   jwt.verify(token, jwtSecret, (err, user) => {
     if (err) {
-      console.error("JWT verification error:", err);
-      return res.sendStatus(403); // Forbidden
+      const expired = err.name === 'TokenExpiredError';
+      return res.status(403).json({
+        code: expired ? 'AUTH_TOKEN_EXPIRED' : 'AUTH_TOKEN_INVALID',
+        message: expired ? 'Sesija je istekla. Prijavi se ponovo.' : 'Prijava nije validna. Prijavi se ponovo.',
+      });
     }
     req.user = user;
     next();

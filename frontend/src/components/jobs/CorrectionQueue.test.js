@@ -19,6 +19,11 @@ const correctionWorkspace = {
     status: 'reported',
     note: 'Audio prekida na kraju.',
     timestamp: 12.5,
+    origin: 'archive',
+    reportedBy: {
+      _id: 'archivist-1',
+      username: 'arhiver',
+    },
     video: {
       _id: 'video-1',
       finalTitle: 'Dnevnik prilog',
@@ -55,9 +60,10 @@ describe('CorrectionQueue', () => {
 
     await waitFor(() => {
       expect(axiosInstance.get).toHaveBeenCalledWith('/corrections/workspace', {
-        params: { limit: 50, scope: 'all' },
+        params: { limit: 50, page: 1, scope: 'all' },
       });
       expect(screen.getByText('Dnevnik prilog')).toBeInTheDocument();
+      expect(screen.getByText('Izvor: Arhiva / prijavio: arhiver')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Preuzmi' }));
@@ -66,5 +72,17 @@ describe('CorrectionQueue', () => {
       expect(axiosInstance.patch).toHaveBeenCalledWith('/corrections/correction-1/claim');
       expect(screen.getByText('Ispravka je preuzeta.')).toBeInTheDocument();
     });
+  });
+
+  it('loads the editor catalogue once and exposes later correction pages', async () => {
+    axiosInstance.get.mockImplementation((url) => Promise.resolve({ data: url === '/corrections/editors' ? [] : { ...correctionWorkspace, total: 120, totalPages: 3 } }));
+    render(<MemoryRouter><ThemeProvider theme={theme}><CorrectionQueue role="Producer" userId="producer-1" /></ThemeProvider></MemoryRouter>);
+    await screen.findByText('Dnevnik prilog');
+    fireEvent.click(screen.getByRole('button', { name: /page 2/i }));
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalledWith('/corrections/workspace', {
+      params: { page: 2, limit: 50, scope: undefined },
+    }));
+    expect(axiosInstance.get.mock.calls.filter(([url]) => url === '/corrections/editors')).toHaveLength(1);
+    expect(screen.getByText('Dnevnik prilog').closest('td')).toHaveAttribute('data-label', 'Materijal');
   });
 });

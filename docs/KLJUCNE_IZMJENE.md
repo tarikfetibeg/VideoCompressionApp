@@ -2,6 +2,89 @@
 
 Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje uticu na svakodnevno koristenje u TV produkciji.
 
+## 2026-10-17: Windows launcher za pokretanje i osnovne komande
+
+- Root `Pokreni aplikaciju.cmd` otvara PowerShell meni za start, frontend
+  build, build-pa-start, lokalnu provjeru okruzenja i unit testove.
+- Koristi postojeci `startAll.js`; nema promjene app/worker arhitekture.
+  Build failure zaustavlja start. Komande rade iz foldera projekta i kada
+  je launcher otvoren s drugog mjesta ili putanja ima razmake/BHS znakove.
+- Reinstalacija zavisnosti koristi `npm ci` tek nakon eksplicitne potvrde.
+  Nema dependency nadogradnji, automatskih migracija ili dugih QA ciklusa.
+- Server radi u prvom planu, zaustavlja se preko Ctrl+C; launcher ne gasi
+  druge procese, ne oslobadja zauzete portove i ne mijenja `.env`/firewall.
+- Uputstvo i granice: [Windows launcher](WINDOWS_LAUNCHER.md).
+
+## 2026-10-11: Header na niskom viewportu i QA nastavak
+
+- Nakon korisnickog odobrenja AppShell koristi kompaktniji toolbar/status
+  prikaz i `position: static` pri visini viewporta do400CSSpx. Header se tada
+  pomjera sa stranicom; na visim ekranima ostaje sticky. Navigacija,
+  notifikacije, odjava i svi transfer statusi/brojaci ostaju dostupni.
+- Na niskom viewportu ne prikazuju se sekundarni opis role i neinteraktivna
+  tehnicka napomena o pollingu. Sam polling, upload i download nisu promijenjeni.
+- Native400% test za svih7rola: header106CSSpx u201CSSpx visine,47,3%
+  pocetnog prostora za sadrzaj; nakon scrolla potpuno van viewporta.
+  Component test provjerava aktivne/neuspjele transfere i header akcije.
+- Frontend50testova/15suiteova i build su prolazni. Raniji30/75m testovi
+  ostaju sacuvani; novo ponavljanje na header buildu izricito je preskoceno
+  po nalogu korisnika, ne proglaseno novim prolazom.
+- Zavrsni dokazi i granice: [QA predaja](../analysis/qa/PREDAJA_QA_2026_10.md).
+
+## 2026-10-10: Funkcionalne regresije i sigurniji kontinuitet rada
+
+- Download URL ostaje 15-minutni, ali tracking metadata ima poseban purgeAt
+  TTL, 24h retenciju i heartbeat za duge transfere. Aktivno slanje vise ne
+  dobija lazni expired status. Produkcijska TTL migracija je obavezna, ali
+  se ne pokrece automatski: [Runbook](DOWNLOAD_TICKET_RETENCIJA_RUNBOOK.md).
+
+- Jednosatni JWT ostaje. Globalna ponovna prijava istim racunom cuva ekran
+  i nacrt; permission 403 nije istek sesije. Write akcije se ne ponavljaju
+  automatski. Promjena prijave u drugom tabu zakljucava stari nacrt.
+- Javni `/uploads` je zatvoren bez brisanja fajlova. Reporter preview/list
+  pristup ogranicen je na vlastiti upload/autorski materijal i odobrenu TV
+  arhivu, prema odobrenoj politici.
+- Raw cleanup cuva nedovrsenu obradu, aktivni master/fallback, dijeljene
+  fajlove i nesigurne putanje; Admin dobija razloge preskakanja i potvrdu.
+  OFF i raw manifest cleanup koriste storage root/junction provjere.
+- Reporter nacrt ostaje pri kasnom ucitavanju jobova i refresha iste event
+  grupe; dupli klik na kreiranje pravi samo jedan job.
+- Download `created/started` statusi ostaju aktivni u globalnom UI-u;
+  procitana notifikacija ne smanjuje druge unread brojeve.
+- Audit filter, eksplicitni SLA izbor i media rebuild scope imaju strozu
+  validaciju bez promjene API response oblika.
+- `qa:release` i `qa:assist` dodaju ponovljiv lokalni/device tok. Sigurnosne
+  nadogradnje, trenutno opozivanje JWT-a i blokada linked Video delete-a
+  ostaju odgodjeni prema korisnikovoj odluci; ne tvrdi se potpuna pokrivenost.
+- Detalji i granice: [Funkcionalni QA ciklus](QA_FUNKCIONALNI_CIKLUS_2026_10.md).
+
+## 2026-10-03: QA i Web Optimizacija
+
+- Paginated Material, Producer biblioteka, Reporter jobovi, Ispravke i izbor
+  server klipova zadrzavaju pristup preostalim rezultatima; manji page size
+  ogranicava DOM/media promet bez uklanjanja materijala.
+- Material polling ne radi dok drugi tab koristi ekran. Ispravke i aktivni
+  jobovi imaju vidljivi-tab refresh i zastitu od zastarjelih odgovora.
+- Claim jednog joba/ispravke je atomican; drugi montazer dobija 409.
+  Producer ne preuzima montazerski job. Reporter ne moze kreirati job sa
+  tudjim privatnim raw materijalom; odobrena TV arhiva ostaje dostupna.
+- Touch/tastatura imaju gore/dolje rundown akcije uz postojeci drag.
+  Mobilne tabele i modal slojevi zadrzavaju bitne akcije dostupnim.
+- Popunjena mobilna Ispravke tabela vise ne siri cijelu stranicu zbog
+  skrivenog zaglavlja. Nova arhivska prijava provjerena je i dok montazer
+  vec drzi otvoren tab, bez potrebe za rucnim reloadom.
+- Reporter priprema se ucitava pri prvom otvaranju, a nacrt ostaje pri
+  sklapanju. Route chunkovi odgadjuju neaktivne ekrane.
+- HLS aktivacija ponavlja privremene Windows handle greske; retention
+  provjerava referencirane segmente i shared media. Admin/owner/Archive
+  duplicate brisanje stiti fajlove drugog Video zapisa i granice storagea.
+- Audit workspace ima globalni total/pagination umjesto limita 5000;
+  legacy JSON search je memory-bounded, ali i dalje O(n).
+- Nema runtime dependency nadogradnje, automatskog NVENC enablea ili media
+  cleanup-a nad stvarnim storageom. Sigurnosni rizici su dokumentovani.
+- Dokazi, performance rezultati i preostale provjere su u
+  [QA izvrsenju](QA_IZVRSENJE_WEB_OPTIMIZACIJA.md).
+
 ## 2026-06-28
 
 ### Trajni correction queue za oznaku Potrebna ispravka
@@ -538,3 +621,22 @@ Ovaj dokument biljezi bitne promjene u workflowu aplikacije, posebno one koje ut
   svom queueu, a ingest nastavlja nezavisno.
 - Node runtime je standardizovan na 20.x.
 - Detalji: `docs/STORAGE_I_MEDIA_PROFILI.md`.
+
+## Arhivska prijava ispravke i obavjestavanje montaze
+
+- Arhivista sada moze direktno prijaviti gresku na svakom zavrsenom i
+  obradjenom klipu; prethodno postavljen status `needs_correction` vise nije
+  preduslov za prikaz akcije.
+- Prijava zahtijeva opis problema i prihvata opcionalni timestamp, ukljucujuci
+  decimalni zapis sa tackom ili zarezom.
+- Postojeci correction workflow automatski pronalazi montazera preko izvornog
+  joba ili video zapisa i kreira/povezuje urgentni correction job.
+- Dodijeljeni montazer dobija globalnu in-app notifikaciju. Ako montazer nije
+  poznat, obavjestavaju se Producenti, odnosno Admin korisnici kada Producent
+  nije dostupan.
+- `Production Desk > Ispravke` prikazuje prijave iz Arhive i Realizacije sve
+  dok zahtjev ne bude potvrdjeno zavrsen ili kontrolisano odbacen.
+- Audit Log za slanje i usmjeravanje biljezi video, zahtjev, correction job,
+  montazera, opis, timestamp i rezultat kreiranja notifikacije.
+- `correctedBy`, `correctedAt` i `correctedVideo` ostaju trajni dokaz ko je
+  uradio ispravku, dok `resolvedBy` biljezi ko ju je potvrdio i zatvorio.

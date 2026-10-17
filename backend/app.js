@@ -30,6 +30,7 @@ const {
 } = require('./queues/hlsQueue');
 const { processHlsQueueTask } = require('./services/hlsQueueProcessor');
 const { refreshStorageOverview } = require('./services/storageOverviewService');
+const { warnLegacyDownloadTtl } = require('./services/downloadTicketRetentionMigration');
 const {
   enqueuePreviewMaintenance,
   isLocalPreviewMaintenanceQueue,
@@ -148,6 +149,7 @@ mongoose
   })
   .then(async () => {
     console.log('MongoDB connected successfully');
+    await warnLegacyDownloadTtl().catch((error) => console.warn('Download TTL check failed:', error.name));
     console.log(`Video queue mode: ${queueMode}`);
     refreshStorageOverview().promise.catch((error) => {
       console.error('Initial storage overview scan failed:', error);
@@ -272,7 +274,8 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 
 // Legacy static route. Existing old files may still be under uploads.
-app.use('/uploads', express.static('uploads'));
+// Legacy files remain on disk, but media access must use permission-checked APIs.
+app.use('/uploads', (req, res) => res.status(404).json({ message: 'Koristi zaštićeni media ili download API.' }));
 
 // Serve static files from the React app's build folder
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));

@@ -36,6 +36,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import axiosInstance from '../../axiosConfig';
+import { canPollSession } from '../../utils/sessionRecovery';
 import { useBackgroundDownloads } from '../../contexts/BackgroundDownloadContext';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
@@ -364,7 +365,7 @@ const VideoManagement = () => {
     if (!hasActiveProcessing) return undefined;
 
     const intervalId = window.setInterval(() => {
-      fetchVideos({ silent: true });
+      if (canPollSession()) fetchVideos({ silent: true });
     }, ACTIVE_PROCESSING_REFRESH_MS);
 
     return () => window.clearInterval(intervalId);

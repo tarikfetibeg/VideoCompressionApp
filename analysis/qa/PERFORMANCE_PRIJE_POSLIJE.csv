@@ -1,0 +1,2 @@
+metric,before,after,unit,scope,limitation
+initial-main-gzip,442.18,173.62,kB-decimal,production main chunk only,total feature chunks are not removed; gzip level 9 matches CRA; baseline observed in initial build output

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -10,6 +10,7 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
+  Pagination,
   Select,
   Stack,
   Table,
@@ -26,7 +27,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SendIcon from '@mui/icons-material/Send';
 import { Link } from 'react-router-dom';
 import axiosInstance from '../../axiosConfig';
+import { canPollSession } from '../../utils/sessionRecovery';
 import { EmptyState, FilterBar, KpiStrip, StatusChip } from '../common/WorkspaceChrome';
+import { stackedTableSx } from '../../utils/responsiveTable';
 
 const statusLabels = {
   reported: 'Prijavljeno',
@@ -35,6 +38,13 @@ const statusLabels = {
   ready_for_review: 'Spremno za pregled',
   resolved: 'Riješeno',
   dismissed: 'Odbačeno',
+};
+
+const originLabels = {
+  archive: 'Arhiva',
+  realization: 'Realizacija',
+  video_status: 'Status videa',
+  admin: 'Administracija',
 };
 
 const formatDateTime = (value) => {
@@ -50,41 +60,60 @@ const CorrectionQueue = ({ role, userId }) => {
   const [editors, setEditors] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [scope, setScope] = useState('all');
+  const [page, setPage] = useState(1);
   const [resolutionDialog, setResolutionDialog] = useState({ open: false, correction: null, note: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const requestVersion = useRef(0);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const load = useCallback(({ silent = false } = {}) => {
+    const version = ++requestVersion.current;
+    if (!silent) setLoading(true);
     setErrorMessage('');
-    const requests = [axiosInstance.get('/corrections/workspace', {
+    return axiosInstance.get('/corrections/workspace', {
       params: {
         limit: 50,
+        page,
         scope: isEditor ? scope : undefined,
       },
-    })];
-    if (isProducer) requests.push(axiosInstance.get('/corrections/editors'));
-
-    Promise.all(requests)
-      .then(([correctionResponse, editorResponse]) => {
+    })
+      .then((correctionResponse) => {
+        if (version !== requestVersion.current) return;
         setWorkspace({
           items: [],
           summary: {},
           total: 0,
           ...(correctionResponse.data || {}),
         });
-        if (editorResponse) setEditors(Array.isArray(editorResponse.data) ? editorResponse.data : []);
       })
       .catch((error) => {
+        if (version !== requestVersion.current) return;
         console.error('Error loading correction queue:', error);
         setErrorMessage(error.response?.data?.message || 'Correction queue nije moguće učitati.');
       })
-      .finally(() => setLoading(false));
-  }, [isEditor, isProducer, scope]);
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
+  }, [isEditor, page, scope]);
 
   useEffect(() => {
     load();
+    return () => { requestVersion.current += 1; };
+  }, [load]);
+
+  useEffect(() => {
+    if (!isProducer) return undefined;
+    let current = true;
+    axiosInstance.get('/corrections/editors')
+      .then((response) => { if (current) setEditors(Array.isArray(response.data) ? response.data : []); })
+      .catch(() => { if (current) setErrorMessage('Popis montažera nije moguće učitati.'); });
+    return () => { current = false; };
+  }, [isProducer]);
+
+  useEffect(() => {
+    const refresh = () => { if (canPollSession()) load({ silent: true }); };
+    const timer = window.setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
   }, [load]);
 
   const kpis = useMemo(() => [
@@ -136,17 +165,17 @@ const CorrectionQueue = ({ role, userId }) => {
   };
 
   return (
-    <Box sx={{ mt: 2 }}>
+    <Box id="correction-queue" sx={{ mt: 2, scrollMarginTop: 160 }}>
       {message && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setMessage('')}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErrorMessage('')}>{errorMessage}</Alert>}
       <KpiStrip items={kpis} />
       <FilterBar
-        title="Ispravke iz realizacije"
+        title="Ispravke materijala"
         summary={isProducer
-          ? 'Prijave realizatora, automatski correction jobovi i usmjeravanje prema montaži.'
-          : 'Correction jobovi dodijeljeni tebi.'}
+          ? 'Prijave iz realizacije i arhive, automatski correction jobovi i usmjeravanje prema montaži.'
+          : 'Sve otvorene prijave ostaju ovdje do potvrđenog završetka ispravke.'}
         actions={(
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={load} disabled={loading}>
+          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => load()} disabled={loading}>
             Osvježi
           </Button>
         )}
@@ -157,7 +186,7 @@ const CorrectionQueue = ({ role, userId }) => {
             <Select
               value={scope}
               label="Prikaz ispravki"
-              onChange={(event) => setScope(event.target.value)}
+              onChange={(event) => { setPage(1); setScope(event.target.value); }}
             >
               <MenuItem value="all">Sve otvorene</MenuItem>
               <MenuItem value="mine">Dodijeljene meni</MenuItem>
@@ -166,10 +195,10 @@ const CorrectionQueue = ({ role, userId }) => {
           </FormControl>
         )}
         {workspace.items.length === 0 ? (
-          <EmptyState title="Nema otvorenih ispravki" description="Aktivne prijave realizatora pojavit će se ovdje." />
+          <EmptyState title="Nema otvorenih ispravki" description="Aktivne prijave iz realizacije i arhive pojavit će se ovdje." />
         ) : (
           <TableContainer>
-            <Table size="small">
+            <Table size="small" sx={stackedTableSx}>
               <TableHead>
                 <TableRow>
                   <TableCell>Materijal</TableCell>
@@ -186,7 +215,7 @@ const CorrectionQueue = ({ role, userId }) => {
                   const isUnassigned = !assignedEditorId;
                   return (
                   <TableRow key={correction._id} hover>
-                    <TableCell>
+                    <TableCell data-label="Materijal">
                       <Typography variant="body2" sx={{ fontWeight: 800 }}>
                         {correction.video?.finalTitle || correction.video?.originalFilename || correction.video?.filename || 'Video'}
                       </Typography>
@@ -194,10 +223,14 @@ const CorrectionQueue = ({ role, userId }) => {
                         {formatDateTime(correction.updatedAt)} / {Number(correction.timestamp || 0).toFixed(2)}s
                       </Typography>
                     </TableCell>
-                    <TableCell sx={{ maxWidth: 320 }}>
+                    <TableCell data-label="Prijava" sx={{ maxWidth: { sm: 320 } }}>
                       <Typography variant="body2">{correction.note}</Typography>
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                        Izvor: {originLabels[correction.origin] || 'Sistem'}
+                        {correction.reportedBy?.username ? ` / prijavio: ${correction.reportedBy.username}` : ''}
+                      </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Status">
                       <Stack spacing={0.5} alignItems="flex-start">
                         <StatusChip value={correction.status} maps={statusLabels} />
                         {correction.correctedBy?.username && (
@@ -207,7 +240,7 @@ const CorrectionQueue = ({ role, userId }) => {
                         )}
                       </Stack>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Montažer">
                       {isProducer ? (
                         <FormControl size="small" sx={{ minWidth: 180 }}>
                           <InputLabel>Montažer</InputLabel>
@@ -231,8 +264,8 @@ const CorrectionQueue = ({ role, userId }) => {
                         correction.assignedEditor?.username || 'Nije dodijeljeno'
                       )}
                     </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+                    <TableCell data-label="Akcije" align="right">
+                      <Stack direction="row" spacing={0.5} justifyContent={{ xs: 'flex-start', sm: 'flex-end' }} flexWrap="wrap" useFlexGap>
                         <Button
                           component={Link}
                           to={`/video-details/${correction.video?._id}?start=${Math.floor(correction.timestamp || 0)}`}
@@ -286,6 +319,11 @@ const CorrectionQueue = ({ role, userId }) => {
           </TableContainer>
         )}
       </FilterBar>
+      {workspace.totalPages > 1 && (
+        <Stack alignItems="center" sx={{ my: 2 }}>
+          <Pagination count={workspace.totalPages} page={page} onChange={(event, value) => setPage(value)} size="small" />
+        </Stack>
+      )}
       <Dialog
         open={resolutionDialog.open}
         onClose={() => setResolutionDialog({ open: false, correction: null, note: '' })}

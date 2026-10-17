@@ -26,7 +26,7 @@ function applyApprovedArchiveEligibility(filter) {
   filter.processingStatus = 'completed';
   filter.broadcastStatus = { $in: ['approved_for_air', 'aired', 'archived'] };
 
-  appendAndCondition(filter, { $or: eligibility.$or });
+  appendAndCondition(filter, eligibility);
 
   return filter;
 }

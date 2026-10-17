@@ -1,0 +1,15 @@
+{
+  "observedOn": "2026-10-10",
+  "node": "20.16.0",
+  "mongoDB": "7.0.12",
+  "ffmpeg": "7.1-essentials_build-www.gyan.dev",
+  "playwright": "1.62.1",
+  "chrome": "154.0.8037.99",
+  "webkitLayoutEngine": "26.5",
+  "lighthouse": "12.8.2",
+  "backendAndRootResolutionMatch": true,
+  "backend": { "mongoose": "8.7.0", "express": "4.21.0", "bull": "4.16.3", "bcrypt": "5.1.1", "jsonwebtoken": "9.0.2" },
+  "frontend": { "react": "18.3.1", "materialUI": "6.1.0", "reactRouter": "6.26.2", "axios": "1.7.7", "hlsJs": "1.6.16", "reactScripts": "5.0.1" },
+  "applicationDependencyVersionsChanged": false,
+  "limitations": ["Firefox launch spawn UNKNOWN", "Node 20 EOL 2026-04-30", "QA dependency audit is not a security certification"]
+}

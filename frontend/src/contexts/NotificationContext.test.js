@@ -88,4 +88,22 @@ describe('NotificationContext', () => {
       expect(screen.getByText('Unread: 0')).toBeInTheDocument();
     });
   });
+
+  it('does not decrement again when opening an already-read notification', async () => {
+    axiosInstance.get.mockResolvedValue({ data: { items: [{ _id: 'notification-1', title: 'Read', readAt: '2026-10-10T10:00:00Z' }], unreadCount: 2 } });
+    renderNotifications();
+    await screen.findByText('Unread: 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Read first' }));
+    await waitFor(() => expect(axiosInstance.patch).toHaveBeenCalled());
+    expect(screen.getByText('Unread: 2')).toBeInTheDocument();
+  });
+
+  it('keeps unread state when a read write fails', async () => {
+    axiosInstance.patch.mockRejectedValue(new Error('Session expired'));
+    renderNotifications();
+    await screen.findByText('Unread: 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Read first' }));
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Unread: 1')).toBeInTheDocument();
+  });
 });

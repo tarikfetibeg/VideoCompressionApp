@@ -1,0 +1,954 @@
+[
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/ffmpeg-settings-default",
+    "line": 369,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/storage/overview",
+    "line": 388,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/storage/overview/refresh",
+    "line": 397,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/storage/settings",
+    "line": 417,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/storage/settings",
+    "line": 426,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/ffmpeg-capabilities",
+    "line": 448,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/ffmpeg-capabilities/probe",
+    "line": 466,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/preview-retention/scan",
+    "line": 504,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/preview-retention/cleanup",
+    "line": 520,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/media-previews/summary",
+    "line": 548,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/media-previews/rebuild",
+    "line": 558,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/cleanup-raw",
+    "line": 654,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/raw-orphans",
+    "line": 674,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/raw-orphans/import",
+    "line": 688,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/overview-metrics",
+    "line": 733,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/off-files",
+    "line": 787,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/off-files/:jobId/:offFileId",
+    "line": 834,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/raw-manifests",
+    "line": 882,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/raw-manifests/:filename",
+    "line": 896,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/raw-manifests/cleanup-orphans",
+    "line": 930,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/scrub-previews/summary",
+    "line": 971,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/scrub-previews/build-missing",
+    "line": 982,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/hls-previews/summary",
+    "line": 1060,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/hls-previews/build-missing",
+    "line": 1070,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/users",
+    "line": 1120,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/users",
+    "line": 1130,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/users/:id",
+    "line": 1176,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/users/:id/reset-password",
+    "line": 1207,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/videos/:id",
+    "line": 1242,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PATCH",
+    "path": "/videos/:id/owner",
+    "line": 1269,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PATCH",
+    "path": "/videos/:id/content-type",
+    "line": 1317,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/broadcast-programs",
+    "line": 1378,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/broadcast-programs",
+    "line": 1388,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/broadcast-programs/:id",
+    "line": 1417,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/broadcast-content-types",
+    "line": 1452,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/broadcast-content-types",
+    "line": 1463,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/broadcast-content-types/:id",
+    "line": 1502,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/ffmpeg-settings",
+    "line": 1549,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "PUT",
+    "path": "/ffmpeg-settings",
+    "line": 1562,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/audit-logs/workspace",
+    "line": 1621,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/audit-logs",
+    "line": 1630,
+    "status": "coverage required"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/audit-logs",
+    "line": 1650,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/summary",
+    "line": 414,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/videos",
+    "line": 480,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/videos/workspace",
+    "line": 499,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/duplicates",
+    "line": 532,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/duplicates/workspace",
+    "line": 550,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "GET",
+    "path": "/metadata-options",
+    "line": 585,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "PATCH",
+    "path": "/videos/:id/metadata",
+    "line": 611,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "PATCH",
+    "path": "/videos/:id/tags",
+    "line": 722,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "PATCH",
+    "path": "/videos/:id/content-type",
+    "line": 765,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "PATCH",
+    "path": "/videos/:id/review",
+    "line": 813,
+    "status": "coverage required"
+  },
+  {
+    "module": "archive",
+    "method": "DELETE",
+    "path": "/videos/:id/duplicate",
+    "line": 873,
+    "status": "coverage required"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/login",
+    "line": 10,
+    "status": "coverage required"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/register",
+    "line": 60,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/programs",
+    "line": 482,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/content-types",
+    "line": 492,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/reporters",
+    "line": 503,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/direct-final-upload",
+    "line": 515,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/final-videos",
+    "line": 731,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/library-videos",
+    "line": 771,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/library-search",
+    "line": 797,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/final-videos/:videoId/approve",
+    "line": 829,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/show-day",
+    "line": 914,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/my-show-days",
+    "line": 939,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/show-day/join",
+    "line": 989,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "GET",
+    "path": "/show-day/:showDayId/download-package",
+    "line": 1028,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/show-day/:showDayId/mark-aired",
+    "line": 1043,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/show-day/:showDayId/items",
+    "line": 1169,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "PATCH",
+    "path": "/show-day/:showDayId/items/reorder",
+    "line": 1239,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "POST",
+    "path": "/show-day/:showDayId/items/:itemId/report-error",
+    "line": 1330,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "PATCH",
+    "path": "/show-day/:showDayId/items/:itemId/replace",
+    "line": 1433,
+    "status": "coverage required"
+  },
+  {
+    "module": "broadcast",
+    "method": "PATCH",
+    "path": "/show-day/:showDayId/items/:itemId",
+    "line": 1552,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "GET",
+    "path": "/editors",
+    "line": 38,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "GET",
+    "path": "/workspace",
+    "line": 51,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "POST",
+    "path": "/video/:videoId/ensure",
+    "line": 118,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "PATCH",
+    "path": "/video/:videoId/dismiss",
+    "line": 200,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "PATCH",
+    "path": "/:requestId/claim",
+    "line": 270,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "PATCH",
+    "path": "/:requestId/route",
+    "line": 319,
+    "status": "coverage required"
+  },
+  {
+    "module": "corrections",
+    "method": "PATCH",
+    "path": "/:requestId/status",
+    "line": 378,
+    "status": "coverage required"
+  },
+  {
+    "module": "downloads",
+    "method": "POST",
+    "path": "/tickets",
+    "line": 81,
+    "status": "coverage required"
+  },
+  {
+    "module": "downloads",
+    "method": "GET",
+    "path": "/tickets/:ticketId/status",
+    "line": 116,
+    "status": "coverage required"
+  },
+  {
+    "module": "downloads",
+    "method": "GET",
+    "path": "/tickets/:token",
+    "line": 154,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/workspace",
+    "line": 1311,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/",
+    "line": 1342,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/admin/apply-sla",
+    "line": 1357,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "PATCH",
+    "path": "/:jobId/admin",
+    "line": 1408,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/import-brief",
+    "line": 1514,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/",
+    "line": 1537,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "DELETE",
+    "path": "/:jobId",
+    "line": 1674,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/:jobId/download-package",
+    "line": 1739,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/:jobId/off-files/:fileId",
+    "line": 1757,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/:jobId/final-videos",
+    "line": 1776,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/:jobId/material-upload",
+    "line": 1802,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/:jobId/final-upload",
+    "line": 1987,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "PATCH",
+    "path": "/:jobId/reporter-update",
+    "line": 2153,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "DELETE",
+    "path": "/:jobId/segments/:segmentId",
+    "line": 2314,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "PATCH",
+    "path": "/:jobId/segments/:segmentId/replace",
+    "line": 2372,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "GET",
+    "path": "/:jobId",
+    "line": 2472,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "PATCH",
+    "path": "/:jobId/status",
+    "line": 2499,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "PATCH",
+    "path": "/:jobId/claim",
+    "line": 2554,
+    "status": "coverage required"
+  },
+  {
+    "module": "editJobs",
+    "method": "POST",
+    "path": "/:jobId/comments",
+    "line": 2603,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "GET",
+    "path": "/workspace",
+    "line": 139,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "GET",
+    "path": "/",
+    "line": 169,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "POST",
+    "path": "/",
+    "line": 183,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "PATCH",
+    "path": "/:feedbackId",
+    "line": 231,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "POST",
+    "path": "/:feedbackId/seen",
+    "line": 314,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "POST",
+    "path": "/:feedbackId/comments",
+    "line": 352,
+    "status": "coverage required"
+  },
+  {
+    "module": "feedback",
+    "method": "DELETE",
+    "path": "/:feedbackId",
+    "line": 393,
+    "status": "coverage required"
+  },
+  {
+    "module": "media",
+    "method": "POST",
+    "path": "/tickets",
+    "line": 123,
+    "status": "coverage required"
+  },
+  {
+    "module": "media",
+    "method": "GET",
+    "path": "/:token/fallback.mp4",
+    "line": 162,
+    "status": "coverage required"
+  },
+  {
+    "module": "media",
+    "method": "HEAD",
+    "path": "/:token/fallback.mp4",
+    "line": 175,
+    "status": "coverage required"
+  },
+  {
+    "module": "media",
+    "method": "GET",
+    "path": "/:token/*",
+    "line": 186,
+    "status": "coverage required"
+  },
+  {
+    "module": "notifications",
+    "method": "GET",
+    "path": "/workspace",
+    "line": 28,
+    "status": "coverage required"
+  },
+  {
+    "module": "notifications",
+    "method": "PATCH",
+    "path": "/read-all",
+    "line": 62,
+    "status": "coverage required"
+  },
+  {
+    "module": "notifications",
+    "method": "PATCH",
+    "path": "/read-job/:jobId",
+    "line": 75,
+    "status": "coverage required"
+  },
+  {
+    "module": "notifications",
+    "method": "PATCH",
+    "path": "/:notificationId/read",
+    "line": 96,
+    "status": "coverage required"
+  },
+  {
+    "module": "upload",
+    "method": "POST",
+    "path": "/",
+    "line": 203,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/workspace",
+    "line": 257,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/",
+    "line": 293,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "DELETE",
+    "path": "/:videoId",
+    "line": 336,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "POST",
+    "path": "/:videoId/requeue-processing",
+    "line": 364,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/preview/:videoId",
+    "line": 426,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/thumbnail/:videoId",
+    "line": 455,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/scrub-preview/:videoId/manifest",
+    "line": 489,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/scrub-preview/:videoId/frame/:frameIndex",
+    "line": 524,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/stream/:videoId",
+    "line": 559,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "POST",
+    "path": "/:videoId/timecodes",
+    "line": 588,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "DELETE",
+    "path": "/:videoId/timecodes/:timecodeId",
+    "line": 633,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "PATCH",
+    "path": "/:videoId/archive-review-request",
+    "line": 667,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "PATCH",
+    "path": "/:videoId/qc",
+    "line": 725,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "PATCH",
+    "path": "/:videoId/broadcast-status",
+    "line": 788,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/download/:videoId",
+    "line": 854,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/:videoId/timecodes",
+    "line": 874,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "POST",
+    "path": "/download",
+    "line": 897,
+    "status": "coverage required"
+  },
+  {
+    "module": "videos",
+    "method": "GET",
+    "path": "/details/:videoId",
+    "line": 917,
+    "status": "coverage required"
+  }
+]

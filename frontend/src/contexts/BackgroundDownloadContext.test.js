@@ -104,6 +104,36 @@ describe('BackgroundDownloadContext', () => {
     });
   });
 
+  it('keeps retry failure in the panel without an unhandled rejection', async () => {
+    axiosInstance.post.mockRejectedValue(new Error('network down'));
+    renderDownloadManager();
+    fireEvent.click(screen.getByRole('button', { name: /start download/i }));
+    await screen.findByText(/Nema odgovora servera/i);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ponovi' })); await Promise.resolve(); });
+    expect(axiosInstance.post).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/Nema odgovora servera/i)).toBeInTheDocument();
+  });
+
+  it('keeps created and started server states active and guards until confirmed start', async () => {
+    axiosInstance.post.mockResolvedValue({ data: { ticketId: 'ticket-1', downloadUrl: '/api/downloads/tickets/token-1' } });
+    axiosInstance.get.mockResolvedValueOnce({ data: { status: 'created' } }).mockResolvedValue({ data: { status: 'started' } });
+    renderDownloadManager();
+    fireEvent.click(screen.getByRole('button', { name: /start download/i }));
+    await waitFor(() => expect(axiosInstance.post).toHaveBeenCalled());
+    await act(async () => { jest.advanceTimersByTime(250); await Promise.resolve(); });
+    await waitFor(() => expect(document.body.querySelector('iframe')).not.toBeNull());
+    await act(async () => { jest.advanceTimersByTime(1300); await Promise.resolve(); });
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('1 aktivno')).toBeInTheDocument();
+    const pending = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(pending);
+    expect(pending.defaultPrevented).toBe(true);
+    await act(async () => { jest.advanceTimersByTime(2100); await Promise.resolve(); });
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('1 aktivno')).toBeInTheDocument();
+    const started = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(started);
+    expect(started.defaultPrevented).toBe(false);
+  });
+
   it('guards tab close while the download ticket is being prepared', async () => {
     let resolveTicket;
     axiosInstance.post.mockImplementation(() => new Promise((resolve) => {

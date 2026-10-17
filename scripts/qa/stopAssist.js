@@ -1,0 +1,12 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '../..');
+const runId = process.argv.find((arg) => arg.startsWith('--run='))?.slice(6);
+if (!runId || !/^\d{4}-\d{2}-\d{2}T[\dZ-]+-[a-f0-9]{6}$/.test(runId)) throw new Error('Supply the exact QA assist run id.');
+const runtime = path.resolve(root, '.qa-runtime', runId);
+const marker = JSON.parse(fs.readFileSync(path.join(runtime, 'qa-marker.json')));
+if (marker.runId !== runId || path.resolve(marker.root) !== runtime) throw new Error('QA marker does not match.');
+const evidence = JSON.parse(fs.readFileSync(path.join(root, 'analysis/qa', runId, 'device-qa.json')));
+if (evidence.runId !== runId) throw new Error('Not a matching device QA environment.');
+fs.writeFileSync(path.join(runtime, 'assist-stop.json'), JSON.stringify({ requestedAt: new Date().toISOString() }));
+console.log('Graceful stop requested for QA assist ' + runId);

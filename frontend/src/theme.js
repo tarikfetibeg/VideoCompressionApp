@@ -41,7 +41,7 @@ const theme = createTheme({
     },
     text: {
       primary: '#0f172a',
-      secondary: '#64748b',
+      secondary: '#526176',
     },
     divider: '#d9e2ef',
   },

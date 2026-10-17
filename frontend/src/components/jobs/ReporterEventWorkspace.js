@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -36,6 +36,7 @@ import ArticleIcon from '@mui/icons-material/Article';
 import TodayIcon from '@mui/icons-material/Today';
 import TuneIcon from '@mui/icons-material/Tune';
 import axiosInstance from '../../axiosConfig';
+import { canPollSession } from '../../utils/sessionRecovery';
 import BriefImportButton from './BriefImportButton';
 import {
   ACTIVE_PROCESSING_REFRESH_MS,
@@ -164,6 +165,9 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [createdJobId, setCreatedJobId] = useState('');
+  const [creatingJob, setCreatingJob] = useState(false);
+  const creatingJobRef = useRef(false);
+  const initializedGroupRef = useRef('');
 
   const fetchVideos = useCallback(({ silent = false } = {}) => {
     if (!silent) {
@@ -226,7 +230,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
     if (!hasActiveProcessing) return undefined;
 
     const intervalId = window.setInterval(() => {
-      fetchVideos({ silent: true });
+      if (canPollSession()) fetchVideos({ silent: true });
     }, ACTIVE_PROCESSING_REFRESH_MS);
 
     return () => window.clearInterval(intervalId);
@@ -272,9 +276,11 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
 
   useEffect(() => {
     if (!activeGroup) {
-      setSelectedVideoIds([]);
       return;
     }
+    // Processing polls recreate the group object; only a new event resets the draft.
+    if (initializedGroupRef.current === activeGroup.key) return;
+    initializedGroupRef.current = activeGroup.key;
 
     setSelectedVideoIds(activeGroup.videos.map((video) => video._id));
     setClipNotes({});
@@ -348,6 +354,7 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
   };
 
   const handleCreateJob = () => {
+    if (creatingJobRef.current) return;
     setMessage('');
     setErrorMessage('');
     setCreatedJobId('');
@@ -387,6 +394,8 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
       formData.append('offFiles', file, file.name);
     });
 
+    creatingJobRef.current = true;
+    setCreatingJob(true);
     axiosInstance
       .post('/edit-jobs', formData)
       .then((response) => {
@@ -401,7 +410,8 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
       .catch((error) => {
         console.error('Error creating grouped edit job:', error);
         setErrorMessage(error.response?.data?.message || 'Edit job se ne može kreirati.');
-      });
+      })
+      .finally(() => { creatingJobRef.current = false; setCreatingJob(false); });
   };
 
   return (
@@ -733,12 +743,13 @@ const ReporterEventWorkspace = ({ refreshToken = 0, onJobCreated }) => {
                     startIcon={<AssignmentIcon />}
                     onClick={handleCreateJob}
                     disabled={
-                      !activeGroup
+                      creatingJob
+                      || !activeGroup
                       || selectedVideos.length === 0
                       || !contentTypeId
                     }
                   >
-                    Pošalji produkciji
+                    {creatingJob ? 'Šaljem produkciji...' : 'Pošalji produkciji'}
                   </Button>
                 </Stack>
 

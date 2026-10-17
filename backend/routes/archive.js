@@ -1,5 +1,4 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const Video = require('../models/Video');
@@ -9,7 +8,7 @@ const BroadcastProgram = require('../models/BroadcastProgram');
 const BroadcastContentType = require('../models/BroadcastContentType');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
-const { PROJECT_ROOT, paths } = require('../utils/storagePaths');
+const { removeVideoFiles } = require('../services/videoFileDeletionService');
 const { removeScrubPreviewFolderForVideo } = require('../services/videoProcessingService');
 const { removeHlsPreviewFolder } = require('../services/hlsPreviewService');
 const { addVideoPrefixSearchFilter } = require('../utils/searchText');
@@ -30,8 +29,6 @@ const archiveWorkspaceSortFields = {
   reviewStatus: 'archiveReviewStatus',
   updatedAt: 'updatedAt',
 };
-const videoPathFields = ['filepath', 'rawPath', 'compressedPath', 'previewPath', 'thumbnailPath'];
-const deleteRoots = [paths.root, path.join(PROJECT_ROOT, 'uploads')];
 
 router.use(authenticateToken);
 router.use(authorize(archiveRoles));
@@ -141,7 +138,7 @@ function buildArchiveWorkspaceSort(query = {}) {
   const sortOrder = String(query.sortOrder || 'desc') === 'asc' ? 1 : -1;
   const sortField = archiveWorkspaceSortFields[sortBy];
 
-  return { [sortField]: sortOrder, uploadDate: -1, createdAt: -1 };
+  return { [sortField]: sortOrder, ...(sortField !== 'uploadDate' ? { uploadDate: -1 } : {}), createdAt: -1 };
 }
 
 function getSortValue(video, sortBy) {
@@ -412,34 +409,6 @@ function buildDuplicateGroups(videos = []) {
       }),
     }))
     .sort((a, b) => b.totalSize - a.totalSize);
-}
-
-function isPathInside(parentPath, candidatePath) {
-  if (!candidatePath) return false;
-  const resolvedParent = path.resolve(parentPath);
-  const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(`${resolvedParent}${path.sep}`);
-}
-
-function isDeletableVideoPath(filePath) {
-  if (!filePath) return false;
-  const resolvedPath = path.resolve(filePath);
-  return deleteRoots.some((root) => isPathInside(root, resolvedPath));
-}
-
-async function isPathReferencedByAnotherVideo(videoId, filePath) {
-  if (!filePath) return false;
-  const resolvedPath = path.resolve(filePath);
-  const videos = await Video.find({
-    _id: { $ne: videoId },
-    $or: videoPathFields.map((field) => ({
-      [field]: { $exists: true, $nin: [null, ''] },
-    })),
-  }).select(videoPathFields.join(' '));
-
-  return videos.some((video) =>
-    videoPathFields.some((field) => video[field] && path.resolve(video[field]) === resolvedPath)
-  );
 }
 
 router.get('/summary', async (req, res) => {
@@ -919,36 +888,7 @@ router.delete('/videos/:id/duplicate', async (req, res) => {
       return res.status(400).json({ message: 'Cannot delete the keeper video as its own duplicate.' });
     }
 
-    const pathsToDelete = Array.from(new Set(
-      videoPathFields
-        .map((field) => video[field])
-        .filter(Boolean)
-    ));
-    const deletedPaths = [];
-    const skippedPaths = [];
-
-    for (const filePath of pathsToDelete) {
-      const resolvedPath = path.resolve(filePath);
-
-      if (!isDeletableVideoPath(resolvedPath)) {
-        skippedPaths.push({ path: resolvedPath, reason: 'outside allowed video storage' });
-        continue;
-      }
-
-      const shared = await isPathReferencedByAnotherVideo(video._id, resolvedPath);
-      if (shared) {
-        skippedPaths.push({ path: resolvedPath, reason: 'referenced by another video record' });
-        continue;
-      }
-
-      if (!fs.existsSync(resolvedPath)) {
-        skippedPaths.push({ path: resolvedPath, reason: 'file not found' });
-        continue;
-      }
-
-      fs.unlinkSync(resolvedPath);
-      deletedPaths.push(resolvedPath);
-    }
+    const { deletedPaths, skippedPaths } = await removeVideoFiles(video);
 
     await AuditLog.create({
       action: 'Archive Delete Duplicate Video',

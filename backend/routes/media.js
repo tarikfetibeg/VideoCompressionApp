@@ -8,6 +8,7 @@ const Video = require('../models/Video');
 const authenticateToken = require('../middleware/authenticateToken');
 const { hasReadyHlsPreview, resolveHlsResource } = require('../services/hlsPreviewService');
 const { sendFileWithRange } = require('../utils/mediaStreaming');
+const { canReadVideo } = require('../utils/videoReadAccess');
 
 const router = express.Router();
 const MEDIA_TICKET_TTL_MINUTES = Math.max(
@@ -96,7 +97,7 @@ async function loadTicket(token) {
     throw error;
   }
 
-  if (!user || !canReadMedia(user)) {
+  if (!user || !canReadMedia(user) || (video && !canReadVideo(user, video))) {
     const error = new Error('Pristup media sadržaju nije dozvoljen.');
     error.statusCode = 403;
     throw error;
@@ -127,6 +128,7 @@ router.post('/tickets', authenticateToken, async (req, res) => {
   try {
     const video = await Video.findById(req.body?.videoId);
     if (!video) return res.status(404).json({ message: 'Video nije pronadjen.' });
+    if (!canReadVideo(req.user, video)) return res.status(403).json({ message: 'Pregledati možete vlastiti materijal i odobrenu TV arhivu.' });
 
     const fallbackPath = getVideoSourcePath(video);
     const hlsAvailable = hasReadyHlsPreview(video);

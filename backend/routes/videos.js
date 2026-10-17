@@ -10,10 +10,12 @@ const { getQueueErrorMessage } = require('../utils/queueErrors');
 const { addVideoPrefixSearchFilter } = require('../utils/searchText');
 const { addContentTypeFallbackFilter } = require('../utils/contentTypeFilters');
 const { applyApprovedArchiveEligibility } = require('../utils/archiveEligibility');
+const { canReadVideo, applyReporterVideoScope } = require('../utils/videoReadAccess');
 const { setDownloadHeaders } = require('../utils/downloadHeaders');
 const { streamSingleVideo, streamBulkVideos } = require('../services/downloadService');
 const { removeHlsPreviewFolder } = require('../services/hlsPreviewService');
 const { sendFileWithRange } = require('../utils/mediaStreaming');
+const { removeVideoFiles } = require('../services/videoFileDeletionService');
 const {
   getScrubPreviewFolderForVideo,
   hasUsableScrubPreview,
@@ -60,7 +62,7 @@ function buildSort(query = {}) {
     broadcast: 'broadcastStatus',
   };
   const field = sortFields[sortBy] || 'uploadDate';
-  return { [field]: sortOrder, uploadDate: -1, createdAt: -1 };
+  return { [field]: sortOrder, ...(field !== 'uploadDate' ? { uploadDate: -1 } : {}), createdAt: -1 };
 }
 
 function applyArchiveFilter(filter) {
@@ -134,9 +136,7 @@ async function buildVideoWorkspaceFilter(query = {}, user) {
   const search = String(q || '').trim();
   addVideoPrefixSearchFilter(filter, search);
 
-  if (user?.role === 'Reporter' && scope !== 'station') {
-    filter.uploader = user.id;
-  }
+  applyReporterVideoScope(filter, user, scope);
 
   return filter;
 }
@@ -216,8 +216,7 @@ function getUploaderId(video) {
 }
 
 function userCanReadVideo(user, video, allowedRoles = allowedVideoRoles) {
-  if (!user || !video) return false;
-  return allowedRoles.includes(user.role);
+  return canReadVideo(user, video, allowedRoles);
 }
 
 function userCanManageVideo(user, video) {
@@ -253,15 +252,6 @@ function resolveExistingPath(...candidatePaths) {
   }
 
   return null;
-}
-
-function deleteFileIfExists(filePath) {
-  if (!filePath) return;
-
-  const resolvedPath = path.resolve(filePath);
-  if (fs.existsSync(resolvedPath)) {
-    fs.unlinkSync(resolvedPath);
-  }
 }
 
 router.get(
@@ -331,9 +321,7 @@ router.get(
       }
     }
 
-    if (req.user.role === 'Reporter' && scope !== 'station') {
-      filter.uploader = req.user.id;
-    }
+    applyReporterVideoScope(filter, req.user, scope);
 
     try {
       const videos = await populateVideoList(Video.find(filter));
@@ -354,15 +342,7 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
       return res.status(403).json({ message: 'Access Forbidden: You can only delete your own videos.' });
     }
 
-    const pathsToDelete = Array.from(new Set([
-      video.filepath,
-      video.compressedPath,
-      video.previewPath,
-      video.thumbnailPath,
-      video.rawPath,
-    ].filter(Boolean)));
-
-    pathsToDelete.forEach(deleteFileIfExists);
+    const deletion = await removeVideoFiles(video);
     removeScrubPreviewFolderForVideo(video);
     removeHlsPreviewFolder(video._id);
 
@@ -371,7 +351,7 @@ router.delete('/:videoId', authenticateToken, async (req, res) => {
     await AuditLog.create({
       action: 'Delete Video',
       performedBy: req.user.id,
-      details: { videoId: req.params.videoId, filename: video.filename },
+      details: { videoId: req.params.videoId, filename: video.filename, ...deletion },
     });
 
     res.json({ message: 'Video deleted successfully' });
@@ -899,7 +879,7 @@ router.get(
     const { videoId } = req.params;
 
     try {
-      const video = await Video.findById(videoId).select('timecodes uploader');
+      const video = await Video.findById(videoId).select('timecodes uploader reporter status processingStatus broadcastStatus finalApprovalStatus qcStatus');
       if (!video) return res.status(404).json({ message: 'Video not found' });
 
       if (!userCanReadVideo(req.user, video, allowedMediaPreviewRoles)) {

@@ -91,4 +91,35 @@ describe('ReporterActiveJobs', () => {
       expect(screen.queryByText('Brzi pregled joba')).not.toBeInTheDocument();
     });
   });
+
+  it('does not refetch when the count callback changes and makes later pages reachable', async () => {
+    axiosInstance.get.mockResolvedValue({ data: { items: [activeJob], total: 120, totalPages: 3, summary: { total: 120 } } });
+    const first = jest.fn();
+    const second = jest.fn();
+    const view = (onCountChange) => (
+      <MemoryRouter><ThemeProvider theme={theme}><ReporterActiveJobs onCountChange={onCountChange} /></ThemeProvider></MemoryRouter>
+    );
+    const { rerender } = render(view(first));
+    await waitFor(() => expect(first).toHaveBeenCalledWith(120));
+    rerender(view(second));
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /page 2/i }));
+    await waitFor(() => expect(axiosInstance.get).toHaveBeenLastCalledWith('/edit-jobs/workspace', {
+      params: expect.objectContaining({ page: 2, limit: 50 }),
+    }));
+    await waitFor(() => expect(second).toHaveBeenCalledWith(120));
+  });
+
+  it('does not reopen a closed panel when a slow details request finishes', async () => {
+    let resolveDetails;
+    axiosInstance.get.mockImplementation((url) => url === '/edit-jobs/workspace'
+      ? Promise.resolve({ data: { items: [activeJob] } })
+      : new Promise((resolve) => { resolveDetails = resolve; }));
+    render(<MemoryRouter><ThemeProvider theme={theme}><ReporterActiveJobs /></ThemeProvider></MemoryRouter>);
+    await screen.findByText('Jutarnji prilog');
+    fireEvent.click(screen.getByRole('button', { name: 'Komentari' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zatvori panel' }));
+    resolveDetails({ data: activeJob });
+    await waitFor(() => expect(screen.queryByText('Brzi pregled joba')).not.toBeInTheDocument());
+  });
 });

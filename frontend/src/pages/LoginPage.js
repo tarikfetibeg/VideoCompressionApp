@@ -31,7 +31,7 @@ const LoginPage = () => {
       .post('/auth/login', {
         username: loginUsername,
         password: loginPassword,
-      })
+      }, { timeout: 15000 })
       .then((response) => {
         const { token, user } = response.data;
         login({ ...user, token });
@@ -83,7 +83,7 @@ const LoginPage = () => {
           {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
 
           <TextField
-            label="Username"
+            label="Korisničko ime"
             value={loginUsername}
             onChange={(event) => setLoginUsername(event.target.value)}
             fullWidth
@@ -91,7 +91,7 @@ const LoginPage = () => {
             autoFocus
           />
           <TextField
-            label="Password"
+            label="Lozinka"
             type="password"
             value={loginPassword}
             onChange={(event) => setLoginPassword(event.target.value)}
@@ -99,7 +99,7 @@ const LoginPage = () => {
             required
           />
           <Button type="submit" variant="contained" startIcon={<LoginIcon />} disabled={submitting}>
-            {submitting ? 'Prijava...' : 'Login'}
+            {submitting ? 'Prijava...' : 'Prijavi se'}
           </Button>
         </Stack>
       </Paper>

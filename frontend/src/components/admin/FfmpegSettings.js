@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
+import { ConfirmDialog } from '../common/WorkspaceChrome';
 import {
   Alert,
   Box,
@@ -97,6 +99,8 @@ const FfmpegSettings = () => {
   const [loading, setLoading] = useState(false);
   const [probing, setProbing] = useState(false);
   const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
   const [confirmSave, setConfirmSave] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -174,6 +178,7 @@ const FfmpegSettings = () => {
   };
 
   const cleanupRaw = () => {
+    setConfirmCleanup(false);
     setCleanupLoading(true);
     setMessage('');
     setErrorMessage('');
@@ -181,7 +186,8 @@ const FfmpegSettings = () => {
       .post('/admin/cleanup-raw')
       .then((response) => {
         const result = response.data?.result || {};
-        setMessage(`Raw cleanup: provjereno ${result.checked || 0}, obrisano ${result.deleted || 0}.`);
+        setCleanupResult(result);
+        setMessage(`Raw cleanup: provjereno ${result.checked || 0}, obrisano ${result.deleted || 0}, preskočeno ${result.skipped || 0}, grešaka ${result.failed || 0}.`);
       })
       .catch((error) => {
         setErrorMessage(error.response?.data?.message || 'Raw cleanup nije moguće pokrenuti.');
@@ -236,6 +242,24 @@ const FfmpegSettings = () => {
 
       {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
       {errorMessage && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage}</Alert>}
+      {cleanupResult?.skippedDetails?.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ fontWeight: 700 }}>Zaštićeni ili neuspješno obrađeni zapisi</Typography>
+          {cleanupResult.skippedDetails.slice(0, 20).map((item) => (
+            <Typography key={item.videoId} variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+              <RouterLink to={`/video-details/${item.videoId}`}>Video {item.videoId}</RouterLink>: {({
+                'processing is not completed': 'Obrada nije završena',
+                'active master or fallback': 'Aktivni master ili fallback',
+                'outside allowed storage': 'Putanja je izvan dozvoljenog storagea',
+                'resolved outside allowed storage': 'Putanja vodi izvan storagea',
+                'referenced by another video': 'Fajl koristi drugi video',
+                'record changed during cleanup': 'Zapis je promijenjen tokom čišćenja',
+              })[item.reason] || item.reason}
+            </Typography>
+          ))}
+          {cleanupResult.skipped > 20 && <Typography variant="caption">Prikazano je najviše 20 zapisa; uzorak razloga je zabilježen u Audit Logu.</Typography>}
+        </Alert>
+      )}
       <Alert severity="info" sx={{ mb: 2 }}>
         Promjene važe za nove obrade. Postojeći klipovi se mijenjaju samo kroz ručni rebuild u Storage Maintenance modulu.
       </Alert>
@@ -295,7 +319,7 @@ const FfmpegSettings = () => {
                 <Slider name="bitrate" value={Number(settings.bitrate)} min={1000} max={50000} step={500} onChange={(event, value) => setSettings((current) => ({ ...current, bitrate: value }))} valueLabelDisplay="auto" />
               </Grid>
               <Grid item xs={12}>
-                <Button variant="outlined" color="warning" onClick={cleanupRaw} disabled={cleanupLoading}>
+                <Button variant="outlined" color="warning" onClick={() => setConfirmCleanup(true)} disabled={cleanupLoading}>
                   {cleanupLoading ? 'Čistim raw...' : 'Pokreni raw cleanup'}
                 </Button>
               </Grid>
@@ -516,6 +540,10 @@ const FfmpegSettings = () => {
           <Button variant="contained" onClick={saveSettings}>Sačuvaj</Button>
         </DialogActions>
       </Dialog>
+      <ConfirmDialog open={confirmCleanup} title="Obrisati istekle raw originale?"
+        description="Brišu se samo nezavisni raw originali nakon završene obrade. Obrada u toku, aktivni master/fallback, dijeljeni fajlovi i nesigurne putanje ostaju sačuvani."
+        confirmLabel="Pokreni cleanup" confirmColor="warning" busy={cleanupLoading}
+        onClose={() => setConfirmCleanup(false)} onConfirm={cleanupRaw} />
     </Box>
   );
 };

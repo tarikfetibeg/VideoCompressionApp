@@ -1,4 +1,5 @@
-import React, { useContext } from 'react';
+import React, { Suspense, lazy, useContext } from 'react';
+import { LinearProgress } from '@mui/material';
 import {
   BrowserRouter as Router,
   Routes,
@@ -11,19 +12,20 @@ import { BackgroundDownloadProvider } from './contexts/BackgroundDownloadContext
 import { NotificationProvider } from './contexts/NotificationContext';
 import PrivateRoute from './components/PrivateRoute';
 import AppShell from './components/layout/AppShell';
+import SessionRecoveryDialog from './components/SessionRecoveryDialog';
 
-// Import Pages
 import LoginPage from './pages/LoginPage';
-import ReporterDashboard from './pages/ReporterDashboard';
-import EditorDashboard from './pages/EditorDashboard';
-import EditJobDetailsPage from './pages/EditJobDetailsPage';
-import ProducerDashboard from './pages/ProducerDashboard';
-import RealizatorDashboard from './pages/RealizatorDashboard';
-import ArchivistDashboard from './pages/ArchivistDashboard';
-import FeedbackPage from './pages/FeedbackPage';
-import VideoDetailsPage from './pages/VideoDetailsPage';
 import NotFoundPage from './pages/NotFoundPage';
-import AdminDashboard from './pages/AdminDashboard';
+
+const ReporterDashboard = lazy(() => import('./pages/ReporterDashboard'));
+const EditorDashboard = lazy(() => import('./pages/EditorDashboard'));
+const EditJobDetailsPage = lazy(() => import('./pages/EditJobDetailsPage'));
+const ProducerDashboard = lazy(() => import('./pages/ProducerDashboard'));
+const RealizatorDashboard = lazy(() => import('./pages/RealizatorDashboard'));
+const ArchivistDashboard = lazy(() => import('./pages/ArchivistDashboard'));
+const FeedbackPage = lazy(() => import('./pages/FeedbackPage'));
+const VideoDetailsPage = lazy(() => import('./pages/VideoDetailsPage'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 
 function App() {
   const { user } = useContext(UserContext);
@@ -34,6 +36,7 @@ function App() {
         <Router>
           <NotificationProvider>
             <AppShell>
+              <Suspense fallback={<LinearProgress aria-label="Učitavanje radnog prostora" />}>
               <Routes>
         {/* Public Routes */}
         <Route
@@ -149,7 +152,9 @@ function App() {
         {/* Not Found */}
         <Route path="*" element={<NotFoundPage />} />
               </Routes>
+              </Suspense>
             </AppShell>
+            <SessionRecoveryDialog />
           </NotificationProvider>
         </Router>
       </BackgroundDownloadProvider>

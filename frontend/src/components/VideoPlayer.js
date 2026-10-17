@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import axiosInstance from '../axiosConfig';
 import {
@@ -86,6 +86,7 @@ const VideoPlayer = ({
   readOnly = false,
   compact = false,
 }) => {
+  const qualityLabelId = useId();
   const [mediaTicket, setMediaTicket] = useState(null);
   const [timecodes, setTimecodes] = useState([]);
   const [loadingVideo, setLoadingVideo] = useState(true);
@@ -343,8 +344,8 @@ const VideoPlayer = ({
               <Chip label={`Playhead ${formatTime(currentTime)}`} size="small" variant="outlined" />
               {qualityLevels.length > 0 && (
                 <FormControl size="small" sx={{ minWidth: 115 }}>
-                  <InputLabel>Kvalitet</InputLabel>
-                  <Select value={quality} label="Kvalitet" onChange={handleQualityChange}>
+                  <InputLabel id={qualityLabelId}>Kvalitet</InputLabel>
+                  <Select labelId={qualityLabelId} value={quality} label="Kvalitet" onChange={handleQualityChange}>
                     <MenuItem value={-1}>Auto</MenuItem>
                     {qualityLevels.map((level) => (
                       <MenuItem key={level.index} value={level.index}>

@@ -393,7 +393,11 @@ function buildLibrarySort(query = {}) {
     category: 'finalCategory',
   };
   const field = sortFields[sortBy] || 'uploadDate';
-  return { [field]: sortOrder, airedAt: -1, archivedAt: -1, finalApprovedAt: -1, uploadDate: -1 };
+  const sort = { [field]: sortOrder };
+  for (const secondary of ['airedAt', 'archivedAt', 'finalApprovedAt', 'uploadDate']) {
+    if (secondary !== field) sort[secondary] = -1;
+  }
+  return sort;
 }
 
 function populateLibraryVideoList(query) {

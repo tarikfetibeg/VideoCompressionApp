@@ -1,0 +1,3542 @@
+{
+  "createdAt": "2026-10-11T12:22:19.171Z",
+  "branch": "codex/Web-Optimizacija",
+  "overallStatus": "partial-coverage-with-open-risks",
+  "noClaimAllFeaturesPass": true,
+  "dependencyUpgradesDeferredByUser": true,
+  "mainGzipBytes": 173617,
+  "manifests": [
+    {
+      "file": "package.json",
+      "sha256": "5fe7f19a70f1e88991b1ade2219f96c48b8dbd8e29503a1553fadcf62f51034f"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "8cdbac5237835980c75bacc3d1c84f13c84fd1afd46f658108048bbf8ad44d82"
+    },
+    {
+      "file": "frontend/package.json",
+      "sha256": "abf97af152dfde2a6644041d63865a709caaaa3628bfdbd2e3a4b119133b4605"
+    },
+    {
+      "file": "frontend/package-lock.json",
+      "sha256": "002f6da22e5ce018bca825b80dbac1d787d0f73bbeb5147bb7fdc95a6afd819d"
+    }
+  ],
+  "secretScan": {
+    "patternBasedNotSecurityCertification": true,
+    "possibleSecretFiles": []
+  },
+  "inventory": {
+    "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+    "sourceHash": "eb47622faea9b7a301989a648cb513a22de5d4daa6419a99614ae41d9fe37a33",
+    "node": "v20.16.0",
+    "reachableFiles": 52,
+    "actions": 684,
+    "endpoints": 136,
+    "unreachableCandidates": [
+      "frontend/src/setupTests.js"
+    ],
+    "dependencyCandidates": [
+      "@emotion/react",
+      "@emotion/styled",
+      "@testing-library/react",
+      "@testing-library/user-event",
+      "react-player",
+      "react-redux",
+      "react-scripts",
+      "redux",
+      "web-vitals"
+    ],
+    "warning": "AST reachability is evidence for review, not permission to remove business features or config/test dependencies."
+  },
+  "syntax": {
+    "createdAt": "2026-10-11T12:01:07.740Z",
+    "node": "v20.16.0",
+    "results": [
+      {
+        "file": "backend/app.js",
+        "passed": true
+      },
+      {
+        "file": "backend/config/broadcastDefaults.js",
+        "passed": true
+      },
+      {
+        "file": "backend/config/mediaFormats.js",
+        "passed": true
+      },
+      {
+        "file": "backend/config/processingQueue.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/main.75403a10.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/main.9b44a6dc.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerDailyMotion.34219f2f.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerFacebook.31103153.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerFilePlayer.f5133d8d.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerKaltura.ffad615e.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerMixcloud.9b7a2e5b.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerMux.d92d54de.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerPreview.28c18ba2.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerSoundCloud.d453bb3e.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerStreamable.58fc7a98.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerTwitch.855205f4.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerVidyard.a623200f.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerVimeo.46c9b031.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerWistia.10aa93b7.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/frontend/build/static/js/reactPlayerYouTube.df0d63b4.chunk.js",
+        "passed": true
+      },
+      {
+        "file": "backend/middleware/authenticateToken.js",
+        "passed": true
+      },
+      {
+        "file": "backend/middleware/authorize.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/AuditLog.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/BroadcastContentType.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/BroadcastProgram.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/CorrectionRequest.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/DownloadTicket.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/EditJob.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/Feedback.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/FfmpegSettings.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/MediaTicket.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/Notification.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/ShowDay.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/StorageSettings.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/User.js",
+        "passed": true
+      },
+      {
+        "file": "backend/models/Video.js",
+        "passed": true
+      },
+      {
+        "file": "backend/queues/hlsQueue.js",
+        "passed": true
+      },
+      {
+        "file": "backend/queues/localVideoQueue.js",
+        "passed": true
+      },
+      {
+        "file": "backend/queues/previewMaintenanceQueue.js",
+        "passed": true
+      },
+      {
+        "file": "backend/queues/videoQueue.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/admin.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/archive.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/auth.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/broadcast.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/corrections.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/downloads.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/editJobs.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/feedback.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/media.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/notifications.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/upload.js",
+        "passed": true
+      },
+      {
+        "file": "backend/routes/videos.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/backfillCorrectionRequests.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/backfillEditJobLifecycle.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/backfillSearchPrefixes.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/backfillSearchText.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/backfillVideoContentTypes.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/benchmarkHls.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/createAdmin.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/createIndexes.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/explainIndexes.js",
+        "passed": true
+      },
+      {
+        "file": "backend/scripts/migrateDownloadTicketRetention.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/auditWorkspaceService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/correctionNotificationService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/correctionWorkflowService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/downloadService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/downloadTicketRetentionMigration.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/editJobLifecycleService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/ffmpegCapabilityService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/hlsPreviewService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/hlsQueueProcessor.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/jobNotificationService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/mediaCompatibilityService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/mediaProfileService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/offFileDeletionService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/previewMaintenanceService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/previewRetentionService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/rawOrphanService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/rawRetentionService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/storageOverviewService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/videoFileDeletionService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/videoProcessingService.js",
+        "passed": true
+      },
+      {
+        "file": "backend/services/videoQueueProcessor.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/archiveEligibility.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/atomicRename.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/auditLogHelpers.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/contentTypeFilters.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/downloadHeaders.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/downloadTicketRetention.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/mediaStreaming.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/queueErrors.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/searchText.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/storageFileSafety.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/storagePaths.js",
+        "passed": true
+      },
+      {
+        "file": "backend/utils/videoReadAccess.js",
+        "passed": true
+      },
+      {
+        "file": "backend/workers/hlsWorker.js",
+        "passed": true
+      },
+      {
+        "file": "backend/workers/previewMaintenanceWorker.js",
+        "passed": true
+      },
+      {
+        "file": "backend/workers/videoWorker.js",
+        "passed": true
+      },
+      {
+        "file": "qa/fixtures/seed.js",
+        "passed": true
+      },
+      {
+        "file": "qa/helpers/explain.js",
+        "passed": true
+      },
+      {
+        "file": "qa/performance/browserLab.js",
+        "passed": true
+      },
+      {
+        "file": "qa/performance/lighthouse.js",
+        "passed": true
+      },
+      {
+        "file": "qa/performance/mediaBenchmark.js",
+        "passed": true
+      },
+      {
+        "file": "qa/performance/soak.js",
+        "passed": true
+      },
+      {
+        "file": "qa/performance/workspace.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/api.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/browser.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/edgeCases.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/maintenance.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/media.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/network.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/policyChecks.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/session.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/ticketLifecycle.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/uiAcceptance.js",
+        "passed": true
+      },
+      {
+        "file": "qa/specs/workflows.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/assist.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/checks.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/dependencies.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/environment.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/inventory.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/ports.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/release.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/report.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/run.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/stopAssist.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/qa/zoomProbe.js",
+        "passed": true
+      },
+      {
+        "file": "scripts/startAll.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/atomicRename.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/auditLogHelpers.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/authenticateToken.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/downloadRetention.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/loginErrors.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/qaAssistControl.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/storageFileSafety.test.js",
+        "passed": true
+      },
+      {
+        "file": "tests/backend/videoReadAccess.test.js",
+        "passed": true
+      }
+    ]
+  },
+  "realDevices": [
+    {
+      "status": "user-reported-success",
+      "evidenceType": "direct human report; not instrumented or screenshot-certified",
+      "reportedOn": "2026-10-10",
+      "android": {
+        "model": "Xiaomi 14",
+        "browser": "Mozilla Firefox",
+        "browserVersion": "not supplied",
+        "osVersion": "not supplied",
+        "result": "success reported for instructed checks"
+      },
+      "desktop": {
+        "browser": "Mozilla Firefox",
+        "browserVersion": "not supplied",
+        "osVersion": "not supplied",
+        "result": "success reported for instructed checks"
+      },
+      "scope": "LAN URL, login, job/preview, seek, saved download, navigation during transfer and Android file picker/upload as instructed; no claim every role/control was tested",
+      "laterChange": "Session recovery z-index raised after this snapshot; separate automated mobile regression covers it, not this human report",
+      "addresses": [
+        "http://192.168.0.5:5114"
+      ],
+      "runId": "2026-10-10T20-20-25-120Z-eba6ec",
+      "remote": "blocked: only production port5000 is exposed; do not redirect it",
+      "accountsFile": ".qa-private/2026-10-10T20-20-25-120Z-eba6ec/DEVICE_QA_ACCOUNTS.md",
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "bfa14207fd3b6c53432cfe702b95af4af4a1939ec80fa2c910296f48cbb5f876",
+        "frontendSourceHash": "16f1582f5e825b5d8fd1c806c80efb9a741e47f6c2545a23988cc0e43cac5575",
+        "buildHash": "f2e35d93e4182bb79cd079c07f4d16a6fc4998a2aa93052289ec5f33f404ebf2",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "method": "stdin was closed by launcher; verified helper PID3996/run-specific children then stopped only that process tree",
+        "ports": {
+          "5114": "free",
+          "27114": "free"
+        },
+        "verifiedBy": "node scripts/qa/ports.js --ports=5114,27114,5112,27112",
+        "productionProcessesTerminated": false
+      }
+    }
+  ],
+  "frontend": {
+    "runId": "2026-10-11T11-56-22-751Z-release",
+    "passed": 50,
+    "failed": 0,
+    "suites": 15
+  },
+  "runs": [
+    {
+      "mode": "api",
+      "runId": "2026-10-11T12-01-09-271Z-68229c",
+      "passed": 47,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      }
+    },
+    {
+      "mode": "browser",
+      "runId": "2026-10-11T12-03-18-048Z-c83300",
+      "passed": 39,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "responsive": {
+        "checks": 227,
+        "failures": 0
+      },
+      "widthDprChecks": 53,
+      "engines": {
+        "primary": "154.0.8037.99",
+        "engines": [
+          {
+            "engine": "firefox",
+            "status": "blocked",
+            "reason": "browserType.launch: spawn UNKNOWN"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Reporter",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Reporter",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Editor",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Editor",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "VideoEditor",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "VideoEditor",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Producer",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Producer",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Realizator",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Realizator",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Archivist",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Archivist",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Admin",
+            "width": 390,
+            "height": 844,
+            "status": "passed"
+          },
+          {
+            "engine": "webkit",
+            "version": "26.5",
+            "role": "Admin",
+            "width": 1366,
+            "height": 768,
+            "status": "passed"
+          }
+        ]
+      },
+      "listLab": [
+        {
+          "id": "LAB-Reporter-cold-warm",
+          "coldP95": 379.9195999999938,
+          "warmP95": 252.62889999999607,
+          "samples": 20,
+          "notFieldINP": true,
+          "notLighthouse": true
+        },
+        {
+          "id": "LAB-Editor-cold-warm",
+          "coldP95": 598.1263000000035,
+          "warmP95": 453.95230000000447,
+          "samples": 20,
+          "notFieldINP": true,
+          "notLighthouse": true
+        }
+      ]
+    },
+    {
+      "mode": "performance",
+      "runId": "2026-10-11T12-08-10-837Z-bb9bed",
+      "passed": 21,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "performance": [
+        {
+          "count": 10000,
+          "endpoint": "video-list",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 127.9326000000001,
+          "p95": 168.52050000000054,
+          "target": 500
+        },
+        {
+          "count": 10000,
+          "endpoint": "archive",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 164.09840000000077,
+          "p95": 180.73580000000038,
+          "target": 1000
+        },
+        {
+          "count": 10000,
+          "endpoint": "prefix",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 251.09530000000086,
+          "p95": 294.6715000000004,
+          "target": 1000
+        },
+        {
+          "count": 10000,
+          "endpoint": "jobs",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 178.94830000000002,
+          "p95": 214.6971999999987,
+          "target": 1000
+        },
+        {
+          "count": 50000,
+          "endpoint": "video-list",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 359.4274000000005,
+          "p95": 396.9892,
+          "target": 1500
+        },
+        {
+          "count": 50000,
+          "endpoint": "archive",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 643.2963000000018,
+          "p95": 726.8238000000056,
+          "target": 1500
+        },
+        {
+          "count": 50000,
+          "endpoint": "prefix",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 826.7451999999976,
+          "p95": 890.9135999999999,
+          "target": 1500
+        },
+        {
+          "count": 50000,
+          "endpoint": "jobs",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 174.33610000000044,
+          "p95": 211.15830000000278,
+          "target": 1500
+        },
+        {
+          "count": 50000,
+          "endpoint": "feedback-1000",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 55.74500000000262,
+          "p95": 66.10819999999512,
+          "target": 1500
+        },
+        {
+          "count": 50000,
+          "endpoint": "audit-100000",
+          "sessions": 10,
+          "samples": 100,
+          "p50": 158.29219999999623,
+          "p95": 179.41509999999835,
+          "target": 1500
+        },
+        {
+          "endpoint": "storage-cached",
+          "sessions": 1,
+          "samples": 100,
+          "p50": 1.5705000000016298,
+          "p95": 1.9875000000029104,
+          "target": 200
+        }
+      ]
+    },
+    {
+      "mode": "soak-30",
+      "runId": "2026-10-11T09-45-15-057Z-b22220",
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "8a8dc815e23271b84b8fc17b1e4bca29d0c6630c05674f619605df9544c5edd9",
+        "buildHash": "7d478b79f011f0658174e9f57ee8eb8c8d8ca3942cdb57704c3f725f0996213a",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "soak": {
+        "durationSeconds": 1802.1679069000002,
+        "apiSamples": 3510,
+        "failedApiSamples": 0,
+        "p95": 107.65059999999357,
+        "uploads": 6,
+        "downloads": 60,
+        "browserErrors": [],
+        "videoStates": [
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          }
+        ],
+        "reauthentication": []
+      }
+    },
+    {
+      "mode": "media",
+      "runId": "2026-10-11T12-06-08-329Z-5bb9fe",
+      "passed": 32,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      }
+    },
+    {
+      "mode": "soak-60",
+      "runId": "2026-10-03T18-11-39-509Z-32b616",
+      "passed": 0,
+      "failed": 1,
+      "blocked": 0,
+      "failures": [
+        {
+          "id": "SOAK-combined",
+          "name": "60-minute mixed API, five players, downloads and background processing",
+          "status": "failed",
+          "error": "Expected values to be strictly equal:\n\n10 !== 0\n"
+        }
+      ],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "938417bda6d56e2610f18a4469dfc58bff225cea6c24be8c0ee12303dfc9f4df",
+        "buildHash": "129e931fdb83a405988a36e451328bd00473635a75d0c23475710cf2c8e7be1f",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5111": "free",
+          "27111": "free"
+        }
+      },
+      "soak": {
+        "durationSeconds": 3603.6518312,
+        "apiSamples": 7020,
+        "failedApiSamples": 10,
+        "p95": 117.91659999988042,
+        "uploads": 12,
+        "downloads": 118,
+        "browserErrors": [],
+        "videoStates": [
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          }
+        ],
+        "reauthentication": []
+      }
+    },
+    {
+      "mode": "benchmark",
+      "runId": "2026-10-10T20-29-55-363Z-dc7bbf",
+      "passed": 6,
+      "failed": 1,
+      "blocked": 0,
+      "failures": [
+        {
+          "id": "BENCH-speed-target",
+          "name": "NVENC median reduction target >=30% on five synthetic clips",
+          "status": "failed",
+          "error": "Median reduction -6.6% < 30%"
+        }
+      ],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "bfa14207fd3b6c53432cfe702b95af4af4a1939ec80fa2c910296f48cbb5f876",
+        "frontendSourceHash": "16f1582f5e825b5d8fd1c806c80efb9a741e47f6c2545a23988cc0e43cac5575",
+        "buildHash": "f2e35d93e4182bb79cd079c07f4d16a6fc4998a2aa93052289ec5f33f404ebf2",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "benchmark": {
+        "gpu": "NVIDIA GeForce RTX 3060",
+        "driver": "617.14",
+        "hasVmaf": true,
+        "concurrency": "serial; no QA soak/performance phase in parallel",
+        "rows": [
+          {
+            "name": "720p25",
+            "duration": 60,
+            "synthetic": true,
+            "repetitions": 3,
+            "fps": 25,
+            "timings": {
+              "libx264": [
+                5630,
+                5371,
+                5718
+              ],
+              "h264_nvenc": [
+                5524,
+                5331,
+                5473
+              ]
+            },
+            "sizes": {
+              "libx264": 25104529,
+              "h264_nvenc": 30299533
+            },
+            "vmaf": {
+              "libx264": 95.843447,
+              "h264_nvenc": 97.995171
+            },
+            "cpuMedian": 5630,
+            "nvencMedian": 5473,
+            "reductionPercent": 2.7886323268206037
+          },
+          {
+            "name": "720p50",
+            "duration": 60,
+            "synthetic": true,
+            "repetitions": 3,
+            "fps": 50,
+            "timings": {
+              "libx264": [
+                6841,
+                6701,
+                6617
+              ],
+              "h264_nvenc": [
+                9008,
+                9034,
+                9061
+              ]
+            },
+            "sizes": {
+              "libx264": 25938121,
+              "h264_nvenc": 30520057
+            },
+            "vmaf": {
+              "libx264": 91.326127,
+              "h264_nvenc": 93.852949
+            },
+            "cpuMedian": 6701,
+            "nvencMedian": 9034,
+            "reductionPercent": -34.81569914938069
+          },
+          {
+            "name": "4x3",
+            "duration": 60,
+            "synthetic": true,
+            "repetitions": 3,
+            "fps": 25,
+            "timings": {
+              "libx264": [
+                5173,
+                5505,
+                5492
+              ],
+              "h264_nvenc": [
+                5346,
+                5342,
+                5421
+              ]
+            },
+            "sizes": {
+              "libx264": 25175781,
+              "h264_nvenc": 30265129
+            },
+            "vmaf": {
+              "libx264": 97.639133,
+              "h264_nvenc": 98.742827
+            },
+            "cpuMedian": 5492,
+            "nvencMedian": 5346,
+            "reductionPercent": 2.6584122359796067
+          },
+          {
+            "name": "vertical",
+            "duration": 60,
+            "synthetic": true,
+            "repetitions": 3,
+            "fps": 30,
+            "timings": {
+              "libx264": [
+                5208,
+                5245,
+                5764
+              ],
+              "h264_nvenc": [
+                5585,
+                5590,
+                5751
+              ]
+            },
+            "sizes": {
+              "libx264": 25529785,
+              "h264_nvenc": 30218881
+            },
+            "vmaf": {
+              "libx264": 97.147465,
+              "h264_nvenc": 97.654205
+            },
+            "cpuMedian": 5245,
+            "nvencMedian": 5590,
+            "reductionPercent": -6.57769304099142
+          },
+          {
+            "name": "prores10",
+            "duration": 60,
+            "synthetic": true,
+            "repetitions": 3,
+            "fps": 25,
+            "timings": {
+              "libx264": [
+                3302,
+                2951,
+                3009
+              ],
+              "h264_nvenc": [
+                4814,
+                4798,
+                4819
+              ]
+            },
+            "sizes": {
+              "libx264": 25694473,
+              "h264_nvenc": 30710125
+            },
+            "vmaf": {
+              "libx264": 96.049013,
+              "h264_nvenc": 98.199156
+            },
+            "cpuMedian": 3009,
+            "nvencMedian": 4814,
+            "reductionPercent": -59.98670654702559
+          }
+        ]
+      }
+    },
+    {
+      "mode": "lighthouse",
+      "runId": "2026-10-11T12-09-08-744Z-b81e33",
+      "passed": 6,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "lighthouse": {
+        "diagnosticOnly": true,
+        "notFieldINP": true,
+        "simulatedMobile": true,
+        "applicationDependenciesUnchanged": true,
+        "metrics": [
+          {
+            "role": "Reporter",
+            "repeat": 0,
+            "mobile": true,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 0.92,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 614.3103,
+              "largest-contentful-paint": 1584.7412,
+              "total-blocking-time": 341,
+              "cumulative-layout-shift": 0,
+              "speed-index": 728.0055761129993
+            },
+            "failures": [
+              {
+                "id": "largest-contentful-paint",
+                "title": "Largest Contentful Paint",
+                "score": 0.99
+              },
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.74
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.36
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          },
+          {
+            "role": "Reporter",
+            "repeat": 1,
+            "mobile": true,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 0.94,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 611.6317,
+              "largest-contentful-paint": 1537.0267999999999,
+              "total-blocking-time": 274.5,
+              "cumulative-layout-shift": 0,
+              "speed-index": 682.8174855026436
+            },
+            "failures": [
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.81
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.45
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          },
+          {
+            "role": "Reporter",
+            "repeat": 2,
+            "mobile": true,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 0.95,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 610.5046,
+              "largest-contentful-paint": 1527.0184,
+              "total-blocking-time": 263.5,
+              "cumulative-layout-shift": 0,
+              "speed-index": 679.8856744350023
+            },
+            "failures": [
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.83
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.47
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          },
+          {
+            "role": "Editor",
+            "repeat": 0,
+            "mobile": false,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 1,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 170.27515,
+              "largest-contentful-paint": 410.1006,
+              "total-blocking-time": 70.99999999999994,
+              "cumulative-layout-shift": 0.0002132787429071211,
+              "speed-index": 292.6220645469987
+            },
+            "failures": [
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.99
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.96
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "dom-size",
+                "title": "Avoid an excessive DOM size",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          },
+          {
+            "role": "Editor",
+            "repeat": 1,
+            "mobile": false,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 1,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 172.3853,
+              "largest-contentful-paint": 411.5412,
+              "total-blocking-time": 72,
+              "cumulative-layout-shift": 0.0002132787429071211,
+              "speed-index": 285.7001512587837
+            },
+            "failures": [
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.99
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.96
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "dom-size",
+                "title": "Avoid an excessive DOM size",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          },
+          {
+            "role": "Editor",
+            "repeat": 2,
+            "mobile": false,
+            "lighthouseVersion": "12.8.2",
+            "scores": {
+              "performance": 1,
+              "accessibility": 1,
+              "best-practices": 1
+            },
+            "metrics": {
+              "first-contentful-paint": 161.33155,
+              "largest-contentful-paint": 411.3262,
+              "total-blocking-time": 71,
+              "cumulative-layout-shift": 0.0002132787429071211,
+              "speed-index": 292.8995078035568
+            },
+            "failures": [
+              {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.99
+              },
+              {
+                "id": "max-potential-fid",
+                "title": "Max Potential First Input Delay",
+                "score": 0.96
+              },
+              {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.5
+              },
+              {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.5
+              },
+              {
+                "id": "dom-size",
+                "title": "Avoid an excessive DOM size",
+                "score": 0.5
+              },
+              {
+                "id": "bf-cache",
+                "title": "Page prevented back/forward cache restoration",
+                "score": 0
+              },
+              {
+                "id": "network-dependency-tree-insight",
+                "title": "Network dependency tree",
+                "score": 0
+              }
+            ]
+          }
+        ]
+      },
+      "lighthouseAcceptance": [
+        {
+          "role": "Reporter",
+          "repeat": 0,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": false,
+          "capturePassIsNotTargetPass": true
+        },
+        {
+          "role": "Reporter",
+          "repeat": 1,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": true,
+          "capturePassIsNotTargetPass": true
+        },
+        {
+          "role": "Reporter",
+          "repeat": 2,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": true,
+          "capturePassIsNotTargetPass": true
+        },
+        {
+          "role": "Editor",
+          "repeat": 0,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": true,
+          "capturePassIsNotTargetPass": true
+        },
+        {
+          "role": "Editor",
+          "repeat": 1,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": true,
+          "capturePassIsNotTargetPass": true
+        },
+        {
+          "role": "Editor",
+          "repeat": 2,
+          "lcpPassed": true,
+          "clsPassed": true,
+          "tbtPassed": true,
+          "capturePassIsNotTargetPass": true
+        }
+      ]
+    },
+    {
+      "mode": "session",
+      "runId": "2026-10-11T12-05-39-889Z-faa741",
+      "passed": 6,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5112": "free",
+          "27112": "free"
+        }
+      }
+    },
+    {
+      "mode": "edges",
+      "runId": "2026-10-11T12-01-34-099Z-a0c530",
+      "passed": 8,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "guestRouteMatrix": [
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/ffmpeg-settings-default",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/storage/overview",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/storage/overview/refresh",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/storage/settings",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/storage/settings",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/ffmpeg-capabilities",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/ffmpeg-capabilities/probe",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/preview-retention/scan",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/preview-retention/cleanup",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/media-previews/summary",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/media-previews/rebuild",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/cleanup-raw",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/raw-orphans",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/raw-orphans/import",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/overview-metrics",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/off-files",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "DELETE",
+          "route": "/off-files/:jobId/:offFileId",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/raw-manifests",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "DELETE",
+          "route": "/raw-manifests/:filename",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/raw-manifests/cleanup-orphans",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/scrub-previews/summary",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/scrub-previews/build-missing",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/hls-previews/summary",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/hls-previews/build-missing",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/users",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/users",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/users/:id",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/users/:id/reset-password",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "DELETE",
+          "route": "/videos/:id",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PATCH",
+          "route": "/videos/:id/owner",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PATCH",
+          "route": "/videos/:id/content-type",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/broadcast-programs",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/broadcast-programs",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/broadcast-programs/:id",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/broadcast-content-types",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "POST",
+          "route": "/broadcast-content-types",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/broadcast-content-types/:id",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/ffmpeg-settings",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "PUT",
+          "route": "/ffmpeg-settings",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/audit-logs/workspace",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "GET",
+          "route": "/audit-logs",
+          "status": 401
+        },
+        {
+          "module": "admin",
+          "method": "DELETE",
+          "route": "/audit-logs",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/summary",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/videos",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/videos/workspace",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/duplicates",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/duplicates/workspace",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "GET",
+          "route": "/metadata-options",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "PATCH",
+          "route": "/videos/:id/metadata",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "PATCH",
+          "route": "/videos/:id/tags",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "PATCH",
+          "route": "/videos/:id/content-type",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "PATCH",
+          "route": "/videos/:id/review",
+          "status": 401
+        },
+        {
+          "module": "archive",
+          "method": "DELETE",
+          "route": "/videos/:id/duplicate",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/programs",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/content-types",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/reporters",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/direct-final-upload",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/final-videos",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/library-videos",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/library-search",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/final-videos/:videoId/approve",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/show-day",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/my-show-days",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/show-day/join",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "GET",
+          "route": "/show-day/:showDayId/download-package",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/show-day/:showDayId/mark-aired",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/show-day/:showDayId/items",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "PATCH",
+          "route": "/show-day/:showDayId/items/reorder",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "POST",
+          "route": "/show-day/:showDayId/items/:itemId/report-error",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "PATCH",
+          "route": "/show-day/:showDayId/items/:itemId/replace",
+          "status": 401
+        },
+        {
+          "module": "broadcast",
+          "method": "PATCH",
+          "route": "/show-day/:showDayId/items/:itemId",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "GET",
+          "route": "/editors",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "GET",
+          "route": "/workspace",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "POST",
+          "route": "/video/:videoId/ensure",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "PATCH",
+          "route": "/video/:videoId/dismiss",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "PATCH",
+          "route": "/:requestId/claim",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "PATCH",
+          "route": "/:requestId/route",
+          "status": 401
+        },
+        {
+          "module": "corrections",
+          "method": "PATCH",
+          "route": "/:requestId/status",
+          "status": 401
+        },
+        {
+          "module": "downloads",
+          "method": "POST",
+          "route": "/tickets",
+          "status": 401
+        },
+        {
+          "module": "downloads",
+          "method": "GET",
+          "route": "/tickets/:ticketId/status",
+          "status": 401
+        },
+        {
+          "module": "media",
+          "method": "POST",
+          "route": "/tickets",
+          "status": 401
+        },
+        {
+          "module": "notifications",
+          "method": "GET",
+          "route": "/workspace",
+          "status": 401
+        },
+        {
+          "module": "notifications",
+          "method": "PATCH",
+          "route": "/read-all",
+          "status": 401
+        },
+        {
+          "module": "notifications",
+          "method": "PATCH",
+          "route": "/read-job/:jobId",
+          "status": 401
+        },
+        {
+          "module": "notifications",
+          "method": "PATCH",
+          "route": "/:notificationId/read",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/workspace",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/admin/apply-sla",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "PATCH",
+          "route": "/:jobId/admin",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/import-brief",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "DELETE",
+          "route": "/:jobId",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/:jobId/download-package",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/:jobId/off-files/:fileId",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/:jobId/final-videos",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/:jobId/material-upload",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/:jobId/final-upload",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "PATCH",
+          "route": "/:jobId/reporter-update",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "DELETE",
+          "route": "/:jobId/segments/:segmentId",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "PATCH",
+          "route": "/:jobId/segments/:segmentId/replace",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "GET",
+          "route": "/:jobId",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "PATCH",
+          "route": "/:jobId/status",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "PATCH",
+          "route": "/:jobId/claim",
+          "status": 401
+        },
+        {
+          "module": "editJobs",
+          "method": "POST",
+          "route": "/:jobId/comments",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "GET",
+          "route": "/workspace",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "GET",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "POST",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "PATCH",
+          "route": "/:feedbackId",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "POST",
+          "route": "/:feedbackId/seen",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "POST",
+          "route": "/:feedbackId/comments",
+          "status": 401
+        },
+        {
+          "module": "feedback",
+          "method": "DELETE",
+          "route": "/:feedbackId",
+          "status": 401
+        },
+        {
+          "module": "upload",
+          "method": "POST",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/workspace",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "DELETE",
+          "route": "/:videoId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "POST",
+          "route": "/:videoId/requeue-processing",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/preview/:videoId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/thumbnail/:videoId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/scrub-preview/:videoId/manifest",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/scrub-preview/:videoId/frame/:frameIndex",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/stream/:videoId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "POST",
+          "route": "/:videoId/timecodes",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "DELETE",
+          "route": "/:videoId/timecodes/:timecodeId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "PATCH",
+          "route": "/:videoId/archive-review-request",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "PATCH",
+          "route": "/:videoId/qc",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "PATCH",
+          "route": "/:videoId/broadcast-status",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/download/:videoId",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/:videoId/timecodes",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "POST",
+          "route": "/download",
+          "status": 401
+        },
+        {
+          "module": "videos",
+          "method": "GET",
+          "route": "/details/:videoId",
+          "status": 401
+        }
+      ]
+    },
+    {
+      "mode": "ui-acceptance",
+      "runId": "2026-10-11T11-56-49-891Z-57f7fb",
+      "passed": 6,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5113": "free",
+          "27113": "free"
+        }
+      },
+      "nativeZoom": [
+        {
+          "role": "Reporter",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Reporter",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Reporter",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Reporter",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "Editor",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Editor",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Editor",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Editor",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "VideoEditor",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "VideoEditor",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "VideoEditor",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "VideoEditor",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "Producer",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Producer",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Producer",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Producer",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "Realizator",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Realizator",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Realizator",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Realizator",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "Archivist",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Archivist",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Archivist",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Archivist",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        },
+        {
+          "role": "Admin",
+          "nativeZoom": 1.25,
+          "confirmed": 1.25,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 1080,
+          "height": 644,
+          "width": 1080,
+          "dpr": 1.25,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 101.5999984741211,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Admin",
+          "nativeZoom": 1.5,
+          "confirmed": 1.5,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 900,
+          "height": 537,
+          "width": 900,
+          "dpr": 1.5,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 131.33334350585938,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Admin",
+          "nativeZoom": 2,
+          "confirmed": 2,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 675,
+          "height": 402,
+          "width": 675,
+          "dpr": 2,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 132,
+            "position": "sticky"
+          }
+        },
+        {
+          "role": "Admin",
+          "nativeZoom": 4,
+          "confirmed": 4,
+          "baseline": {
+            "viewport": 1350,
+            "dpr": 1
+          },
+          "viewport": 337,
+          "height": 201,
+          "width": 337,
+          "dpr": 4,
+          "captured": {
+            "width": 1350,
+            "height": 805
+          },
+          "header": {
+            "height": 106,
+            "position": "static"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "maintenance",
+      "runId": "2026-10-11T12-05-55-554Z-fa23d8",
+      "passed": 8,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      }
+    },
+    {
+      "mode": "policy-characterization",
+      "runId": "2026-10-11T12-01-43-569Z-ba2633",
+      "passed": 1,
+      "failed": 0,
+      "blocked": 2,
+      "failures": [
+        {
+          "id": "POLICY-role-revocation",
+          "name": "Characterize existing JWT after Admin changes the account role",
+          "status": "blocked",
+          "reason": "User deferred immediate revocation; old JWT can retain privileges for up to one hour (media tickets have their own lifetime/cache)"
+        },
+        {
+          "id": "POLICY-linked-video-delete",
+          "name": "Characterize deletion of a video that is still used by an active rundown",
+          "status": "blocked",
+          "reason": "User requested documentation only; active-reference deletion remains an open risk"
+        }
+      ],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      }
+    },
+    {
+      "mode": "network",
+      "runId": "2026-10-11T12-06-31-371Z-e17113",
+      "passed": 4,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      }
+    },
+    {
+      "mode": "tickets",
+      "runId": "2026-10-11T12-07-01-254Z-fd070f",
+      "passed": 2,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "11fa7afbb337de076f3c9b2761d18ef79883ffd112a3587842b63934c19b2c45",
+        "buildHash": "57d491edfd7a11422dbd7d0c1fe797179f8786376c6d83f9bb1e0dacb9552722",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5115": "free",
+          "27115": "free"
+        }
+      }
+    },
+    {
+      "mode": "soak-75",
+      "runId": "2026-10-11T10-15-44-780Z-253f4d",
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0,
+      "failures": [],
+      "identity": {
+        "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+        "branch": "codex/Web-Optimizacija",
+        "node": "v20.16.0",
+        "platform": "win32",
+        "arch": "x64",
+        "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+        "logicalCpus": 16,
+        "totalRamBytes": 34283782144,
+        "sourceHash": "fd25d1c67d78d9ee387bda9a02bc71fc77934ff71c16704f34cc19be1c9cc721",
+        "frontendSourceHash": "8a8dc815e23271b84b8fc17b1e4bca29d0c6630c05674f619605df9544c5edd9",
+        "buildHash": "7d478b79f011f0658174e9f57ee8eb8c8d8ca3942cdb57704c3f725f0996213a",
+        "queue": "local",
+        "dataset": "disposable local MongoDB",
+        "mediaRoot": "isolated .qa-runtime storage"
+      },
+      "cleanup": {
+        "ownProcessesOnly": true,
+        "ports": {
+          "5110": "free",
+          "27110": "free"
+        }
+      },
+      "soak": {
+        "durationSeconds": 4501.0112811,
+        "apiSamples": 8770,
+        "failedApiSamples": 0,
+        "p95": 105.01280000000406,
+        "uploads": 15,
+        "downloads": 148,
+        "browserErrors": [],
+        "videoStates": [
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          },
+          {
+            "readyState": 4,
+            "paused": false,
+            "error": null
+          }
+        ],
+        "reauthentication": [
+          {
+            "role": "Editor",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4891154,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Producer",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4897031,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Realizator",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4902287,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Archivist",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4907761,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Admin",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4913841,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Reporter2",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4920119,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Editor2",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4927486,
+            "expectedStatus": 403
+          },
+          {
+            "role": "VideoEditor",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4932325,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Reporter",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.493747,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Admin2",
+            "channel": "simulated-user-login",
+            "elapsedSeconds": 3596.4942231,
+            "expectedStatus": 403
+          },
+          {
+            "role": "Realizator",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3601.8988498
+          },
+          {
+            "role": "Realizator",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3607.3213327000003
+          },
+          {
+            "role": "Realizator",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3612.7288704
+          },
+          {
+            "role": "Realizator",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3618.0608523
+          },
+          {
+            "role": "Realizator",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3623.5099772
+          },
+          {
+            "role": "Reporter",
+            "channel": "browser-dialog",
+            "elapsedSeconds": 3628.9364606
+          }
+        ]
+      }
+    }
+  ]
+}

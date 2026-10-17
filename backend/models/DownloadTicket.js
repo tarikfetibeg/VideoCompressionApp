@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { downloadRetentionDeadline } = require('../utils/downloadTicketRetention');
 
 const allowedKinds = [
   'video-single',
@@ -24,6 +25,7 @@ const DownloadTicketSchema = new mongoose.Schema({
   payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   status: { type: String, enum: allowedStatuses, default: 'created', index: true },
   expiresAt: { type: Date, required: true },
+  purgeAt: { type: Date, default: () => downloadRetentionDeadline() },
   startedAt: { type: Date },
   finishedAt: { type: Date },
   error: { type: String },
@@ -33,7 +35,7 @@ const DownloadTicketSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-DownloadTicketSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'download_ticket_expiry_idx' });
+DownloadTicketSchema.index({ purgeAt: 1 }, { expireAfterSeconds: 0, name: 'download_ticket_retention_idx' });
 DownloadTicketSchema.index({ createdBy: 1, status: 1, createdAt: -1 }, { name: 'download_ticket_user_status_idx' });
 
 module.exports = mongoose.model('DownloadTicket', DownloadTicketSchema);

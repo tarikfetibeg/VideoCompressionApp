@@ -19,6 +19,8 @@ const authenticateToken = require('../middleware/authenticateToken');
 const authorize = require('../middleware/authorize');
 const { defaultContentTypes } = require('../config/broadcastDefaults');
 const { cleanupExpiredRawFiles } = require('../services/rawRetentionService');
+const { removeOffFile } = require('../services/offFileDeletionService');
+const { unlinkStorageFile } = require('../utils/storageFileSafety');
 const { findRawOrphans, importRawOrphans } = require('../services/rawOrphanService');
 const {
   buildScrubPreviewForVideo,
@@ -51,6 +53,9 @@ const {
   normalizeMediaSettingsUpdate,
 } = require('../services/mediaProfileService');
 const { enqueuePreviewMaintenance } = require('../queues/previewMaintenanceQueue');
+const { removeVideoFiles } = require('../services/videoFileDeletionService');
+const { buildAuditLogFilter, enhanceAuditLog, filterEnhancedAuditLogs } = require('../utils/auditLogHelpers');
+const { getAuditWorkspace } = require('../services/auditWorkspaceService');
 const { paths, ensureFolderExists } = require('../utils/storagePaths');
 
 const allowedRoles = ['Reporter', 'Editor', 'VideoEditor', 'Producer', 'Realizator', 'Archivist', 'Admin'];
@@ -92,96 +97,6 @@ function parseWorkspacePagination(query = {}) {
     limit,
     skip: (page - 1) * limit,
   };
-}
-
-function classifyAuditSeverity(action = '') {
-  const value = String(action).toLowerCase();
-  if (/(delete|failed|reject|cleanup|remove|reset|orphan|replace)/.test(value)) return 'critical';
-  if (/(retry|update|approve|import|download|claim|join)/.test(value)) return 'warning';
-  return 'info';
-}
-
-function inferAuditEntity(details = {}) {
-  if (!details || typeof details !== 'object') return null;
-  if (details.videoId) return { type: 'video', id: details.videoId };
-  if (details.jobId) return { type: 'job', id: details.jobId };
-  if (details.showDayId) return { type: 'showDay', id: details.showDayId };
-  if (details.feedbackId) return { type: 'feedback', id: details.feedbackId };
-  if (details.userId) return { type: 'user', id: details.userId };
-  return null;
-}
-
-function buildAuditLogFilter(query = {}) {
-  const {
-    action,
-    userId,
-    dateFrom,
-    dateTo,
-  } = query;
-  const filter = {};
-
-  if (action && action !== 'all') {
-    filter.action = action;
-  }
-
-  if (userId && userId !== 'all') {
-    filter.performedBy = userId;
-  }
-
-  if (dateFrom || dateTo) {
-    filter.timestamp = {};
-    if (dateFrom) filter.timestamp.$gte = new Date(dateFrom);
-    if (dateTo) filter.timestamp.$lte = new Date(dateTo);
-  }
-
-  return filter;
-}
-
-function enhanceAuditLog(log) {
-  return {
-    ...log,
-    severity: classifyAuditSeverity(log.action),
-    entity: inferAuditEntity(log.details),
-  };
-}
-
-function filterEnhancedAuditLogs(logs, query = {}) {
-  const role = query.role || 'all';
-  const severity = query.severity || 'all';
-  const rawSearchTerm = String(query.q || query.search || '').trim().toLowerCase();
-  const searchTerm = rawSearchTerm.length >= 2 ? rawSearchTerm : '';
-
-  return logs.filter((log) => {
-    const matchesRole = !role || role === 'all' || log.performedBy?.role === role;
-    const matchesSeverity = !severity || severity === 'all' || log.severity === severity;
-    const matchesSearch = !searchTerm || [
-      log.action,
-      log.performedBy?.username,
-      log.performedBy?.role,
-      JSON.stringify(log.details || {}),
-    ]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(searchTerm));
-
-    return matchesRole && matchesSeverity && matchesSearch;
-  });
-}
-
-function summarizeAuditLogs(logs) {
-  return logs.reduce((summary, log) => {
-    summary.total += 1;
-    summary[log.severity] = (summary[log.severity] || 0) + 1;
-    if (log.entity?.type) {
-      summary.entities[log.entity.type] = (summary.entities[log.entity.type] || 0) + 1;
-    }
-    return summary;
-  }, {
-    total: 0,
-    critical: 0,
-    warning: 0,
-    info: 0,
-    entities: {},
-  });
 }
 
 async function listRawManifestFiles() {
@@ -442,15 +357,6 @@ async function ensureDefaultContentTypes() {
   ));
 }
 
-function deleteFileIfExists(filePath) {
-  if (!filePath) return;
-
-  const resolvedPath = path.resolve(filePath);
-  if (fs.existsSync(resolvedPath)) {
-    fs.unlinkSync(resolvedPath);
-  }
-}
-
 function normalizeFfmpegSettingsUpdate(update) {
   return normalizeMediaSettingsUpdate(update);
 }
@@ -651,6 +557,9 @@ router.get('/media-previews/summary', async (req, res) => {
 
 router.post('/media-previews/rebuild', async (req, res) => {
   try {
+    if (req.body?.scope !== undefined && !['selected', 'missing', 'outdated'].includes(req.body.scope)) {
+      return res.status(400).json({ message: 'Neispravan rebuild scope.' });
+    }
     const assetTypes = Array.from(new Set(Array.isArray(req.body?.assetTypes) ? req.body.assetTypes : []))
       .filter((assetType) => ['mp4', 'hls', 'thumbnail', 'scrub'].includes(assetType));
     const scope = ['selected', 'missing', 'outdated'].includes(req.body?.scope)
@@ -937,8 +846,9 @@ router.delete('/off-files/:jobId/:offFileId', async (req, res) => {
       return res.status(400).json({ message: 'OFF file path is outside off-audio storage.' });
     }
 
-    if (resolvedPath && fs.existsSync(resolvedPath)) {
-      fs.unlinkSync(resolvedPath);
+    const removal = await removeOffFile(job._id, storagePath, { offFileId: offFile._id });
+    if (!removal.safe) {
+      return res.status(400).json({ message: 'OFF fajl nema sigurnu putanju unutar OFF storagea.' });
     }
 
     const deletedInfo = {
@@ -947,6 +857,8 @@ router.delete('/off-files/:jobId/:offFileId', async (req, res) => {
       offFileId: offFile._id,
       originalName: offFile.originalName,
       storagePath,
+      fileDeleted: removal.deleted,
+      filePreservedReason: removal.reason || null,
     };
 
     offFile.deleteOne();
@@ -984,7 +896,7 @@ router.get('/raw-manifests', async (req, res) => {
 router.delete('/raw-manifests/:filename', async (req, res) => {
   try {
     const filename = path.basename(req.params.filename);
-    if (!filename.endsWith('.json')) {
+    if (filename !== req.params.filename || !filename.endsWith('.json')) {
       return res.status(400).json({ message: 'Invalid raw manifest filename.' });
     }
 
@@ -999,7 +911,8 @@ router.delete('/raw-manifests/:filename', async (req, res) => {
       return res.status(404).json({ message: 'Raw manifest not found.' });
     }
 
-    fs.unlinkSync(resolvedPath);
+    const removal = await unlinkStorageFile(resolvedPath, [paths.rawManifests]);
+    if (!removal.safe) return res.status(400).json({ message: 'Manifest nema sigurnu putanju.' });
 
     await AuditLog.create({
       action: 'Delete Raw Manifest',
@@ -1334,15 +1247,7 @@ router.delete('/videos/:id', async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    const pathsToDelete = Array.from(new Set([
-      video.filepath,
-      video.compressedPath,
-      video.previewPath,
-      video.thumbnailPath,
-      video.rawPath,
-    ].filter(Boolean)));
-
-    pathsToDelete.forEach(deleteFileIfExists);
+    const deletion = await removeVideoFiles(video);
     removeScrubPreviewFolderForVideo(video);
     removeHlsPreviewFolder(video._id);
 
@@ -1351,7 +1256,7 @@ router.delete('/videos/:id', async (req, res) => {
     await AuditLog.create({
       action: 'Delete Video',
       performedBy: req.user.id,
-      details: { videoId: req.params.id, filename: video.filename },
+      details: { videoId: req.params.id, filename: video.filename, ...deletion },
     });
 
     res.json({ message: 'Video deleted successfully' });
@@ -1715,34 +1620,10 @@ router.put('/ffmpeg-settings', async (req, res) => {
 
 router.get('/audit-logs/workspace', async (req, res) => {
   try {
-    const { page, limit, skip } = parseWorkspacePagination(req.query);
-    const filter = buildAuditLogFilter(req.query);
-    const maxScan = Math.min(Math.max(parseInt(req.query.maxScan, 10) || 5000, 500), 10000);
-
-    const rawLogs = await AuditLog.find(filter)
-      .populate('performedBy', 'username role')
-      .sort({ timestamp: -1 })
-      .limit(maxScan)
-      .lean();
-
-    const filteredLogs = filterEnhancedAuditLogs(rawLogs.map(enhanceAuditLog), req.query);
-    const total = filteredLogs.length;
-
-    res.json({
-      items: filteredLogs.slice(skip, skip + limit),
-      total,
-      page,
-      limit,
-      totalPages: Math.max(Math.ceil(total / limit), 1),
-      summary: summarizeAuditLogs(filteredLogs),
-      facets: {
-        scanned: rawLogs.length,
-        maxScan,
-      },
-    });
+    res.json(await getAuditWorkspace(req.query, parseWorkspacePagination(req.query)));
   } catch (err) {
     console.error('Error retrieving audit log workspace:', err);
-    res.status(500).json({ message: 'Error retrieving audit log workspace' });
+    res.status(err.statusCode === 400 ? 400 : 500).json({ message: err.statusCode === 400 ? err.message : 'Error retrieving audit log workspace' });
   }
 });
 
@@ -1762,7 +1643,7 @@ router.get('/audit-logs', async (req, res) => {
     res.json(enhancedLogs);
   } catch (err) {
     console.error('Error retrieving audit logs:', err);
-    res.status(500).json({ message: 'Error retrieving audit logs' });
+    res.status(err.statusCode === 400 ? 400 : 500).json({ message: err.statusCode === 400 ? err.message : 'Error retrieving audit logs' });
   }
 });
 
@@ -1804,7 +1685,7 @@ router.delete('/audit-logs', async (req, res) => {
     });
   } catch (err) {
     console.error('Error deleting audit logs:', err);
-    res.status(500).json({ message: 'Error deleting audit logs' });
+    res.status(err.statusCode === 400 ? 400 : 500).json({ message: err.statusCode === 400 ? err.message : 'Error deleting audit logs' });
   }
 });
 

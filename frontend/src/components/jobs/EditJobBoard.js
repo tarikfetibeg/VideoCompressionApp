@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -69,6 +69,8 @@ const formatDate = (value) => {
 };
 
 const EditJobBoard = ({ refreshToken = 0 }) => {
+  const statusLabelId = useId();
+  const workspaceLabelId = useId();
   const [jobs, setJobs] = useState([]);
   const [filters, setFilters] = useState(defaultFilters);
   const [debouncedFilters, setDebouncedFilters] = useState(defaultFilters);
@@ -179,8 +181,9 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
             fullWidth
           />
           <FormControl sx={{ minWidth: { xs: '100%', md: 220 } }}>
-            <InputLabel>Status</InputLabel>
+            <InputLabel id={statusLabelId}>Status</InputLabel>
             <Select
+              labelId={statusLabelId}
               value={filters.status}
               label="Status"
               onChange={(event) => {
@@ -197,8 +200,9 @@ const EditJobBoard = ({ refreshToken = 0 }) => {
             </Select>
           </FormControl>
           <FormControl sx={{ minWidth: { xs: '100%', md: 200 } }}>
-            <InputLabel>Radni prostor</InputLabel>
+            <InputLabel id={workspaceLabelId}>Radni prostor</InputLabel>
             <Select
+              labelId={workspaceLabelId}
               value={filters.workspaceState}
               label="Radni prostor"
               onChange={(event) => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -11,6 +11,7 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
+  Pagination,
   Select,
   Stack,
   Table,
@@ -27,6 +28,8 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -100,6 +103,9 @@ const ProducerDashboard = () => {
   const [shortcutsLoading, setShortcutsLoading] = useState(false);
   const [shortcutAutoSelected, setShortcutAutoSelected] = useState(false);
   const [libraryVideos, setLibraryVideos] = useState([]);
+  const [libraryPage, setLibraryPage] = useState(1);
+  const [libraryWorkspace, setLibraryWorkspace] = useState({ total: 0, totalPages: 1 });
+  const libraryRequest = useRef(0);
   const [selectedContentTypeId, setSelectedContentTypeId] = useState('all');
   const [librarySearch, setLibrarySearch] = useState('');
   const [debouncedLibrarySearch, setDebouncedLibrarySearch] = useState('');
@@ -174,15 +180,19 @@ const ProducerDashboard = () => {
   }, [librarySearch]);
 
   const loadLibraryVideos = useCallback(() => {
+    const request = ++libraryRequest.current;
     axiosInstance
       .get('/broadcast/library-search', {
         params: {
           contentTypeId: selectedContentTypeId,
           search: getSearchParam(debouncedLibrarySearch),
-          limit: 100,
+          page: libraryPage,
+          limit: 30,
         },
       })
       .then((response) => {
+        if (request !== libraryRequest.current) return;
+        setLibraryWorkspace(response.data || { total: 0, totalPages: 1 });
         setLibraryVideos(Array.isArray(response.data)
           ? response.data
           : Array.isArray(response.data?.items)
@@ -190,10 +200,13 @@ const ProducerDashboard = () => {
             : []);
       })
       .catch((error) => {
+        if (request !== libraryRequest.current) return;
         console.error('Error loading producer library:', error);
         setErrorMessage(error.response?.data?.message || 'TV archive material could not be loaded.');
       });
-  }, [selectedContentTypeId, debouncedLibrarySearch]);
+  }, [selectedContentTypeId, debouncedLibrarySearch, libraryPage]);
+
+  useEffect(() => { setLibraryPage(1); }, [selectedContentTypeId, debouncedLibrarySearch]);
 
   const loadProducerShortcuts = useCallback(() => {
     setShortcutsLoading(true);
@@ -673,7 +686,7 @@ const ProducerDashboard = () => {
                             : {}),
                         }}
                       >
-                        <TableCell sx={{ width: 96 }}>
+                        <TableCell sx={{ width: 128 }}>
                           <Stack direction="row" spacing={0.75} alignItems="center">
                             <Tooltip title={isJoined ? 'Drag to reorder' : 'Join show to reorder'}>
                               <Box
@@ -700,6 +713,22 @@ const ProducerDashboard = () => {
                             <Typography variant="body2" sx={{ fontWeight: 800, width: 20 }}>
                               {index + 1}
                             </Typography>
+                            <Stack spacing={0}>
+                              {[-1, 1].map((offset) => (
+                                <Tooltip key={offset} title={offset < 0 ? 'Pomjeri gore' : 'Pomjeri dolje'}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      aria-label={offset < 0 ? 'Pomjeri gore' : 'Pomjeri dolje'}
+                                      disabled={!isJoined || Boolean(reorderingItemId) || Boolean(draggingItemId) || !activeItems[index + offset]}
+                                      onClick={() => reorderRundownItems(moveItemInList(activeItems, item._id, activeItems[index + offset]._id, offset > 0), item._id)}
+                                    >
+                                      {offset < 0 ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />}
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              ))}
+                            </Stack>
                           </Stack>
                         </TableCell>
                         <TableCell>
@@ -799,7 +828,7 @@ const ProducerDashboard = () => {
         <Grid item xs={12} lg={5}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
             <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
-              TV archive / ready material
+              TV arhiva / spremni materijali ({libraryWorkspace.total})
             </Typography>
             {replaceTargetItem && (
               <Alert
@@ -861,6 +890,12 @@ const ProducerDashboard = () => {
                 })
               )}
             </Stack>
+            {libraryWorkspace.totalPages > 1 && (
+              <Stack alignItems="center" sx={{ mt: 2 }}>
+                <Pagination count={libraryWorkspace.totalPages} page={libraryPage} size="small"
+                  onChange={(event, value) => setLibraryPage(value)} />
+              </Stack>
+            )}
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>

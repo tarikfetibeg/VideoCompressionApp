@@ -1,0 +1,20 @@
+{
+  "observedOn": "2026-10-11",
+  "branch": "codex/Web-Optimizacija",
+  "overallStatus": "partial-coverage-with-open-risks",
+  "headerFixApprovedAndVerified": true,
+  "shortSuiteApplicationSnapshotsMatch": true,
+  "newFinalBuildEnduranceTests": {
+    "status": "skipped-by-user",
+    "phases": ["soak30", "soak75"],
+    "previousPassingRunsArePreHeaderSnapshots": true
+  },
+  "ownedQaProcessMatchesAfterCleanup": 0,
+  "qaPortsVerifiedFree": [5110, 5111, 5112, 5113, 5114, 5115, 27110, 27111, 27112, 27113, 27114, 27115, 9227],
+  "normalApplicationPortsNotStoppedOrRebound": [5000, 5051],
+  "productionDatabaseMigrationExecuted": false,
+  "applicationDependencyUpgradesExecuted": false,
+  "thesisArtifactsModified": false,
+  "knownTargetMisses": ["Reporter mobile cold TBT: 341ms vs 300ms", "NVENC median speed: -6.6 percent vs 30 percent"],
+  "notASecurityOrFullCoverageCertification": true
+}

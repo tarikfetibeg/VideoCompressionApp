@@ -29,6 +29,7 @@ import EditNoteIcon from '@mui/icons-material/EditNote';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SaveIcon from '@mui/icons-material/Save';
 import axios from '../axiosConfig';
+import { canPollSession } from '../utils/sessionRecovery';
 import { UserContext } from '../contexts/UserContext';
 import { useBackgroundDownloads } from '../contexts/BackgroundDownloadContext';
 import { StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
@@ -189,7 +190,7 @@ const VideoDetailsPage = () => {
   useEffect(() => {
     if (!isVideoProcessingActive(videoData)) return undefined;
 
-    const intervalId = window.setInterval(fetchVideoData, ACTIVE_PROCESSING_REFRESH_MS);
+    const intervalId = window.setInterval(() => { if (canPollSession()) fetchVideoData(); }, ACTIVE_PROCESSING_REFRESH_MS);
     return () => window.clearInterval(intervalId);
   }, [fetchVideoData, videoData]);
 

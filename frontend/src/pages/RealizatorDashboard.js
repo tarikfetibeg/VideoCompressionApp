@@ -12,6 +12,7 @@ import {
   Drawer,
   FormControl,
   Grid,
+  IconButton,
   InputLabel,
   LinearProgress,
   MenuItem,
@@ -31,6 +32,8 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -586,7 +589,7 @@ const RealizatorDashboard = () => {
                             : {}),
                         }}
                       >
-                        <TableCell sx={{ width: 96 }}>
+                        <TableCell sx={{ width: 128 }}>
                           <Stack direction="row" spacing={0.75} alignItems="center">
                             <Tooltip title="Drag to reorder">
                               <Box
@@ -613,6 +616,22 @@ const RealizatorDashboard = () => {
                             <Typography variant="body2" sx={{ fontWeight: 800, width: 20 }}>
                               {index + 1}
                             </Typography>
+                            <Stack spacing={0}>
+                              {[-1, 1].map((offset) => (
+                                <Tooltip key={offset} title={offset < 0 ? 'Pomjeri gore' : 'Pomjeri dolje'}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      aria-label={offset < 0 ? 'Pomjeri gore' : 'Pomjeri dolje'}
+                                      disabled={Boolean(reorderingItemId) || Boolean(draggingItemId) || !activeItems[index + offset]}
+                                      onClick={() => reorderRundownItems(moveItemInList(activeItems, item._id, activeItems[index + offset]._id, offset > 0), item._id)}
+                                    >
+                                      {offset < 0 ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />}
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              ))}
+                            </Stack>
                           </Stack>
                         </TableCell>
                         <TableCell>
@@ -721,6 +740,7 @@ const RealizatorDashboard = () => {
         anchor="right"
         open={Boolean(previewTarget)}
         onClose={() => setPreviewTarget(null)}
+        sx={{ zIndex: (currentTheme) => currentTheme.zIndex.modal }}
         PaperProps={{
           sx: {
             width: { xs: '100%', md: 760 },

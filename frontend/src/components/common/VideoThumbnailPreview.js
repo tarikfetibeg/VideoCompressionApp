@@ -27,6 +27,7 @@ const VideoThumbnailPreview = ({
   const thumbnailUrlRef = useRef('');
   const activeFrameRef = useRef(null);
   const mountedRef = useRef(true);
+  const generationRef = useRef(0);
   const [visible, setVisible] = useState(false);
   const [thumbnailSrc, setThumbnailSrc] = useState('');
   const [displaySrc, setDisplaySrc] = useState('');
@@ -65,12 +66,16 @@ const VideoThumbnailPreview = ({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    clearObjectUrls();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearObjectUrls();
+    };
   }, []);
 
   useEffect(() => {
+    generationRef.current += 1;
     clearObjectUrls();
     setThumbnailSrc('');
     setDisplaySrc('');
@@ -143,12 +148,13 @@ const VideoThumbnailPreview = ({
 
     if (pendingFrameRequestsRef.current.has(frameIndex)) return;
     pendingFrameRequestsRef.current.add(frameIndex);
+    const generation = generationRef.current;
 
     axiosInstance
       .get(`/videos/scrub-preview/${videoId}/frame/${frameIndex}`, { responseType: 'blob' })
       .then((response) => {
+        if (!mountedRef.current || generation !== generationRef.current) return;
         pendingFrameRequestsRef.current.delete(frameIndex);
-        if (!mountedRef.current) return;
 
         const objectUrl = createObjectUrl(response.data);
         frameCacheRef.current.set(frameIndex, objectUrl);
@@ -158,7 +164,7 @@ const VideoThumbnailPreview = ({
         }
       })
       .catch(() => {
-        pendingFrameRequestsRef.current.delete(frameIndex);
+        if (generation === generationRef.current) pendingFrameRequestsRef.current.delete(frameIndex);
       });
   };
 

@@ -10,17 +10,24 @@ const jwtSecret = process.env.JWT_SECRET;
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).json({ code: 'AUTH_INVALID_INPUT', message: 'Unesi korisničko ime i lozinku.' });
+  }
+  if (User.db.readyState !== 1) {
+    return res.status(503).json({ code: 'DATABASE_UNAVAILABLE', message: 'Baza podataka trenutno nije dostupna. Pokušaj ponovo.' });
+  }
+
   try {
     // Find user by username
     const user = await User.findOne({ username });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials.' });
+      return res.status(400).json({ code: 'AUTH_BAD_CREDENTIALS', message: 'Korisničko ime ili lozinka nisu ispravni.' });
     }
 
     // Compare passwords
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials.' });
+      return res.status(400).json({ code: 'AUTH_BAD_CREDENTIALS', message: 'Korisničko ime ili lozinka nisu ispravni.' });
     }
 
     // Generate JWT token
@@ -40,8 +47,12 @@ router.post('/login', async (req, res) => {
       user: { id: user._id, username: user.username, role: user.role },
     });
   } catch (error) {
-    console.error('Token generation error:', error);
-    res.status(500).json({ message: 'Server error during login.' });
+    const unavailable = User.db.readyState !== 1 || /ServerSelection|Network|Topology/i.test(error.name || '');
+    console.error('Login failed:', error.name || 'UnknownError');
+    res.status(unavailable ? 503 : 500).json({
+      code: unavailable ? 'DATABASE_UNAVAILABLE' : 'LOGIN_SERVER_ERROR',
+      message: unavailable ? 'Baza podataka trenutno nije dostupna. Pokušaj ponovo.' : 'Serverska greška pri prijavi. Pokušaj ponovo.',
+    });
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -10,13 +10,17 @@ import {
   DialogContentText,
   DialogTitle,
   Paper,
+  Pagination,
+  Stack,
   Tab,
   Tabs,
   TextField,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { useLocation } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
+import { canPollSession } from '../utils/sessionRecovery';
 import SearchAndFilterComponent from '../components/editor/SearchAndFilterComponent';
 import VideoListComponent from '../components/editor/VideoListComponent';
 import VideoUploadComponent from '../components/editor/VideoUploadComponent';
@@ -62,22 +66,33 @@ const buildOptions = (videos, getter) =>
 
 const EditorDashboard = () => {
   const { user } = useContext(UserContext);
+  const location = useLocation();
   const [videos, setVideos] = useState([]);
   const [filters, setFilters] = useState(defaultFilters);
   const [debouncedFilters, setDebouncedFilters] = useState(defaultFilters);
   const [workspaceMeta, setWorkspaceMeta] = useState({ total: 0, summary: {} });
   const [contentTypes, setContentTypes] = useState([]);
   const [selectedVideos, setSelectedVideos] = useState([]);
+  const [page, setPage] = useState(1);
+  const requestVersion = useRef(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [activeView, setActiveView] = useState('jobs');
+  const [activeView, setActiveView] = useState(() => (
+    new URLSearchParams(location.search).get('view') === 'corrections' ? 'corrections' : 'jobs'
+  ));
   const [categoryReviewDialog, setCategoryReviewDialog] = useState(defaultCategoryReviewDialog);
 
   const canUploadFinal = ['Editor', 'VideoEditor', 'Admin'].includes(user?.role);
   const canRequestCategoryReview = ['Editor', 'VideoEditor', 'Admin'].includes(user?.role);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('view') === 'corrections') {
+      setActiveView('corrections');
+    }
+  }, [location.search]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedFilters(filters), 300);
@@ -96,6 +111,7 @@ const EditorDashboard = () => {
   }, []);
 
   const fetchVideos = useCallback((optionsArg = {}) => {
+    const request = ++requestVersion.current;
     const silent = Boolean(optionsArg?.silent);
     if (!silent) {
       setLoading(true);
@@ -112,7 +128,8 @@ const EditorDashboard = () => {
       processingStatus: debouncedFilters.processingStatus !== 'all' ? debouncedFilters.processingStatus : undefined,
       qcStatus: debouncedFilters.qcStatus !== 'all' ? debouncedFilters.qcStatus : undefined,
       broadcastStatus: debouncedFilters.broadcastStatus !== 'all' ? debouncedFilters.broadcastStatus : undefined,
-      limit: 150,
+      page,
+      limit: 50,
       sortBy: 'uploadDate',
       sortOrder: 'desc',
     };
@@ -123,6 +140,7 @@ const EditorDashboard = () => {
         headers: { Accept: 'application/json' },
       })
       .then((response) => {
+        if (request !== requestVersion.current) return;
         const data = Array.isArray(response.data)
           ? response.data
           : Array.isArray(response.data?.items)
@@ -133,31 +151,41 @@ const EditorDashboard = () => {
         setLastRefresh(new Date());
       })
       .catch((err) => {
+        if (request !== requestVersion.current) return;
         console.error('Error fetching videos:', err);
         if (!silent) {
           setErrorMessage('Lista materijala se ne može učitati.');
         }
       })
       .finally(() => {
+        if (request !== requestVersion.current) return;
         if (!silent) {
           setLoading(false);
         }
       });
-  }, [debouncedFilters]);
+  }, [debouncedFilters, page]);
 
   useEffect(() => {
     fetchVideos();
   }, [fetchVideos]);
 
+  useEffect(() => { setPage(1); setSelectedVideos([]); }, [debouncedFilters]);
+
   const hasActiveProcessing = useMemo(() => hasActiveVideoProcessing(videos), [videos]);
 
   useEffect(() => {
+    if (activeView !== 'material') return undefined;
+    const refresh = () => { if (canPollSession()) fetchVideos({ silent: true }); };
     const intervalId = window.setInterval(
-      () => fetchVideos({ silent: true }),
+      refresh,
       hasActiveProcessing ? ACTIVE_PROCESSING_REFRESH_MS : IDLE_REFRESH_MS
     );
-    return () => window.clearInterval(intervalId);
-  }, [fetchVideos, hasActiveProcessing]);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [activeView, fetchVideos, hasActiveProcessing]);
 
   const filteredVideos = videos;
 
@@ -379,6 +407,12 @@ const EditorDashboard = () => {
             onRetryProcessing={handleRetryProcessing}
             onRequestCategoryReview={canRequestCategoryReview ? openCategoryReviewDialog : undefined}
           />
+          {workspaceMeta.totalPages > 1 && (
+            <Stack alignItems="center" sx={{ mt: 2 }}>
+              <Pagination count={workspaceMeta.totalPages} page={page} size="small"
+                onChange={(event, value) => { setSelectedVideos([]); setPage(value); }} />
+            </Stack>
+          )}
         </>
       )}
 

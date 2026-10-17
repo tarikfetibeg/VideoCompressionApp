@@ -1,0 +1,23 @@
+{
+  "head": "e81a7658c0e4d02ba5b644f41ab71c08fa206d4e",
+  "sourceHash": "eb47622faea9b7a301989a648cb513a22de5d4daa6419a99614ae41d9fe37a33",
+  "node": "v20.16.0",
+  "reachableFiles": 52,
+  "actions": 684,
+  "endpoints": 136,
+  "unreachableCandidates": [
+    "frontend/src/setupTests.js"
+  ],
+  "dependencyCandidates": [
+    "@emotion/react",
+    "@emotion/styled",
+    "@testing-library/react",
+    "@testing-library/user-event",
+    "react-player",
+    "react-redux",
+    "react-scripts",
+    "redux",
+    "web-vitals"
+  ],
+  "warning": "AST reachability is evidence for review, not permission to remove business features or config/test dependencies."
+}

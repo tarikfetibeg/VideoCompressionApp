@@ -125,7 +125,7 @@ export const BackgroundUploadProvider = ({ children }) => {
                 ...upload,
                 status: 'error',
                 progress: 0,
-                error: error.response?.data?.message || 'Upload failed.',
+                error: error.response?.data?.message || error.message || 'Upload nije uspio.',
               }
             : upload
         )

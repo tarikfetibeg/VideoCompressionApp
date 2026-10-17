@@ -43,7 +43,7 @@ export const WorkspaceHeader = ({
             {eyebrow}
           </Typography>
         )}
-        <Typography variant="h4" sx={{ fontWeight: 900, lineHeight: 1.12 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 900, lineHeight: 1.12 }}>
           {title}
         </Typography>
         {subtitle && (
@@ -123,7 +123,7 @@ export const KpiStrip = ({ items = [], dense = false }) => (
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
           {item.label}
         </Typography>
-        <Typography variant={dense ? 'h6' : 'h5'} sx={{ fontWeight: 900, color: item.color || 'text.primary' }}>
+        <Typography variant={dense ? 'h6' : 'h5'} component="p" sx={{ fontWeight: 900, color: item.color || 'text.primary' }}>
           {item.value}
         </Typography>
         {item.note && (
@@ -146,7 +146,7 @@ export const FilterBar = ({ title = 'Filteri', summary, actions = null, children
       sx={{ mb: children ? 2 : 0 }}
     >
       <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 850 }}>
+        <Typography variant="subtitle1" component="h2" sx={{ fontWeight: 850 }}>
           {title}
         </Typography>
         {summary && (
@@ -189,7 +189,7 @@ export const EmptyState = ({
 }) => (
   <Paper variant="outlined" sx={{ p: 4, borderRadius: 1.5, textAlign: 'center' }}>
     <Box sx={{ mb: 1 }}>{icon}</Box>
-    <Typography variant="h6" sx={{ fontWeight: 850 }}>
+    <Typography variant="h6" component="p" sx={{ fontWeight: 850 }}>
       {title}
     </Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>

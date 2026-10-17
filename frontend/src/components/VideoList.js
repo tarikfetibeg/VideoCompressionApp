@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import axiosInstance from '../axiosConfig';
+import { canPollSession } from '../utils/sessionRecovery';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -143,7 +144,7 @@ const VideoList = ({
     if (!hasActiveProcessing) return undefined;
 
     const intervalId = window.setInterval(() => {
-      fetchVideos({ silent: true });
+      if (canPollSession()) fetchVideos({ silent: true });
     }, ACTIVE_PROCESSING_REFRESH_MS);
 
     return () => window.clearInterval(intervalId);

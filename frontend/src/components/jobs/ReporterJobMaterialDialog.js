@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
@@ -17,6 +17,7 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
+  Pagination,
   Select,
   Stack,
   Tab,
@@ -37,6 +38,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import axiosInstance from '../../axiosConfig';
 import { ACCEPTED_VIDEO_FILE_TYPES } from '../../constants/videoFormats';
 import { getSearchParam } from '../../utils/searchParams';
+import { stackedTableSx } from '../../utils/responsiveTable';
 import VideoThumbnailPreview from '../common/VideoThumbnailPreview';
 
 const getClipName = (video) => (
@@ -73,6 +75,9 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [contentTypeId, setContentTypeId] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const requestRef = useRef(0);
   const [selectedIds, setSelectedIds] = useState([]);
   const [notes, setNotes] = useState({});
   const [files, setFiles] = useState([]);
@@ -90,13 +95,15 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
 
   const fetchVideos = useCallback(() => {
     if (!open || !job?._id) return;
+    const request = ++requestRef.current;
 
     setLoading(true);
     setErrorMessage('');
     const params = {
       q: getSearchParam(debouncedSearch),
       contentTypeId: contentTypeId !== 'all' ? contentTypeId : undefined,
-      limit: 100,
+      page,
+      limit: 30,
       sortBy: 'uploadDate',
       sortOrder: 'desc',
     };
@@ -108,6 +115,7 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
       }),
     ])
       .then(([ownResponse, archiveResponse]) => {
+        if (request !== requestRef.current) return;
         const merged = new Map();
         const ownItems = Array.isArray(ownResponse.data?.items) ? ownResponse.data.items : [];
         const archiveItems = Array.isArray(archiveResponse.data?.items) ? archiveResponse.data.items : [];
@@ -122,16 +130,18 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
         });
 
         setVideos(Array.from(merged.values()).filter((video) => !existingVideoIds.has(video._id)));
+        setTotalPages(Math.max(ownResponse.data?.totalPages || 1, archiveResponse.data?.totalPages || 1));
       })
       .catch((error) => {
+        if (request !== requestRef.current) return;
         console.error('Error loading job material:', error);
         setErrorMessage(error.response?.data?.message || 'Materijal se ne može učitati.');
       })
-      .finally(() => setLoading(false));
-  }, [contentTypeId, debouncedSearch, existingVideoIds, job?._id, open]);
+      .finally(() => { if (request === requestRef.current) setLoading(false); });
+  }, [contentTypeId, debouncedSearch, existingVideoIds, job?._id, open, page]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(search), 300);
+    const timer = window.setTimeout(() => { setPage(1); setSelectedIds([]); setDebouncedSearch(search); }, 300);
     return () => window.clearTimeout(timer);
   }, [search]);
 
@@ -145,6 +155,7 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
 
   useEffect(() => {
     fetchVideos();
+    return () => { requestRef.current += 1; };
   }, [fetchVideos]);
 
   useEffect(() => {
@@ -153,6 +164,7 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
       setSearch('');
       setDebouncedSearch('');
       setContentTypeId('all');
+      setPage(1);
       setSelectedIds([]);
       setNotes({});
       setFiles([]);
@@ -312,7 +324,7 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
                   <Select
                     value={contentTypeId}
                     label="Kategorija"
-                    onChange={(event) => setContentTypeId(event.target.value)}
+                    onChange={(event) => { setPage(1); setSelectedIds([]); setContentTypeId(event.target.value); }}
                   >
                     <MenuItem value="all">Sve kategorije</MenuItem>
                     {contentTypes.map((type) => (
@@ -323,7 +335,7 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
               </Stack>
 
               <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 440, borderRadius: 1 }}>
-                <Table size="small" stickyHeader>
+                <Table size="small" stickyHeader sx={stackedTableSx}>
                   <TableHead>
                     <TableRow>
                       <TableCell padding="checkbox">Izbor</TableCell>
@@ -352,10 +364,10 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
                       const selected = selectedIds.includes(video._id);
                       return (
                         <TableRow key={video._id} hover selected={selected}>
-                          <TableCell padding="checkbox">
-                            <Checkbox checked={selected} onChange={() => toggleVideo(video._id)} />
+                          <TableCell padding="checkbox" data-label="Izbor">
+                            <Checkbox checked={selected} onChange={() => toggleVideo(video._id)} inputProps={{ 'aria-label': `Odaberi ${getClipName(video)}` }} />
                           </TableCell>
-                          <TableCell sx={{ minWidth: 310 }}>
+                          <TableCell data-label="Materijal" sx={{ minWidth: 310 }}>
                             <Stack direction="row" spacing={1.25} alignItems="center">
                               <VideoThumbnailPreview
                                 videoId={video._id}
@@ -373,17 +385,17 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
                                 </Typography>
                               </Box>
                               <Tooltip title="Otvori Video Details">
-                                <IconButton component={Link} to={`/video-details/${video._id}`} size="small">
+                                <IconButton component={Link} to={`/video-details/${video._id}`} size="small" aria-label={`Otvori detalje: ${getClipName(video)}`}>
                                   <OpenInNewIcon fontSize="small" />
                                 </IconButton>
                               </Tooltip>
                             </Stack>
                           </TableCell>
-                          <TableCell>
+                          <TableCell data-label="Status">
                             <Chip size="small" label={video.processingStatus || 'N/A'} />
                           </TableCell>
-                          <TableCell>{formatDuration(video.duration)}</TableCell>
-                          <TableCell sx={{ minWidth: 210 }}>
+                          <TableCell data-label="Trajanje">{formatDuration(video.duration)}</TableCell>
+                          <TableCell data-label="Napomena" sx={{ minWidth: 210 }}>
                             <TextField
                               size="small"
                               label="Napomena"
@@ -402,6 +414,11 @@ const ReporterJobMaterialDialog = ({ open, job, onClose, onUpdated }) => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              {totalPages > 1 && (
+                <Stack alignItems="center">
+                  <Pagination count={totalPages} page={page} onChange={(event, value) => { setPage(value); setSelectedIds([]); }} />
+                </Stack>
+              )}
 
               <Button
                 variant="contained"

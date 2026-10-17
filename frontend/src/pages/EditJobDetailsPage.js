@@ -40,6 +40,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import axiosInstance from '../axiosConfig';
+import { canPollSession } from '../utils/sessionRecovery';
 import BriefImportButton from '../components/jobs/BriefImportButton';
 import { StatusChip, WorkspaceHeader } from '../components/common/WorkspaceChrome';
 import VideoThumbnailPreview from '../components/common/VideoThumbnailPreview';
@@ -378,7 +379,7 @@ const EditJobDetailsPage = () => {
   useEffect(() => {
     if (!finalProcessingActive) return undefined;
 
-    const refreshTimer = window.setInterval(fetchFinalVideos, 3000);
+    const refreshTimer = window.setInterval(() => { if (canPollSession()) fetchFinalVideos(); }, 3000);
     return () => window.clearInterval(refreshTimer);
   }, [fetchFinalVideos, finalProcessingActive]);
 
